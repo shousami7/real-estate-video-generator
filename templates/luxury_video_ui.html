@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI動画生成システム (Luxury Real Estate)</title>
+    <!-- Tailwind CSS CDNをロード -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Interフォントをロード -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ダークテーマの基本スタイル */
+        body { font-family: 'Inter', sans-serif; background-color: #0d111c; }
+        .card { background-color: #1a202c; border: 1px solid #2d3748; }
+        /* ファイル入力フィールドのホバー/フォーカス効果 */
+        .file-input { transition: all 0.2s; }
+        .file-input:focus, .file-input:hover { border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5); }
+        /* プログレスバーのアニメーション */
+        .progress-bar { transition: width 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-4xl card rounded-xl shadow-2xl p-6 md:p-10 text-white">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-center mb-2 text-blue-400">
+            Luxury Property AI Video Generator
+        </h1>
+        <p class="text-center text-gray-400 mb-8">
+            3枚の画像をアップロードして、Veo 3.1とFFmpegを活用したプロモーション動画を自動生成します。
+        </p>
+
+        <!-- ステータスと進捗表示エリア -->
+        <div id="status-container" class="mb-8 p-4 rounded-lg bg-gray-800/70 border border-gray-700">
+            <p id="status-message" class="text-lg font-semibold text-white">
+                画像をアップロードし、「生成開始」を押してください。
+            </p>
+            <div class="mt-3 h-3 bg-gray-700 rounded-full overflow-hidden">
+                <div id="progress-bar" class="progress-bar h-full rounded-full bg-blue-500" style="width: 0%;"></div>
+            </div>
+            <p id="progress-text" class="text-sm mt-2 text-gray-400 text-right">0%</p>
+        </div>
+        
+        <!-- エラーメッセージ表示エリア (非表示) -->
+        <div id="error-alert" class="hidden mb-6 p-3 bg-red-900 border border-red-600 rounded-lg">
+             <p class="text-sm font-medium text-red-300">エラー: <span id="error-message"></span></p>
+        </div>
+
+        <!-- フォームエリア -->
+        <form id="upload-form" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 画像1 -->
+                <div>
+                    <label for="image_1" class="block text-sm font-medium text-gray-300 mb-1">画像 1 (リビング)</label>
+                    <input type="file" id="image_1" name="image_1" accept="image/png, image/jpeg" required
+                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
+                </div>
+                <!-- 画像2 -->
+                <div>
+                    <label for="image_2" class="block text-sm font-medium text-gray-300 mb-1">画像 2 (外観/プール)</label>
+                    <input type="file" id="image_2" name="image_2" accept="image/png, image/jpeg" required
+                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
+                </div>
+                <!-- 画像3 -->
+                <div>
+                    <label for="image_3" class="block text-sm font-medium text-gray-300 mb-1">画像 3 (キッチン/ビュー)</label>
+                    <input type="file" id="image_3" name="image_3" accept="image/png, image/jpeg" required
+                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
+                </div>
+            </div>
+
+            <!-- アップロードボタン -->
+            <button type="submit" id="upload-btn"
+                    class="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition duration-200">
+                画像をアップロード
+            </button>
+        </form>
+
+        <!-- 生成ボタンエリア -->
+        <div class="mt-6">
+            <button id="generate-btn" disabled
+                    class="w-full py-3 px-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg transition duration-200 disabled:bg-gray-500/50 disabled:cursor-not-allowed hover:bg-blue-700">
+                AI動画生成開始 (Veo 3.1 & FFmpeg)
+            </button>
+        </div>
+
+        <!-- ダウンロード/プレビューエリア -->
+        <div id="result-area" class="mt-8 hidden text-center p-6 bg-blue-900/30 border border-blue-600 rounded-lg">
+            <p class="text-xl font-bold mb-4">✨ 動画生成完了！ ✨</p>
+            <!-- ダウンロードリンクはサーバーから提供されるURLに設定される -->
+            <a id="download-link" href="#" target="_blank"
+               class="inline-block py-3 px-8 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-full transition duration-200">
+                動画をダウンロード (24秒)
+            </a>
+            <div class="mt-4">
+                <p class="text-sm text-gray-300">プレビュー: (ファイルシミュレーションのため、ここではリンクとして表示されます)</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // DOM要素の取得
+        const uploadForm = document.getElementById('upload-form');
+        const uploadBtn = document.getElementById('upload-btn');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusMessage = document.getElementById('status-message');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const resultArea = document.getElementById('result-area');
+        const downloadLink = document.getElementById('download-link');
+        const errorAlert = document.getElementById('error-alert');
+        const errorMessage = document.getElementById('error-message');
+        
+        // 処理中の状態フラグ
+        let isProcessing = false;
+        // ポーリングのインターバルID
+        let pollInterval = null;
+
+        // --- UIヘルパー関数 ---
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorAlert.classList.add('hidden');
+            errorMessage.textContent = '';
+        }
+
+        function updateStatusUI(status, message, percent, finalUrl = null) {
+            statusMessage.textContent = message;
+            // 進捗バーの更新
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `${Math.round(percent)}%`;
+
+            // ボタンの状態制御
+            const isIdleOrComplete = (status === 'IDLE' || status === 'COMPLETE' || status === 'ERROR');
+            
+            // 処理中は、全てのボタンを無効化
+            if (!isIdleOrComplete) {
+                isProcessing = true;
+                uploadBtn.disabled = true;
+                generateBtn.disabled = true;
+            } else {
+                isProcessing = false;
+                uploadBtn.disabled = false;
+                // COMPLETEまたはERROR以外で、画像がアップロードされていれば生成ボタンを有効化
+                // （ここでは画像がアップロードされた後に別途設定）
+            }
+
+            // 結果エリアの制御
+            if (status === 'COMPLETE' && finalUrl) {
+                resultArea.classList.remove('hidden');
+                // URLに'/static/'が含まれていれば、プレビュー可能な形式にする
+                const previewUrl = finalUrl.startsWith('/static/') ? finalUrl.substring(1) : finalUrl;
+                downloadLink.href = previewUrl;
+            } else {
+                resultArea.classList.add('hidden');
+            }
+        }
+        
+        // --- イベントリスナー ---
+        
+        // 1. 画像アップロード処理
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (isProcessing) return;
+
+            hideError();
+            updateStatusUI('UPLOADING', '画像をアップロード中...', 10);
+            
+            const formData = new FormData(uploadForm);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // アップロード成功: 処理を終了し、生成ボタンを有効化
+                    updateStatusUI('IDLE', result.message, 0);
+                    generateBtn.disabled = false; 
+                } else {
+                    // サーバー側でのエラー
+                    showError(result.message);
+                    updateStatusUI('ERROR', `アップロードエラーが発生しました。`, 0);
+                    generateBtn.disabled = true; 
+                }
+            } catch (error) {
+                // ネットワークエラーなど
+                showError(`ネットワークエラー: ${error.message}。サーバーが実行されているか確認してください。`);
+                updateStatusUI('ERROR', `通信エラーが発生しました。`, 0);
+                generateBtn.disabled = true;
+            }
+        });
+
+        // 2. 動画生成開始処理
+        generateBtn.addEventListener('click', async () => {
+            if (isProcessing || generateBtn.disabled) return;
+            
+            hideError();
+            // generate-btnが押されたら、処理中状態に入り、UIを更新
+            updateStatusUI('STARTING', '動画生成リクエストを送信中...', 15);
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.status === 'started' || result.status === 'info') {
+                    // 生成が開始されたら、ステータス確認のポーリングを開始
+                    updateStatusUI('GENERATING_CLIPS', result.message, 20);
+                    startPolling();
+                } else {
+                    // 開始失敗 (例: 画像不足、既に進行中など)
+                    showError(result.message);
+                    updateStatusUI('ERROR', `生成開始に失敗しました。`, 0);
+                }
+            } catch (error) {
+                showError(`ネットワークエラー: ${error.message}。`);
+                updateStatusUI('ERROR', `通信エラーが発生しました。`, 0);
+            }
+        });
+
+        // --- ポーリングロジック（進捗確認） ---
+        function startPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
+            // 2秒ごとにステータスを確認
+            pollInterval = setInterval(pollStatus, 2000); 
+        }
+
+        async function pollStatus() {
+            try {
+                // *** 修正箇所: fetch('/status') を new URL(...) に変更 ***
+                const statusUrl = new URL('/status', window.location.href);
+                const response = await fetch(statusUrl.toString());
+                // *** 修正箇所ここまで ***
+
+                const data = await response.json();
+
+                if (data.status === 'ERROR') {
+                    // エラー発生時
+                    stopPolling();
+                    showError(data.message);
+                    updateStatusUI('ERROR', '動画生成中にエラーが発生しました。', data.progress_percent || 0);
+                    generateBtn.disabled = false; // エラー終了後、再試行可能にする
+                } else if (data.status === 'COMPLETE') {
+                    // 完了時
+                    stopPolling();
+                    updateStatusUI(data.status, data.message, 100, data.final_video_url);
+                    generateBtn.disabled = false; // 完了後、再試行可能にする
+                } else {
+                    // 進行中
+                    const percent = data.progress_percent || 0;
+                    updateStatusUI(data.status, data.message, percent, data.final_video_url);
+                }
+
+            } catch (error) {
+                // サーバーが落ちた場合など、通信エラーが発生したらポーリングを停止
+                console.error("ステータスAPIエラー:", error);
+                // 処理は継続している可能性があるため、致命的なエラーでない限りポーリングは継続
+            }
+        }
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+        
+        // 初回ロード時にステータスを確認（前回の状態があればロード）
+        window.onload = () => {
+             // 初回ポーリングでUIの状態をサーバーと同期させる
+             pollStatus(); 
+        };
+        
+        // ページが閉じられたときにポーリングを停止
+        window.onbeforeunload = stopPolling;
+
+    </script>
+</body>
+</html>

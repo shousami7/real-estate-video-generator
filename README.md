@@ -1,11 +1,11 @@
 # Luxury Real Estate AI Video Generation System
 
-Complete automation system for generating high-end property videos using **fal.ai Veo 3.1** and **FFmpeg**.
+Complete automation system for generating high-end property videos using **Google Veo** and **FFmpeg**.
 
 ## Features
 
 - **Automated Video Generation**: Upload 3 property images and generate professional marketing videos
-- **AI-Powered**: Uses fal.ai's Veo 3.1 Image-to-Video model
+- **AI-Powered**: Uses Google's Veo Image-to-Video model
 - **Professional Transitions**: Smooth fade effects between clips using FFmpeg
 - **High-End Prompts**: Pre-configured cinematic prompts for luxury real estate
 - **Complete Workflow**: From image upload to final video output
@@ -21,8 +21,8 @@ Complete automation system for generating high-end property videos using **fal.a
          │
          ▼
 ┌─────────────────┐
-│  veo_generator  │  ← Upload images to fal.ai
-│  .py            │  ← Generate 8s videos via Veo 3.1
+│  veo_generator  │  ← Upload images to Google AI
+│  .py            │  ← Generate 8s videos via Google Veo
 └────────┬────────┘
          │
          ▼
@@ -61,10 +61,12 @@ pip install -r requirements.txt
 ```
 
 Dependencies:
-- `requests>=2.31.0` - HTTP requests for fal.ai API
+- `google-genai>=1.0.0` - Google AI SDK for Veo video generation
+- `requests>=2.31.0` - HTTP requests for downloading videos
 - `python-dotenv>=1.0.0` - Environment variable management
 - `Pillow>=10.0.0` - Image processing
 - `tqdm>=4.66.0` - Progress bars
+- `Flask>=2.3.0` - Web application framework (for web UI)
 
 ## Installation
 
@@ -78,23 +80,55 @@ pip install -r requirements.txt
 # Verify FFmpeg installation
 ffmpeg -version
 
-# Set up API key (choose one method):
-# Method 1: Environment variable
-export FAL_API_KEY=your_fal_api_key_here
+# Set up environment variables (.env file)
+cat > .env << EOF
+GOOGLE_API_KEY=your_google_api_key_here
+SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+EOF
 
-# Method 2: .env file
-echo "FAL_API_KEY=your_fal_api_key_here" > .env
+# Or manually create .env file with:
+# GOOGLE_API_KEY=your_google_api_key_here
+# SECRET_KEY=your_random_secret_key_here
 ```
 
-## Getting fal.ai API Key
+## Getting Google AI API Key
 
-1. Go to [fal.ai](https://fal.ai)
-2. Sign up / Log in
-3. Navigate to API Keys section
-4. Create a new API key
-5. Copy and save your key securely
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Select or create a Google Cloud project
+5. Copy and save your API key securely
+
+**Note**: Ensure you have access to the Veo model in your Google AI account.
 
 ## Usage
+
+### Web UI (Recommended)
+
+The easiest way to use the system is through the web interface:
+
+```bash
+# Start the Flask web server using the startup script (recommended)
+./start.sh
+
+# Or start directly with Python
+python3 app.py
+```
+
+Then open your browser and navigate to:
+```
+http://localhost:5001
+```
+
+Features:
+- User-friendly interface with drag-and-drop image upload
+- Real-time progress tracking
+- Automatic video preview and download
+- No command-line knowledge required
+
+**Note**: The web UI currently uses synchronous processing. For production use with multiple users, consider implementing a task queue like Celery or RQ.
+
+### Command-Line Interface
 
 ### Basic Usage
 
@@ -102,7 +136,7 @@ Generate a luxury property video from 3 images:
 
 ```bash
 python generate_property_video.py \
-  --api-key YOUR_FAL_API_KEY \
+  --api-key YOUR_GOOGLE_API_KEY \
   --images exterior.jpg interior.jpg lobby.jpg \
   --output luxury_apartment.mp4
 ```
@@ -110,7 +144,7 @@ python generate_property_video.py \
 ### Using Environment Variable
 
 ```bash
-export FAL_API_KEY=your_api_key_here
+export GOOGLE_API_KEY=your_api_key_here
 
 python generate_property_video.py \
   --images photo1.jpg photo2.jpg photo3.jpg
@@ -122,7 +156,7 @@ Custom transitions and settings:
 
 ```bash
 python generate_property_video.py \
-  --api-key YOUR_FAL_API_KEY \
+  --api-key YOUR_GOOGLE_API_KEY \
   --images exterior.jpg interior.jpg common_area.jpg \
   --output penthouse_showcase.mp4 \
   --transition wipeleft \
@@ -138,7 +172,7 @@ Provide your own video generation prompts:
 
 ```bash
 python generate_property_video.py \
-  --api-key YOUR_FAL_API_KEY \
+  --api-key YOUR_GOOGLE_API_KEY \
   --images img1.jpg img2.jpg img3.jpg \
   --prompts \
     "Modern skyscraper exterior with sunset lighting" \
@@ -150,7 +184,7 @@ python generate_property_video.py \
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--api-key` | fal.ai API key | `$FAL_API_KEY` |
+| `--api-key` | Google AI API key | `$GOOGLE_API_KEY` |
 | `--images` | 3 property images (required) | - |
 | `--output` | Output video filename | `final_property_video.mp4` |
 | `--output-dir` | Base output directory | `output/` |
@@ -216,7 +250,7 @@ amenities showcase, professional real estate presentation
 
 ### veo_generator.py
 
-Handles all fal.ai API interactions:
+Handles all Google AI API interactions:
 
 ```python
 from veo_generator import VeoVideoGenerator
@@ -224,23 +258,13 @@ from veo_generator import VeoVideoGenerator
 # Initialize
 generator = VeoVideoGenerator(api_key="your_api_key")
 
-# Upload image
-image_url = generator.upload_image("photo.jpg")
-
-# Generate video
-request_id = generator.generate_video(
-    image_url=image_url,
+# Complete workflow: upload, generate, download
+video_path = generator.generate_from_image_file(
+    image_path="photo.jpg",
     prompt="Luxurious apartment exterior...",
-    duration=8
-)
-
-# Wait for completion
-result = generator.poll_status(request_id)
-
-# Download video
-video_path = generator.download_video(
-    video_url=result['video']['url'],
-    output_path="output.mp4"
+    output_path="output.mp4",
+    duration="8s",
+    resolution="720p"
 )
 ```
 
@@ -311,7 +335,7 @@ Error: API key not provided
 
 **Solution**: Set your API key:
 ```bash
-export FAL_API_KEY=your_api_key_here
+export GOOGLE_API_KEY=your_api_key_here
 ```
 
 Or use `--api-key` flag:
@@ -326,10 +350,10 @@ TimeoutError: Video generation timed out
 ```
 
 **Solution**: The system waits up to 10 minutes. If it times out:
-- Check your fal.ai account status
+- Check your Google AI account status and Veo access
 - Verify your API key is valid
 - Try again with a smaller image
-- Check fal.ai service status
+- Check Google AI service status
 
 ### File Not Found
 
@@ -352,7 +376,7 @@ python generate_property_video.py \
 
 - **Generation Time**: ~2-5 minutes per 8-second clip
 - **Total Time**: ~6-15 minutes for complete workflow
-- **API Costs**: Check fal.ai pricing for Veo 3.1
+- **API Costs**: Check Google AI pricing for Veo usage
 - **Video Quality**: 720p HD by default (configurable)
 - **File Sizes**: ~10-30MB per clip, ~50-100MB final video
 
@@ -373,7 +397,7 @@ ls property_images/
 # exterior.jpg  interior.jpg  lobby.jpg
 
 # 2. Set API key
-export FAL_API_KEY=fal_abc123xyz...
+export GOOGLE_API_KEY=your_google_api_key_here
 
 # 3. Generate video
 python generate_property_video.py \
@@ -396,11 +420,11 @@ This project is provided as-is for real estate marketing automation.
 
 For issues or questions:
 1. Check the troubleshooting section above
-2. Review fal.ai documentation: https://fal.ai/docs
+2. Review Google AI documentation: https://ai.google.dev/
 3. Check FFmpeg documentation: https://ffmpeg.org/documentation.html
 
 ## Credits
 
-- **AI Model**: fal.ai Veo 3.1
+- **AI Model**: Google Veo 3.1
 - **Video Processing**: FFmpeg
-- **Python Libraries**: requests, Pillow, tqdm, python-dotenv
+- **Python Libraries**: google-genai, requests, Pillow, tqdm, python-dotenv

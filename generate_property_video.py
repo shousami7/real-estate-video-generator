@@ -1,6 +1,6 @@
 """
 High-End Real Estate AI Video Generation System
-Complete automation workflow using fal.ai Veo 3.1 and FFmpeg
+Complete automation workflow using Google Veo and FFmpeg
 """
 
 import argparse
@@ -58,7 +58,7 @@ class PropertyVideoGenerator:
         Initialize the Property Video Generator
 
         Args:
-            api_key: fal.ai API key
+            api_key: Google AI API key
             output_dir: Base output directory
             session_name: Optional session name (defaults to timestamp)
         """
@@ -85,7 +85,7 @@ class PropertyVideoGenerator:
         duration: int = 8
     ) -> List[str]:
         """
-        Generate video clips from images using Veo 3.1
+        Generate video clips from images using Google Veo
 
         Args:
             image_paths: List of paths to input images (3 images expected)
@@ -252,13 +252,13 @@ def main():
 Examples:
   # Basic usage with 3 property images
   python generate_property_video.py \\
-    --api-key YOUR_FAL_API_KEY \\
+    --api-key YOUR_GOOGLE_API_KEY \\
     --images exterior.jpg interior.jpg lobby.jpg \\
     --output luxury_apartment.mp4
 
   # Custom transition and output directory
   python generate_property_video.py \\
-    --api-key YOUR_FAL_API_KEY \\
+    --api-key YOUR_GOOGLE_API_KEY \\
     --images photo1.jpg photo2.jpg photo3.jpg \\
     --transition wipeleft \\
     --transition-duration 0.8 \\
@@ -266,7 +266,7 @@ Examples:
     --output final_video.mp4
 
   # Using environment variable for API key
-  export FAL_API_KEY=your_api_key_here
+  export GOOGLE_API_KEY=your_api_key_here
   python generate_property_video.py \\
     --images img1.jpg img2.jpg img3.jpg
         """
@@ -275,7 +275,7 @@ Examples:
     parser.add_argument(
         "--api-key",
         type=str,
-        help="fal.ai API key (or set FAL_API_KEY environment variable)"
+        help="Google AI API key (or set GOOGLE_API_KEY environment variable)"
     )
 
     parser.add_argument(
@@ -357,9 +357,9 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Get API key
-    api_key = args.api_key or os.getenv("FAL_API_KEY")
+    api_key = args.api_key or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        logger.error("Error: API key not provided. Use --api-key or set FAL_API_KEY environment variable.")
+        logger.error("Error: API key not provided. Use --api-key or set GOOGLE_API_KEY environment variable.")
         sys.exit(1)
 
     try:
