@@ -152,14 +152,31 @@ class VideoComposer:
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                timeout=300  # 5 minutes timeout for composition
             )
             logger.info(f"Video composition completed: {output_path}")
+
+            # Verify output file was created
+            if not os.path.exists(output_path):
+                raise RuntimeError(f"FFmpeg completed but output file not found: {output_path}")
+
+            file_size = os.path.getsize(output_path)
+            if file_size == 0:
+                raise RuntimeError(f"FFmpeg created empty output file: {output_path}")
+
+            logger.info(f"Output file size: {file_size} bytes")
             return output_path
 
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"FFmpeg composition timed out after 5 minutes")
+            raise RuntimeError("Video composition timed out. Try with shorter clips or simpler transitions.")
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr}")
             raise RuntimeError(f"Video composition failed: {e.stderr}")
+        except BrokenPipeError as e:
+            logger.error(f"Broken pipe error during FFmpeg composition: {e}")
+            raise RuntimeError("FFmpeg process was interrupted. Please try again.")
 
     def _build_filter_graph(
         self,
@@ -273,14 +290,31 @@ class VideoComposer:
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                timeout=300  # 5 minutes timeout for concatenation
             )
             logger.info(f"Video concatenation completed: {output_path}")
+
+            # Verify output file was created
+            if not os.path.exists(output_path):
+                raise RuntimeError(f"FFmpeg completed but output file not found: {output_path}")
+
+            file_size = os.path.getsize(output_path)
+            if file_size == 0:
+                raise RuntimeError(f"FFmpeg created empty output file: {output_path}")
+
+            logger.info(f"Output file size: {file_size} bytes")
             return output_path
 
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"FFmpeg concatenation timed out after 5 minutes")
+            raise RuntimeError("Video concatenation timed out. Try with shorter clips.")
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr}")
             raise RuntimeError(f"Video concatenation failed: {e.stderr}")
+        except BrokenPipeError as e:
+            logger.error(f"Broken pipe error during FFmpeg concatenation: {e}")
+            raise RuntimeError("FFmpeg process was interrupted. Please try again.")
 
 
 if __name__ == "__main__":

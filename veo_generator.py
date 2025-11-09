@@ -255,24 +255,80 @@ class VeoVideoGenerator:
 
             logger.info(f"Downloading video file: {file_name}")
 
-            # Download the video file using the client
-            # The file should be downloaded as bytes
-            downloaded_content = self.client.files.download(name=file_name)
+            # Download the video file using the client with robust error handling
+            # Use chunked download to avoid broken pipe errors
+            max_retries = 3
+            retry_delay = 2  # seconds
 
-            # Save to the specified path
-            with open(output_path, 'wb') as f:
-                if isinstance(downloaded_content, bytes):
-                    f.write(downloaded_content)
-                else:
-                    # If it's a file-like object, read it
-                    if hasattr(downloaded_content, 'read'):
-                        f.write(downloaded_content.read())
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
+                    downloaded_content = self.client.files.download(name=file_name)
+
+                    # Save to the specified path with proper stream handling
+                    with open(output_path, 'wb') as f:
+                        if isinstance(downloaded_content, bytes):
+                            # Direct bytes - write all at once
+                            f.write(downloaded_content)
+                            logger.info(f"Downloaded {len(downloaded_content)} bytes")
+                        elif hasattr(downloaded_content, 'read'):
+                            # File-like object or stream - read in chunks
+                            chunk_size = 8192  # 8KB chunks
+                            total_bytes = 0
+                            while True:
+                                chunk = downloaded_content.read(chunk_size)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                total_bytes += len(chunk)
+                            logger.info(f"Downloaded {total_bytes} bytes in chunks")
+                        elif hasattr(downloaded_content, '__iter__'):
+                            # Iterable/generator - iterate and write chunks
+                            total_bytes = 0
+                            for chunk in downloaded_content:
+                                if isinstance(chunk, bytes):
+                                    f.write(chunk)
+                                    total_bytes += len(chunk)
+                                else:
+                                    # Convert to bytes if needed
+                                    chunk_bytes = bytes(chunk)
+                                    f.write(chunk_bytes)
+                                    total_bytes += len(chunk_bytes)
+                            logger.info(f"Downloaded {total_bytes} bytes from iterator")
+                        else:
+                            # Fallback: try to convert to bytes
+                            content_bytes = bytes(downloaded_content)
+                            f.write(content_bytes)
+                            logger.info(f"Downloaded {len(content_bytes)} bytes (converted)")
+
+                    # Verify file was written
+                    if not os.path.exists(output_path):
+                        raise IOError(f"Failed to write file: {output_path}")
+
+                    file_size = os.path.getsize(output_path)
+                    if file_size == 0:
+                        raise IOError(f"Downloaded file is empty: {output_path}")
+
+                    logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
+                    return output_path
+
+                except (BrokenPipeError, ConnectionError, IOError) as e:
+                    logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+
+                    # Clean up partial file if it exists
+                    if os.path.exists(output_path):
+                        try:
+                            os.remove(output_path)
+                            logger.info(f"Removed partial file: {output_path}")
+                        except Exception as cleanup_error:
+                            logger.warning(f"Failed to remove partial file: {cleanup_error}")
+
+                    if attempt < max_retries - 1:
+                        logger.info(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
                     else:
-                        # Try to convert to bytes
-                        f.write(bytes(downloaded_content))
-
-            logger.info(f"Video downloaded successfully: {output_path}")
-            return output_path
+                        raise RuntimeError(f"Failed to download video after {max_retries} attempts") from e
 
         except Exception as e:
             logger.error(f"Failed to download video: {e}")
