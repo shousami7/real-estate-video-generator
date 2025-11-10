@@ -11,6 +11,7 @@ import time
 from typing import Optional, Dict, Any
 from pathlib import Path
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -60,7 +61,7 @@ class VeoVideoGenerator:
             logger.info("Waiting for image to be processed...")
             while uploaded_file.state == "PROCESSING":
                 time.sleep(2)
-                uploaded_file = self.client.files.get(name=uploaded_file.name)
+                uploaded_file = self.client.files.get(uploaded_file.name)
 
             if uploaded_file.state == "FAILED":
                 raise ValueError(f"Image processing failed")
@@ -132,7 +133,7 @@ class VeoVideoGenerator:
                 poll_count += 1
 
                 # Get updated operation status
-                operation = self.client.operations.get(name=operation.name)
+                operation = self.client.operations.get(operation)
 
                 if poll_count % 6 == 0:  # Log every 30 seconds
                     logger.info(f"Still generating... ({poll_count * 5}s elapsed)")
@@ -183,6 +184,50 @@ class VeoVideoGenerator:
             logger.error(f"Error type: {error_type}")
             import traceback
             logger.error(traceback.format_exc())
+            raise
+
+    def _download_from_uri(self, uri: str, output_path: str) -> None:
+        """
+        Download file from URI using HTTP requests with Google API authentication
+
+        Args:
+            uri: GCS URI or HTTP(S) URL
+            output_path: Path to save the downloaded file
+        """
+        logger.info(f"Downloading from URI: {uri}")
+
+        try:
+            # Prepare authentication headers
+            headers = {
+                'X-Goog-API-Key': self.api_key
+            }
+
+            logger.info("Making authenticated request to download video...")
+
+            # Download using requests with authentication
+            response = requests.get(uri, headers=headers, timeout=300, stream=True)
+
+            logger.info(f"Response status code: {response.status_code}")
+            response.raise_for_status()
+
+            # Write to file in chunks
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            logger.info(f"File downloaded successfully from URI")
+
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP Error {e.response.status_code}")
+            try:
+                logger.error(f"Response body: {e.response.text}")
+            except:
+                pass
+            logger.error(f"Failed to download from URI {uri}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to download from URI {uri}: {e}")
             raise
 
     def download_video(self, operation, output_path: str) -> str:
@@ -242,64 +287,32 @@ class VeoVideoGenerator:
                 logger.error(f"Could not find video in response. Response: {response}")
                 raise ValueError("No video file found in operation response")
 
-            # Get file name or URI
-            if hasattr(video_file, 'name'):
-                file_name = video_file.name
-            elif hasattr(video_file, 'uri'):
-                # Extract file name from URI if it's a URI
-                file_name = video_file.uri.split('/')[-1]
+            # Extract URI from video file object
+            file_uri = None
+            if hasattr(video_file, 'uri'):
+                file_uri = video_file.uri
+                logger.info(f"Found video URI: {file_uri}")
+            elif hasattr(video_file, 'name'):
+                file_uri = video_file.name
+                logger.info(f"Found video name (will try as URI): {file_uri}")
             elif isinstance(video_file, str):
-                file_name = video_file
+                file_uri = video_file
+                logger.info(f"Video file is string: {file_uri}")
             else:
-                raise ValueError(f"Unable to extract file name from video_file: {type(video_file)}")
+                raise ValueError(f"Unable to extract file URI from video_file: {type(video_file)}")
 
-            logger.info(f"Downloading video file: {file_name}")
+            logger.info(f"Downloading video from: {file_uri}")
 
-            # Download the video file using the client with robust error handling
-            # Use chunked download to avoid broken pipe errors
+            # Download with retry logic
             max_retries = 3
             retry_delay = 2  # seconds
 
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
-                    downloaded_content = self.client.files.download(name=file_name)
 
-                    # Save to the specified path with proper stream handling
-                    with open(output_path, 'wb') as f:
-                        if isinstance(downloaded_content, bytes):
-                            # Direct bytes - write all at once
-                            f.write(downloaded_content)
-                            logger.info(f"Downloaded {len(downloaded_content)} bytes")
-                        elif hasattr(downloaded_content, 'read'):
-                            # File-like object or stream - read in chunks
-                            chunk_size = 8192  # 8KB chunks
-                            total_bytes = 0
-                            while True:
-                                chunk = downloaded_content.read(chunk_size)
-                                if not chunk:
-                                    break
-                                f.write(chunk)
-                                total_bytes += len(chunk)
-                            logger.info(f"Downloaded {total_bytes} bytes in chunks")
-                        elif hasattr(downloaded_content, '__iter__'):
-                            # Iterable/generator - iterate and write chunks
-                            total_bytes = 0
-                            for chunk in downloaded_content:
-                                if isinstance(chunk, bytes):
-                                    f.write(chunk)
-                                    total_bytes += len(chunk)
-                                else:
-                                    # Convert to bytes if needed
-                                    chunk_bytes = bytes(chunk)
-                                    f.write(chunk_bytes)
-                                    total_bytes += len(chunk_bytes)
-                            logger.info(f"Downloaded {total_bytes} bytes from iterator")
-                        else:
-                            # Fallback: try to convert to bytes
-                            content_bytes = bytes(downloaded_content)
-                            f.write(content_bytes)
-                            logger.info(f"Downloaded {len(content_bytes)} bytes (converted)")
+                    # Download from URI
+                    self._download_from_uri(file_uri, output_path)
 
                     # Verify file was written
                     if not os.path.exists(output_path):
@@ -312,7 +325,7 @@ class VeoVideoGenerator:
                     logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
                     return output_path
 
-                except (BrokenPipeError, ConnectionError, IOError) as e:
+                except (BrokenPipeError, ConnectionError, IOError, requests.exceptions.RequestException) as e:
                     logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
 
                     # Clean up partial file if it exists
