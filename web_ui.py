@@ -1,11 +1,17 @@
 
 import os
 import uuid
+import logging
 from flask import (
-    Blueprint, render_template, request, jsonify, session, send_from_directory
+    Blueprint, render_template, request, jsonify, session, send_from_directory, send_file
 )
 from werkzeug.utils import secure_filename
 from generate_property_video import PropertyVideoGenerator
+from frame_editor import FrameEditor, AIFrameEditor
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 web_ui_blueprint = Blueprint('web_ui', __name__, template_folder='templates', static_folder='static')
 
@@ -141,7 +147,8 @@ def generate_video():
         return jsonify({
             "status": "complete",
             "message": "動画生成が完了しました！",
-            "final_video_url": "/download"
+            "final_video_url": "/download",
+            "editor_url": "/video/editor"
         })
     except ValueError as e:
         # クォータ超過などのユーザー向けエラーメッセージ
@@ -190,7 +197,8 @@ def get_status():
             "status": "COMPLETE",
             "message": "動画生成が完了しました！",
             "progress_percent": 100,
-            "final_video_url": "/download"
+            "final_video_url": "/download",
+            "editor_url": "/video/editor"
         })
     elif status == 'ERROR':
         error_msg = session.get('generation_error', '不明なエラー')
@@ -224,3 +232,385 @@ def download_video():
     directory = os.path.dirname(video_path)
     filename = os.path.basename(video_path)
     return send_from_directory(directory, filename, as_attachment=True)
+
+
+# ============================================================================
+# FRAME EDITOR ENDPOINTS
+# ============================================================================
+
+@web_ui_blueprint.route('/video/upload', methods=['POST'])
+def upload_video():
+    """
+    Upload video for frame editing
+    """
+    try:
+        if 'video' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No video file provided"
+            }), 400
+
+        video_file = request.files['video']
+
+        if not video_file.filename:
+            return jsonify({
+                "status": "error",
+                "message": "No file selected"
+            }), 400
+
+        if 'session_id' not in session:
+            session['session_id'] = str(uuid.uuid4())
+
+        session_id = session['session_id']
+        upload_dir = os.path.join('uploads', session_id, 'editor')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        filename = secure_filename(video_file.filename)
+        video_path = os.path.join(upload_dir, filename)
+        video_file.save(video_path)
+
+        session['editor_video'] = video_path
+
+        logger.info(f"Video uploaded: {video_path}")
+
+        return jsonify({
+            "status": "success",
+            "message": "Video uploaded successfully",
+            "video_path": video_path
+        })
+
+    except Exception as e:
+        logger.error(f"Error uploading video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    """
+    Serve uploaded files (videos, etc.)
+    """
+    try:
+        # uploads ディレクトリからファイルを提供（絶対パス使用）
+        upload_dir = os.path.abspath('uploads')
+        logger.info(f"Serving file: {filename} from {upload_dir}")
+        return send_from_directory(upload_dir, filename)
+    except Exception as e:
+        logger.error(f"Error serving file {filename}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": "File not found"
+        }), 404
+
+
+@web_ui_blueprint.route('/frames/<path:filename>')
+def serve_frame_file(filename):
+    """
+    Serve frame files (extracted frames, edited frames, etc.)
+    """
+    try:
+        # frames ディレクトリからファイルを提供（絶対パス使用）
+        frames_dir = os.path.abspath('frames')
+        logger.info(f"Serving frame: {filename} from {frames_dir}")
+        return send_from_directory(frames_dir, filename)
+    except Exception as e:
+        logger.error(f"Error serving frame {filename}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": "Frame not found"
+        }), 404
+
+
+@web_ui_blueprint.route('/frames/extract', methods=['POST'])
+def extract_frames():
+    """
+    Extract frames from uploaded video
+    """
+    try:
+        data = request.get_json()
+        video_path = data.get('video_path')
+
+        if not video_path or not os.path.exists(video_path):
+            return jsonify({
+                "status": "error",
+                "message": "Video not found"
+            }), 400
+
+        session_id = session.get('session_id', 'default')
+        frames_dir = os.path.join('frames', session_id, 'editor')
+
+        editor = FrameEditor(video_path, frames_dir)
+        frames = editor.extract_frames(frame_count=6)
+
+        # セッションにはパス情報のみ保存（base64データは除外）
+        frames_for_session = [
+            {
+                "frame_id": frame['frame_id'],
+                "path": frame['path'],
+                "timestamp": frame['timestamp'],
+                "seconds": frame['seconds']
+                # base64 は含まない
+            }
+            for frame in frames
+        ]
+
+        session['editor_frames'] = frames_for_session
+        session['editor_frames_dir'] = frames_dir
+        session['editor_video_path'] = video_path  # FrameEditorの再作成用
+
+        logger.info(f"Extracted {len(frames)} frames")
+
+        # クライアントにはbase64付きの完全なデータを返す
+        return jsonify({
+            "status": "success",
+            "frames": frames,  # base64を含む完全なデータ
+            "frame_count": len(frames)
+        })
+
+    except Exception as e:
+        logger.error(f"Error extracting frames: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/image/<int:frame_id>')
+def get_frame_image(frame_id):
+    """
+    Get individual frame image by ID
+    """
+    try:
+        if 'editor_frames' not in session:
+            return jsonify({
+                "status": "error",
+                "message": "No frames found"
+            }), 400
+
+        frames = session['editor_frames']
+
+        if frame_id < 0 or frame_id >= len(frames):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid frame ID"
+            }), 400
+
+        frame_path = frames[frame_id]['path']
+
+        if not os.path.exists(frame_path):
+            return jsonify({
+                "status": "error",
+                "message": "Frame file not found"
+            }), 404
+
+        directory = os.path.dirname(frame_path)
+        filename = os.path.basename(frame_path)
+        return send_from_directory(directory, filename, mimetype='image/png')
+
+    except Exception as e:
+        logger.error(f"Error getting frame image: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/edit', methods=['POST'])
+def edit_frame():
+    """
+    Edit frame using AI
+    """
+    try:
+        data = request.get_json()
+        frame_id = data.get('frame_id')
+        prompt = data.get('prompt')
+
+        if 'editor_frames' not in session:
+            return jsonify({
+                "status": "error",
+                "message": "No frames found"
+            }), 400
+
+        if frame_id < 0 or frame_id >= len(session['editor_frames']):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid frame ID"
+            }), 400
+
+        if not prompt:
+            return jsonify({
+                "status": "error",
+                "message": "Prompt is required"
+            }), 400
+
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "API key not configured"
+            }), 500
+
+        ai_editor = AIFrameEditor(api_key)
+        frame_path = session['editor_frames'][frame_id]['path']
+        variations = ai_editor.generate_frame_variations(
+            base_image_path=frame_path,
+            prompt=prompt,
+            variation_count=4
+        )
+
+        logger.info(f"Generated {len(variations)} variations")
+
+        return jsonify({
+            "status": "success",
+            "variations": variations
+        })
+
+    except Exception as e:
+        logger.error(f"Error editing frame: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/apply', methods=['POST'])
+def apply_frame_edit():
+    """
+    Apply edited frame and save as file
+    """
+    try:
+        import base64
+
+        data = request.get_json()
+        frame_id = data.get('frame_id')
+        edited_image_url = data.get('edited_image_url')
+
+        if frame_id is None:
+            return jsonify({
+                "status": "error",
+                "message": "Frame ID is required"
+            }), 400
+
+        if not edited_image_url:
+            return jsonify({
+                "status": "error",
+                "message": "Edited image is required"
+            }), 400
+
+        # Validate base64 image format
+        if not edited_image_url.startswith('data:image'):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid image format"
+            }), 400
+
+        # Decode base64 image
+        try:
+            base64_str = edited_image_url.split(',')[1]
+            image_data = base64.b64decode(base64_str)
+        except Exception as e:
+            logger.error(f"Error decoding base64: {e}")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to decode image data"
+            }), 400
+
+        # Save to file
+        session_id = session.get('session_id', 'default')
+        edited_frames_dir = os.path.join('frames', session_id, 'edited')
+        os.makedirs(edited_frames_dir, exist_ok=True)
+
+        edited_image_path = os.path.join(edited_frames_dir, f'frame_{frame_id}_edited.png')
+
+        try:
+            with open(edited_image_path, 'wb') as f:
+                f.write(image_data)
+        except Exception as e:
+            logger.error(f"Error saving file: {e}")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save edited frame"
+            }), 500
+
+        # Store only the file path in session (not the base64 data)
+        if 'edited_frames' not in session:
+            session['edited_frames'] = {}
+
+        session['edited_frames'][str(frame_id)] = edited_image_path
+
+        logger.info(f"Saved edited frame {frame_id} to: {edited_image_path}")
+
+        return jsonify({
+            "status": "success",
+            "message": "Frame saved",
+            "file_path": edited_image_path
+        })
+
+    except Exception as e:
+        logger.error(f"Error applying frame: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/video/editor')
+def video_editor():
+    """
+    Load video editor UI
+    """
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+
+    return render_template('video_editor_ui.html')
+
+
+@web_ui_blueprint.route('/video/export', methods=['POST'])
+def export_video():
+    """
+    Export edited video
+    """
+    try:
+        if 'editor_video' not in session:
+            return jsonify({
+                "status": "error",
+                "message": "No video to export"
+            }), 400
+
+        # TODO: 編集済みフレームでビデオを再構成
+        # For now, return the original video
+        video_path = session['editor_video']
+
+        return jsonify({
+            "status": "success",
+            "download_url": f"/download/editor?path={video_path}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error exporting video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/download/editor')
+def download_editor_video():
+    """
+    Download the edited video
+    """
+    try:
+        video_path = request.args.get('path')
+
+        if not video_path or not os.path.exists(video_path):
+            return jsonify({"error": "Video not found"}), 404
+
+        directory = os.path.dirname(video_path)
+        filename = os.path.basename(video_path)
+        return send_from_directory(directory, filename, as_attachment=True)
+
+    except Exception as e:
+        logger.error(f"Download error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

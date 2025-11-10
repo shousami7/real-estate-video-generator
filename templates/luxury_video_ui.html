@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Property AI Video Generator</title>
-    <!-- Poppinsフォントをロード -->
+    <!-- Load Poppins font -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Material Symbols Outlinedアイコンをロード -->
+    <!-- Load Material Symbols Outlined icons -->
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
-    <!-- Tailwind CSS CDNをロード -->
+    <!-- Load Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <script>
         tailwind.config = {
@@ -34,7 +34,7 @@
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24
         }
-        /* プログレスバーのアニメーション */
+        /* Progress bar animation */
         .progress-bar { transition: width 0.5s ease-in-out; }
     </style>
 </head>
@@ -47,19 +47,19 @@
             </div>
 
             <div class="bg-white dark:bg-gray-800/50 p-8 sm:p-10 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700">
-                <!-- エラーメッセージ表示エリア (非表示) -->
+                <!-- Error message display area (hidden) -->
                 <div id="error-alert" class="hidden mb-6 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-600 rounded-lg">
-                    <p class="text-sm font-medium text-red-800 dark:text-red-300">エラー: <span id="error-message"></span></p>
+                    <p class="text-sm font-medium text-red-800 dark:text-red-300">Error: <span id="error-message"></span></p>
                 </div>
 
-                <!-- フォームエリア -->
+                <!-- Form area -->
                 <form id="upload-form">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        <!-- 画像1 (Living Room) -->
+                        <!-- Image 1 (Exterior) -->
                         <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
-                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">living</span>
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Living Room</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Select a high-quality image</p>
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">home</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Exterior View</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Building exterior and facade</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_1">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File
@@ -67,11 +67,11 @@
                             <input class="hidden" id="image_1" name="image_1" type="file" accept="image/png, image/jpeg" required>
                             <p id="filename_1" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
                         </div>
-                        <!-- 画像2 (Pool View) -->
+                        <!-- Image 2 (Interior) -->
                         <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
-                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">pool</span>
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Pool View</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Showcase the exterior</p>
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">living</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Interior Design</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Living spaces and rooms</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_2">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File
@@ -79,11 +79,11 @@
                             <input class="hidden" id="image_2" name="image_2" type="file" accept="image/png, image/jpeg" required>
                             <p id="filename_2" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
                         </div>
-                        <!-- 画像3 (Kitchen View) -->
+                        <!-- Image 3 (Common Areas) -->
                         <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
-                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">kitchen</span>
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Kitchen View</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Highlight the interior design</p>
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">pool</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Common Areas</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Lobby, amenities and facilities</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_3">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File
@@ -97,7 +97,7 @@
                     <button type="submit" id="upload-btn" class="hidden">Upload</button>
                 </form>
 
-                <!-- プログレスバー -->
+                <!-- Progress bar -->
                 <div class="mt-10">
                     <div class="flex justify-between items-center mb-2">
                         <p id="status-message" class="text-sm font-medium text-gray-700 dark:text-gray-300">Upload Progress</p>
@@ -108,20 +108,28 @@
                     </div>
                 </div>
 
-                <!-- 生成ボタンエリア -->
+                <!-- Generation button area -->
                 <div class="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700">
                     <button id="generate-btn" disabled class="w-full bg-primary text-black font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity duration-300 focus:outline-none focus:ring-4 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="material-symbols-outlined">auto_awesome</span>
                         AI Video Generation Start
                     </button>
+
+                    <!-- Edit Now button -->
+                    <button id="edit-now-btn" onclick="window.location.href='/video/editor'" class="w-full mt-3 bg-gray-600 dark:bg-[#374151] text-white font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:bg-gray-700 dark:hover:bg-[#4b5563] transition-colors duration-300 focus:outline-none focus:ring-4 focus:ring-gray-500/50">
+                        <span class="material-symbols-outlined">edit</span>
+                        Edit Now
+                    </button>
                 </div>
 
-                <!-- ダウンロード/プレビューエリア -->
+                <!-- Download/Preview area -->
                 <div id="result-area" class="mt-8 hidden text-center p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-600 rounded-lg">
                     <p class="text-xl font-bold mb-4 text-gray-900 dark:text-white">✨ Video Generation Complete! ✨</p>
-                    <a id="download-link" href="#" target="_blank" class="inline-block py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
-                        Download Video (24sec)
-                    </a>
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                        <a id="download-link" href="#" target="_blank" class="inline-block py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
+                            Download Video (24sec)
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -243,7 +251,7 @@
             if (isProcessing) return;
 
             hideError();
-            updateStatusUI('UPLOADING', '画像をアップロード中...', 10);
+            updateStatusUI('UPLOADING', 'Uploading images...', 10);
             
             const formData = new FormData(uploadForm);
             
@@ -259,15 +267,15 @@
                     updateStatusUI('IDLE', result.message, 0);
                     generateBtn.disabled = false; 
                 } else {
-                    // サーバー側でのエラー
+                    // Server-side error
                     showError(result.message);
-                    updateStatusUI('ERROR', `アップロードエラーが発生しました。`, 0);
-                    generateBtn.disabled = true; 
+                    updateStatusUI('ERROR', `Upload error occurred.`, 0);
+                    generateBtn.disabled = true;
                 }
             } catch (error) {
-                // ネットワークエラーなど
-                showError(`ネットワークエラー: ${error.message}。サーバーが実行されているか確認してください。`);
-                updateStatusUI('ERROR', `通信エラーが発生しました。`, 0);
+                // Network error, etc.
+                showError(`Network error: ${error.message}. Please check if the server is running.`);
+                updateStatusUI('ERROR', `Communication error occurred.`, 0);
                 generateBtn.disabled = true;
             }
         });
@@ -275,10 +283,10 @@
         // 2. 動画生成開始処理
         generateBtn.addEventListener('click', async () => {
             if (isProcessing || generateBtn.disabled) return;
-            
+
             hideError();
-            // generate-btnが押されたら、処理中状態に入り、UIを更新
-            updateStatusUI('STARTING', '動画生成リクエストを送信中...', 15);
+            // When generate-btn is pressed, enter processing state and update UI
+            updateStatusUI('STARTING', 'Sending video generation request...', 15);
 
             try {
                 const response = await fetch('/generate', {
@@ -287,59 +295,59 @@
                 const result = await response.json();
                 
                 if (result.status === 'started' || result.status === 'info') {
-                    // 生成が開始されたら、ステータス確認のポーリングを開始
+                    // Once generation starts, begin polling for status
                     updateStatusUI('GENERATING_CLIPS', result.message, 20);
                     startPolling();
                 } else {
-                    // 開始失敗 (例: 画像不足、既に進行中など)
+                    // Start failure (e.g., insufficient images, already in progress, etc.)
                     showError(result.message);
-                    updateStatusUI('ERROR', `生成開始に失敗しました。`, 0);
+                    updateStatusUI('ERROR', `Failed to start generation.`, 0);
                 }
             } catch (error) {
-                showError(`ネットワークエラー: ${error.message}。`);
-                updateStatusUI('ERROR', `通信エラーが発生しました。`, 0);
+                showError(`Network error: ${error.message}.`);
+                updateStatusUI('ERROR', `Communication error occurred.`, 0);
             }
         });
 
-        // --- ポーリングロジック（進捗確認） ---
+        // --- Polling logic (progress check) ---
         function startPolling() {
             if (pollInterval) {
                 clearInterval(pollInterval);
             }
-            // 2秒ごとにステータスを確認
-            pollInterval = setInterval(pollStatus, 2000); 
+            // Check status every 2 seconds
+            pollInterval = setInterval(pollStatus, 2000);
         }
 
         async function pollStatus() {
             try {
-                // *** 修正箇所: fetch('/status') を new URL(...) に変更 ***
+                // *** Fixed: Changed fetch('/status') to new URL(...) ***
                 const statusUrl = new URL('/status', window.location.href);
                 const response = await fetch(statusUrl.toString());
-                // *** 修正箇所ここまで ***
+                // *** End of fix ***
 
                 const data = await response.json();
 
                 if (data.status === 'ERROR') {
-                    // エラー発生時
+                    // On error
                     stopPolling();
                     showError(data.message);
-                    updateStatusUI('ERROR', '動画生成中にエラーが発生しました。', data.progress_percent || 0);
-                    generateBtn.disabled = false; // エラー終了後、再試行可能にする
+                    updateStatusUI('ERROR', 'An error occurred during video generation.', data.progress_percent || 0);
+                    generateBtn.disabled = false; // Allow retry after error
                 } else if (data.status === 'COMPLETE') {
-                    // 完了時
+                    // On completion
                     stopPolling();
                     updateStatusUI(data.status, data.message, 100, data.final_video_url);
-                    generateBtn.disabled = false; // 完了後、再試行可能にする
+                    generateBtn.disabled = false; // Allow retry after completion
                 } else {
-                    // 進行中
+                    // In progress
                     const percent = data.progress_percent || 0;
                     updateStatusUI(data.status, data.message, percent, data.final_video_url);
                 }
 
             } catch (error) {
-                // サーバーが落ちた場合など、通信エラーが発生したらポーリングを停止
-                console.error("ステータスAPIエラー:", error);
-                // 処理は継続している可能性があるため、致命的なエラーでない限りポーリングは継続
+                // Stop polling if communication error occurs (e.g., server down)
+                console.error("Status API error:", error);
+                // Continue polling unless it's a fatal error, as processing might still be ongoing
             }
         }
 
@@ -349,14 +357,14 @@
                 pollInterval = null;
             }
         }
-        
-        // 初回ロード時にステータスを確認（前回の状態があればロード）
+
+        // Check status on initial load (load previous state if exists)
         window.onload = () => {
-             // 初回ポーリングでUIの状態をサーバーと同期させる
-             pollStatus(); 
+             // Synchronize UI state with server on initial poll
+             pollStatus();
         };
-        
-        // ページが閉じられたときにポーリングを停止
+
+        // Stop polling when page is closed
         window.onbeforeunload = stopPolling;
 
     </script>

@@ -31,21 +31,19 @@ class PropertyVideoGenerator:
     # High-end real estate prompts (English)
     DEFAULT_PROMPTS = [
         # Exterior shot
-        "Luxurious modern apartment building exterior, cinematic pan showing architectural details, "
-        "elegant facade with natural lighting, smooth camera movement revealing the property's grandeur, "
-        "professional real estate photography style, high-end residential building",
+        "Netflix production-style promotion video, luxurious modern apartment building exterior, "
+        "cinematic camera moving towards the entrance, elegant facade with natural lighting, "
+        "cool cinematic movement revealing architectural grandeur, no additional images",
 
         # Interior shot
-        "Spacious luxury apartment interior, elegant living space with modern furnishings, "
-        "natural light streaming through large windows, sophisticated interior design, "
-        "smooth camera pan showing room details, premium finishes and decorative elements, "
-        "4K quality real estate photography",
+        "Netflix production-style promotion video, spacious luxury apartment interior, "
+        "cinematic camera moving towards the living space, elegant modern furnishings, "
+        "natural light streaming through windows, cool sophisticated movement, no additional images",
 
         # Common areas
-        "Exclusive luxury building common areas, elegant lobby entrance, premium architectural design, "
-        "marble flooring and modern fixtures, sophisticated lighting design, "
-        "smooth cinematic camera movement, high-end residential amenities showcase, "
-        "professional real estate presentation"
+        "Netflix production-style promotion video, exclusive luxury building common areas, "
+        "cinematic camera moving towards the elegant lobby entrance, premium architectural design, "
+        "marble flooring with sophisticated lighting, cool cinematic movement, no additional images"
     ]
 
     def __init__(
