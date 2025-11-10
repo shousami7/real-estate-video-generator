@@ -1,101 +1,130 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html class="dark" lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI動画生成システム (Luxury Real Estate)</title>
+    <title>Luxury Property AI Video Generator</title>
+    <!-- Poppinsフォントをロード -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Material Symbols Outlinedアイコンをロード -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
     <!-- Tailwind CSS CDNをロード -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Interフォントをロード -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#34D399",
+                        "background-light": "#F3F4F6",
+                        "background-dark": "#121212",
+                    },
+                    fontFamily: {
+                        display: ["Poppins", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                    },
+                },
+            },
+        };
+    </script>
     <style>
-        /* ダークテーマの基本スタイル */
-        body { font-family: 'Inter', sans-serif; background-color: #0d111c; }
-        .card { background-color: #1a202c; border: 1px solid #2d3748; }
-        /* ファイル入力フィールドのホバー/フォーカス効果 */
-        .file-input { transition: all 0.2s; }
-        .file-input:focus, .file-input:hover { border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5); }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24
+        }
         /* プログレスバーのアニメーション */
         .progress-bar { transition: width 0.5s ease-in-out; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
-
-    <div class="w-full max-w-4xl card rounded-xl shadow-2xl p-6 md:p-10 text-white">
-        <h1 class="text-3xl md:text-4xl font-extrabold text-center mb-2 text-blue-400">
-            Luxury Property AI Video Generator
-        </h1>
-        <p class="text-center text-gray-400 mb-8">
-            3枚の画像をアップロードして、Veo 3.1とFFmpegを活用したプロモーション動画を自動生成します。
-        </p>
-
-        <!-- ステータスと進捗表示エリア -->
-        <div id="status-container" class="mb-8 p-4 rounded-lg bg-gray-800/70 border border-gray-700">
-            <p id="status-message" class="text-lg font-semibold text-white">
-                画像をアップロードし、「生成開始」を押してください。
-            </p>
-            <div class="mt-3 h-3 bg-gray-700 rounded-full overflow-hidden">
-                <div id="progress-bar" class="progress-bar h-full rounded-full bg-blue-500" style="width: 0%;"></div>
-            </div>
-            <p id="progress-text" class="text-sm mt-2 text-gray-400 text-right">0%</p>
-        </div>
-        
-        <!-- エラーメッセージ表示エリア (非表示) -->
-        <div id="error-alert" class="hidden mb-6 p-3 bg-red-900 border border-red-600 rounded-lg">
-             <p class="text-sm font-medium text-red-300">エラー: <span id="error-message"></span></p>
-        </div>
-
-        <!-- フォームエリア -->
-        <form id="upload-form" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- 画像1 -->
-                <div>
-                    <label for="image_1" class="block text-sm font-medium text-gray-300 mb-1">画像 1 (リビング)</label>
-                    <input type="file" id="image_1" name="image_1" accept="image/png, image/jpeg" required
-                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
-                </div>
-                <!-- 画像2 -->
-                <div>
-                    <label for="image_2" class="block text-sm font-medium text-gray-300 mb-1">画像 2 (外観/プール)</label>
-                    <input type="file" id="image_2" name="image_2" accept="image/png, image/jpeg" required
-                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
-                </div>
-                <!-- 画像3 -->
-                <div>
-                    <label for="image_3" class="block text-sm font-medium text-gray-300 mb-1">画像 3 (キッチン/ビュー)</label>
-                    <input type="file" id="image_3" name="image_3" accept="image/png, image/jpeg" required
-                           class="file-input w-full p-2 border border-gray-600 rounded-lg text-gray-300 bg-gray-700 hover:border-blue-500 cursor-pointer">
-                </div>
+<body class="bg-background-light dark:bg-background-dark font-display text-gray-800 dark:text-gray-200 antialiased">
+    <div class="flex items-center justify-center min-h-screen p-4 sm:p-6 lg:p-8">
+        <div class="w-full max-w-4xl mx-auto">
+            <div class="text-center mb-10">
+                <h1 class="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white">Luxury Property AI Video Generator</h1>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">Upload 3 images of your property to automatically generate a stunning promotional video.</p>
             </div>
 
-            <!-- アップロードボタン -->
-            <button type="submit" id="upload-btn"
-                    class="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition duration-200">
-                画像をアップロード
-            </button>
-        </form>
+            <div class="bg-white dark:bg-gray-800/50 p-8 sm:p-10 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700">
+                <!-- エラーメッセージ表示エリア (非表示) -->
+                <div id="error-alert" class="hidden mb-6 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-600 rounded-lg">
+                    <p class="text-sm font-medium text-red-800 dark:text-red-300">エラー: <span id="error-message"></span></p>
+                </div>
 
-        <!-- 生成ボタンエリア -->
-        <div class="mt-6">
-            <button id="generate-btn" disabled
-                    class="w-full py-3 px-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg transition duration-200 disabled:bg-gray-500/50 disabled:cursor-not-allowed hover:bg-blue-700">
-                AI動画生成開始 (Veo 3.1 & FFmpeg)
-            </button>
-        </div>
+                <!-- フォームエリア -->
+                <form id="upload-form">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <!-- 画像1 (Living Room) -->
+                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">living</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Living Room</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Select a high-quality image</p>
+                            <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_1">
+                                <span class="material-symbols-outlined text-base">upload_file</span>
+                                Choose File
+                            </label>
+                            <input class="hidden" id="image_1" name="image_1" type="file" accept="image/png, image/jpeg" required>
+                            <p id="filename_1" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                        </div>
+                        <!-- 画像2 (Pool View) -->
+                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">pool</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Pool View</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Showcase the exterior</p>
+                            <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_2">
+                                <span class="material-symbols-outlined text-base">upload_file</span>
+                                Choose File
+                            </label>
+                            <input class="hidden" id="image_2" name="image_2" type="file" accept="image/png, image/jpeg" required>
+                            <p id="filename_2" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                        </div>
+                        <!-- 画像3 (Kitchen View) -->
+                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                            <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">kitchen</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Kitchen View</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Highlight the interior design</p>
+                            <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_3">
+                                <span class="material-symbols-outlined text-base">upload_file</span>
+                                Choose File
+                            </label>
+                            <input class="hidden" id="image_3" name="image_3" type="file" accept="image/png, image/jpeg" required>
+                            <p id="filename_3" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                        </div>
+                    </div>
 
-        <!-- ダウンロード/プレビューエリア -->
-        <div id="result-area" class="mt-8 hidden text-center p-6 bg-blue-900/30 border border-blue-600 rounded-lg">
-            <p class="text-xl font-bold mb-4">✨ 動画生成完了！ ✨</p>
-            <!-- ダウンロードリンクはサーバーから提供されるURLに設定される -->
-            <a id="download-link" href="#" target="_blank"
-               class="inline-block py-3 px-8 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-full transition duration-200">
-                動画をダウンロード (24秒)
-            </a>
-            <div class="mt-4">
-                <p class="text-sm text-gray-300">プレビュー: (ファイルシミュレーションのため、ここではリンクとして表示されます)</p>
+                    <!-- Hidden submit button for form submission -->
+                    <button type="submit" id="upload-btn" class="hidden">Upload</button>
+                </form>
+
+                <!-- プログレスバー -->
+                <div class="mt-10">
+                    <div class="flex justify-between items-center mb-2">
+                        <p id="status-message" class="text-sm font-medium text-gray-700 dark:text-gray-300">Upload Progress</p>
+                        <p id="progress-text" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</p>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div id="progress-bar" class="progress-bar bg-primary h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 生成ボタンエリア -->
+                <div class="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700">
+                    <button id="generate-btn" disabled class="w-full bg-primary text-black font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity duration-300 focus:outline-none focus:ring-4 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span class="material-symbols-outlined">auto_awesome</span>
+                        AI Video Generation Start
+                    </button>
+                </div>
+
+                <!-- ダウンロード/プレビューエリア -->
+                <div id="result-area" class="mt-8 hidden text-center p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-600 rounded-lg">
+                    <p class="text-xl font-bold mb-4 text-gray-900 dark:text-white">✨ Video Generation Complete! ✨</p>
+                    <a id="download-link" href="#" target="_blank" class="inline-block py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
+                        Download Video (24sec)
+                    </a>
+                </div>
             </div>
         </div>
-
     </div>
 
     <script>
@@ -116,6 +145,14 @@
         // ポーリングのインターバルID
         let pollInterval = null;
 
+        // ファイル入力要素の取得
+        const image1Input = document.getElementById('image_1');
+        const image2Input = document.getElementById('image_2');
+        const image3Input = document.getElementById('image_3');
+        const filename1 = document.getElementById('filename_1');
+        const filename2 = document.getElementById('filename_2');
+        const filename3 = document.getElementById('filename_3');
+
         // --- UIヘルパー関数 ---
         function showError(message) {
             errorMessage.textContent = message;
@@ -126,6 +163,45 @@
             errorAlert.classList.add('hidden');
             errorMessage.textContent = '';
         }
+
+        // ファイル名表示とプログレス更新
+        function updateFileDisplay(inputElement, displayElement) {
+            if (inputElement.files.length > 0) {
+                displayElement.textContent = inputElement.files[0].name;
+            } else {
+                displayElement.textContent = '';
+            }
+            updateUploadProgress();
+        }
+
+        // アップロード進捗の計算（選択されたファイル数に基づく）
+        function updateUploadProgress() {
+            const filesSelected = [image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length;
+            const progress = (filesSelected / 3) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${Math.round(progress)}%`;
+
+            // メッセージ更新
+            if (filesSelected === 0) {
+                statusMessage.textContent = 'Upload Progress';
+            } else if (filesSelected < 3) {
+                statusMessage.textContent = `${filesSelected}/3 images selected`;
+            } else {
+                statusMessage.textContent = 'Uploading images...';
+            }
+
+            // 3つ全て選択されたら自動的にアップロード
+            if (filesSelected === 3 && !isProcessing) {
+                setTimeout(() => {
+                    uploadForm.dispatchEvent(new Event('submit'));
+                }, 500);
+            }
+        }
+
+        // ファイル選択イベントリスナーの追加
+        image1Input.addEventListener('change', () => updateFileDisplay(image1Input, filename1));
+        image2Input.addEventListener('change', () => updateFileDisplay(image2Input, filename2));
+        image3Input.addEventListener('change', () => updateFileDisplay(image3Input, filename3));
 
         function updateStatusUI(status, message, percent, finalUrl = null) {
             statusMessage.textContent = message;
