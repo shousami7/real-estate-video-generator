@@ -563,6 +563,91 @@ def apply_frame_edit():
         }), 500
 
 
+@web_ui_blueprint.route('/frames/generate-video', methods=['POST'])
+def generate_video_from_image():
+    """
+    Generate video from uploaded image (Demo: returns pre-saved video after 7s delay)
+    """
+    try:
+        # Check if image file is provided
+        if 'image' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No image file provided"
+            }), 400
+
+        image_file = request.files['image']
+        prompt = request.form.get('prompt', '')
+
+        if not image_file.filename:
+            return jsonify({
+                "status": "error",
+                "message": "No file selected"
+            }), 400
+
+        if not prompt:
+            return jsonify({
+                "status": "error",
+                "message": "Prompt is required"
+            }), 400
+
+        # Save uploaded image (for reference, not used in demo)
+        session_id = session.get('session_id', 'default')
+        upload_dir = os.path.join('uploads', session_id, 'editor', 'temp_images')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        filename = secure_filename(image_file.filename)
+        image_path = os.path.join(upload_dir, filename)
+        image_file.save(image_path)
+
+        logger.info(f"Image uploaded: {image_path}")
+        logger.info(f"Prompt: {prompt}")
+
+        # Generate video using Demo mode (7 second delay)
+        api_key = os.getenv("GOOGLE_API_KEY", "demo-key")
+
+        ai_editor = AIFrameEditor(api_key)
+
+        # This will wait 7 seconds and return pre-saved demo video
+        logger.info("[DEMO] Starting 7-second simulated generation...")
+        demo_video_path = ai_editor.generate_video_from_image(
+            image_path=image_path,
+            prompt=prompt,
+            output_path="",  # Not used in demo mode
+            duration=8
+        )
+
+        # Store in session
+        if 'generated_videos' not in session:
+            session['generated_videos'] = []
+        session['generated_videos'].append(demo_video_path)
+
+        logger.info(f"[DEMO] Video ready: {demo_video_path}")
+
+        # Return video URL (static file)
+        video_url = f"/{demo_video_path}"
+
+        return jsonify({
+            "status": "success",
+            "message": "Video generated successfully",
+            "video_url": video_url,
+            "video_path": demo_video_path
+        })
+
+    except FileNotFoundError as e:
+        logger.error(f"Demo video not found: {e}")
+        return jsonify({
+            "status": "error",
+            "message": "Demo video file is missing. Please add parking_lot_demo.mp4 to static/demo_videos/"
+        }), 500
+    except Exception as e:
+        logger.error(f"Error generating video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 @web_ui_blueprint.route('/video/editor')
 def video_editor():
     """

@@ -3,108 +3,232 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>AI Video Gen - Video Editor</title>
+    <title>AI Video Gen - Editor</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com" rel="preconnect"/>
     <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght @400;500;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#34D399",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#0a0a0a",
+                        "panel-dark": "#1a1a1a",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
     <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24
         }
+
         body {
             font-family: 'Space Grotesk', sans-serif;
         }
 
-        /* === demoai/editor.css から移植したスタイル === */
+        /* Frame card styles */
         .frame-card {
-          position: relative;
-          aspect-ratio: 16 / 9;
-          background-size: cover;
-          background-position: center;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          border: 3px solid transparent;
-          transition: all 0.3s ease;
-          overflow: hidden;
-        }
-
-        .frame-card:hover {
-          transform: scale(1.05);
-          box-shadow: 0 8px 16px rgba(52, 211, 153, 0.3);
-        }
-
-        .frame-card.selected {
-          border-color: #34D399;
-          box-shadow: 0 0 0 2px #34D399, 0 8px 20px rgba(52, 211, 153, 0.5);
-        }
-
-        .frame-card.edited::after {
-          content: '✓ Edited';
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: #34D399;
-          color: black;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 11px;
-          font-weight: bold;
-        }
-
-        .frame-number {
-          position: absolute;
-          bottom: 8px;
-          left: 8px;
-          background: rgba(0, 0, 0, 0.7);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-        /* === ここまでが移植したスタイル === */
-
-
-        .chat-message {
-            animation: slideIn 0.3s ease-out;
-        }
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .video-player {
-            aspect-ratio: 16/9;
-        }
-        .generated-image-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 0.75rem;
-        }
-        .generated-image {
-            aspect-ratio: 16/9;
+            position: relative;
+            aspect-ratio: 16 / 9;
             background-size: cover;
             background-position: center;
             border-radius: 0.5rem;
             cursor: pointer;
-            transition: all 0.2s ease;
-            border: 2px solid transparent;
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+            overflow: hidden;
         }
-        .generated-image:hover {
+
+        .frame-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 16px rgba(52, 211, 153, 0.3);
+        }
+
+        .frame-card.selected {
             border-color: #34D399;
-            transform: scale(1.02);
+            box-shadow: 0 0 0 2px #34D399, 0 8px 20px rgba(52, 211, 153, 0.5);
         }
-        .generated-image.selected {
-            border-color: #34D399;
-            box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2);
+
+        .frame-card.edited::after {
+            content: '✓ Edited';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #34D399;
+            color: black;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
         }
+
+        .frame-number {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Chat styles */
+        .chat-message {
+            animation: slideInChat 0.3s ease-out;
+            margin-bottom: 20px;
+        }
+
+        @keyframes slideInChat {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .user-message {
+            display: flex;
+            gap: 12px;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            flex-shrink: 0;
+        }
+
+        .user-message-content {
+            padding: 12px;
+            background: #374151;
+            border-radius: 8px;
+            border-top-left-radius: 0;
+            color: #D1D5DB;
+            font-size: 14px;
+            max-width: 80%;
+        }
+
+        .ai-message {
+            display: flex;
+            gap: 12px;
+        }
+
+        .ai-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #34D399;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ai-message-content {
+            padding: 12px;
+            background: #374151;
+            border-radius: 8px;
+            border-bottom-left-radius: 0;
+            color: #D1D5DB;
+            font-size: 14px;
+            flex: 1;
+        }
+
+        /* Apply button */
+        .apply-btn {
+            margin-top: 12px;
+            width: 100%;
+            padding: 8px 16px;
+            background: #34D399;
+            color: black;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .apply-btn:hover {
+            opacity: 0.9;
+        }
+
+        .apply-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Scrollbar */
+        #chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #chat-container::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        #chat-container::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+
+        #chat-container::-webkit-scrollbar-thumb:hover {
+            background: #4B5563;
+        }
+
+        /* Selected frame indicator */
+        .selected-frame-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #374151;
+            border-radius: 8px;
+        }
+
+        .selected-frame-thumbnail {
+            width: 96px;
+            height: 54px;
+            background-size: cover;
+            background-position: center;
+            border-radius: 6px;
+        }
+
+        .selected-frame-info {
+            flex: 1;
+        }
+
+        .selected-frame-title {
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .selected-frame-timestamp {
+            color: #9CA3AF;
+            font-size: 12px;
+        }
+
+        /* Upload zone */
         .upload-zone {
             border: 3px dashed #374151;
             border-radius: 0.5rem;
@@ -113,542 +237,551 @@
             cursor: pointer;
             transition: all 0.2s ease;
         }
+
         .upload-zone:hover {
             border-color: #34D399;
             background-color: rgba(52, 211, 153, 0.05);
         }
+
         .upload-zone.drag-over {
             border-color: #34D399;
             background-color: rgba(52, 211, 153, 0.1);
         }
     </style>
 </head>
-<body class="bg-background-dark text-white">
-<div class="relative flex h-screen min-h-screen w-full flex-col bg-[#0a0a0a]">
-    <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
-        <div class="flex items-center gap-4 text-white">
-            <div class="size-6 text-[#34D399]">
-                <svg fill="currentColor" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12.003 3.001a9 9 0 0 0-8.25 5.25H2v1.5h3.005a9 9 0 0 0-1.255 3.75H2v1.5h1.75a9 9 0 0 0 16.5 0H22v-1.5h-1.75a9 9 0 0 0-1.255-3.75H22v-1.5h-1.753A9 9 0 0 0 12.003 3.001Zm0 1.5a7.5 7.5 0 0 1 6.848 4.5H5.155a7.5 7.5 0 0 1 6.848-4.5ZM3.753 10.5a7.502 7.502 0 0 1 1.222-3.665l4.316 4.316-2.583.923a.75.75 0 0 0-.583 1.09l.001.002.75 2.1a7.5 7.5 0 0 1-3.123-4.766Zm15.272 3.664a7.502 7.502 0 0 1-1.222 3.666L13.5 13.513l2.583-.923a.75.75 0 0 0 .583-1.09l-.001-.002-.75-2.1a7.5 7.5 0 0 1 3.123 4.766Zm-5.34-1.127-3.75-1.34-1.34 3.75 3.75 1.34 1.34-3.75Z"></path>
-                </svg>
+<body class="bg-background-dark font-display">
+    <div class="relative flex h-screen min-h-screen w-full flex-col bg-background-dark overflow-hidden">
+        <!-- Header -->
+        <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
+            <div class="flex items-center gap-4 text-white">
+                <div class="size-6 text-primary">
+                    <svg fill="currentColor" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12.003 3.001a9 9 0 0 0-8.25 5.25H2v1.5h3.005a9 9 0 0 0-1.255 3.75H2v1.5h1.75a9 9 0 0 0 16.5 0H22v-1.5h-1.75a9 9 0 0 0-1.255-3.75H22v-1.5h-1.753A9 9 0 0 0 12.003 3.001Zm0 1.5a7.5 7.5 0 0 1 6.848 4.5H5.155a7.5 7.5 0 0 1 6.848-4.5ZM3.753 10.5a7.502 7.502 0 0 1 1.222-3.665l4.316 4.316-2.583.923a.75.75 0 0 0-.583 1.09l.001.002.75 2.1a7.5 7.5 0 0 1-3.123-4.766Zm15.272 3.664a7.502 7.502 0 0 1-1.222 3.666L13.5 13.513l2.583-.923a.75.75 0 0 0 .583-1.09l-.001-.002-.75-2.1a7.5 7.5 0 0 1 3.123 4.766Zm-5.34-1.127-3.75-1.34-1.34 3.75 3.75 1.34 1.34-3.75Z"></path>
+                    </svg>
+                </div>
+                <h2 class="text-white text-lg font-bold leading-tight tracking-[-0.015em]">AI Video Gen - Editor</h2>
             </div>
-            <h2 class="text-white text-lg font-bold">AI Video Gen - Editor</h2>
-        </div>
-        <div class="flex flex-1 justify-center gap-8">
-            <a class="text-gray-300 text-sm font-medium" href="#">Video Frame Editor</a>
-        </div>
-        <div class="flex items-center gap-2">
-            <button id="export-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#34D399] text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
-                Export
-            </button>
-            <button id="back-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4b5563] transition-colors">
-                <span class="material-symbols-outlined mr-2 !text-base">arrow_back</span>
-                Back
-            </button>
-        </div>
-    </header>
+            <div class="flex flex-1 justify-center gap-8">
+                <div class="flex items-center gap-9">
+                    <a class="text-gray-300 text-sm font-medium leading-normal" href="#">Video Frame Editor</a>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="export-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
+                    <span class="truncate">Export</span>
+                </button>
+                <button id="back-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors">
+                    <span class="truncate">Back</span>
+                </button>
+            </div>
+        </header>
 
-    <main class="flex flex-1 overflow-hidden">
-        <div class="flex-1 flex flex-col p-6 items-center justify-center">
-            <div class="w-full max-w-5xl">
-                <div id="upload-section" class="block">
-                    <div class="upload-zone" id="upload-zone">
-                        <span class="material-symbols-outlined block text-6xl text-[#34D399] mb-4">movie</span>
-                        <h3 class="text-xl font-bold text-white mb-2">Upload Your Video</h3>
-                        <p class="text-gray-400 mb-4">Drag and drop your video here or click to select</p>
-                        <p class="text-sm text-gray-500">Supported: MP4, MOV, AVI (Max 500MB)</p>
-                        <input type="file" id="video-input" accept="video/*" class="hidden" />
+        <!-- Main Content -->
+        <main class="flex flex-1 overflow-hidden">
+            <!-- Left Section: Video Player and Frames -->
+            <div class="flex-1 flex flex-col p-6 overflow-y-auto">
+                <!-- Video Upload Area (shown when no video) -->
+                <div class="w-full max-w-5xl mx-auto mb-8" id="upload-area">
+                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark border-2 border-dashed border-[#374151] flex items-center justify-center relative upload-zone" id="upload-zone">
+                        <div class="text-center p-8">
+                            <span class="material-symbols-outlined text-6xl text-gray-500 mb-4 block">upload_file</span>
+                            <h3 class="text-white text-xl font-bold mb-2">Upload Your Video</h3>
+                            <p class="text-gray-400 mb-6">Select a video file to start video editing with AI</p>
+                            <input type="file" id="video-input" accept="video/*" class="hidden">
+                            <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
+                                <span class="material-symbols-outlined">video_file</span>
+                                <span class="truncate">Select Video File</span>
+                            </button>
+                        </div>
                     </div>
                     <div id="upload-progress" class="mt-6 hidden">
                         <div class="flex justify-between items-center mb-2">
-                            <p class="text-sm font-medium text-gray-300">Uploading...</p>
+                            <p class="text-sm font-medium text-gray-300">Upload Progress</p>
                             <p id="upload-percent" class="text-sm font-medium text-gray-300">0%</p>
                         </div>
                         <div class="w-full bg-gray-700 rounded-full h-2.5">
-                            <div id="upload-progress-bar" class="bg-[#34D399] h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            <div id="upload-progress-bar" class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
 
-                <div id="player-section" class="hidden">
-                    <div class="rounded-xl overflow-hidden bg-black mb-6 relative video-player flex items-center justify-center">
+                <!-- Video Player (shown when video is loaded) -->
+                <div class="w-full max-w-5xl mx-auto mb-8 hidden" id="video-player-area">
+                    <div class="aspect-video rounded-xl overflow-hidden bg-black flex items-center justify-center relative" id="video-container">
                         <video id="video-player" class="w-full h-full" controls>
                             <source id="video-source" type="video/mp4">
                         </video>
                     </div>
-
-                    <div>
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-white text-lg font-bold">Video Frames</h3>
-                        </div>
-                        <div id="frames-container" class="grid grid-cols-6 gap-4">
-                            </div>
-                    </div>
-                    </div>
-            </div>
-        </div>
-
-        <aside id="edit-panel" class="w-[420px] flex-shrink-0 bg-[#1a1a1a] border-l border-[#374151] flex flex-col hidden">
-            <div class="p-4 border-b border-[#374151]">
-                <button class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-[#34D399] text-black gap-2 text-base font-bold leading-normal tracking-[0.015em]">
-                    <span class="material-symbols-outlined !text-2xl">add_photo_alternate</span>
-                    <span class="truncate">Edit Frame</span>
-                </button>
-            </div>
-
-            <div class="flex-1 flex flex-col p-4 overflow-y-auto">
-                <div id="selected-frame-info" class="flex items-center gap-3 mb-4 pb-4 border-b border-[#374151]">
-                    <div id="selected-frame-thumb" class="w-24 h-14 bg-cover bg-center rounded-md bg-gray-700"></div>
-                    <div class="flex-1">
-                        <h4 class="text-white text-sm font-bold">Current Frame</h4>
-                        <p id="frame-timestamp" class="text-gray-400 text-xs">Timestamp: 0:00</p>
-                    </div>
                 </div>
 
-                <div id="chat-container" class="space-y-4 flex-1 overflow-y-auto">
+                <!-- Frames Grid -->
+                <div class="w-full max-w-5xl mx-auto">
+                    <h3 class="text-white text-lg font-bold mb-4">Video Frames</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="frames-container">
+                        <!-- Frames will be inserted here by JS -->
                     </div>
+                </div>
             </div>
 
-            <div class="p-4 border-t border-[#374151]">
-                <div class="relative">
-                    <input id="chat-input" class="w-full h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-[#34D399] focus:ring-0 transition-colors" placeholder="Describe the edit you want..."/>
-                    <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1.2 flex items-center justify-center size-8 bg-[#34D399] rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
-                        <span class="material-symbols-outlined !text-xl">arrow_upward</span>
+            <!-- Right Section: AI Chat Panel (420px fixed width) -->
+            <aside id="edit-panel" class="w-[420px] flex-shrink-0 bg-panel-dark border-l border-[#374151] flex flex-col hidden">
+                <!-- Edit Frame Button -->
+                <div class="p-4 border-b border-[#374151]">
+                    <button id="pick-frame-btn" class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-primary text-black gap-2 text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <span class="material-symbols-outlined !text-2xl">add_photo_alternate</span>
+                        <span class="truncate">Edit Frame</span>
                     </button>
                 </div>
-            </div>
-        </aside>
-    </main>
-</div>
 
-<script>
-    // ==================== グローバル変数 ====================
-    const state = {
-        videoPath: null,
-        frames: [],
-        selectedFrame: null,
-        selectedGeneratedImage: null,
-        editedFrames: {},
-        isProcessing: false
-    };
+                <!-- Chat Messages Area -->
+                <div class="flex-1 flex flex-col p-4 overflow-y-auto" id="chat-container">
+                    <div class="text-center text-gray-500 py-8">
+                        <span class="material-symbols-outlined text-6xl mb-2">photo_library</span>
+                        <p class="text-sm">Select a frame to start editing with AI</p>
+                    </div>
+                </div>
 
-    // ==================== DOM要素 ====================
-    const uploadZone = document.getElementById('upload-zone');
-    const videoInput = document.getElementById('video-input');
-    const uploadSection = document.getElementById('upload-section');
-    const playerSection = document.getElementById('player-section');
-    const editPanel = document.getElementById('edit-panel');
-    const framesContainer = document.getElementById('frames-container');
-    const chatContainer = document.getElementById('chat-container');
-    const chatInput = document.getElementById('chat-input');
-    const sendBtn = document.getElementById('send-btn');
-    const exportBtn = document.getElementById('export-btn');
-    const backBtn = document.getElementById('back-btn');
-    const videoPlayer = document.getElementById('video-player');
-    const videoSource = document.getElementById('video-source');
-    const selectedFrameThumb = document.getElementById('selected-frame-thumb');
-    const frameTimestamp = document.getElementById('frame-timestamp');
-    const uploadProgress = document.getElementById('upload-progress');
-    const uploadProgressBar = document.getElementById('upload-progress-bar');
-    const uploadPercent = document.getElementById('upload-percent');
+                <!-- Input Area -->
+                <div class="p-4 border-t border-[#374151]">
+                    <!-- Attached Image Preview -->
+                    <div id="attached-image-preview" class="mb-3 hidden">
+                        <div class="relative inline-block">
+                            <img id="preview-img" class="rounded-lg" style="max-height: 80px; max-width: 120px; object-fit: cover;">
+                            <button id="remove-image-btn" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600">
+                                <span class="material-symbols-outlined !text-sm">close</span>
+                            </button>
+                        </div>
+                    </div>
 
-    // ==================== ビデオアップロード処理 ====================
-    uploadZone.addEventListener('click', () => videoInput.click());
+                    <div class="relative flex gap-2">
+                        <input type="file" id="attach-image-input" accept="image/*" class="hidden">
+                        <button id="attach-image-btn" class="flex items-center justify-center size-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
+                            <span class="material-symbols-outlined !text-xl">attach_file</span>
+                        </button>
+                        <input id="chat-input" class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors" placeholder="Describe the edit you want..." type="text" disabled/>
+                        <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <span class="material-symbols-outlined !text-xl">arrow_upward</span>
+                        </button>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
 
-    uploadZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadZone.classList.add('drag-over');
-    });
+    <script>
+        // ==================== グローバル変数 ====================
+        const state = {
+            videoPath: null,
+            frames: [],
+            selectedFrame: null,
+            editedFrames: {},
+            isProcessing: false,
+            uploadedImage: null,
+            generatedVideo: null
+        };
 
-    uploadZone.addEventListener('dragleave', () => {
-        uploadZone.classList.remove('drag-over');
-    });
+        // ==================== DOM要素 ====================
+        const uploadZone = document.getElementById('upload-zone');
+        const videoInput = document.getElementById('video-input');
+        const uploadSection = document.getElementById('upload-area');
+        const playerSection = document.getElementById('video-player-area');
+        const editPanel = document.getElementById('edit-panel');
+        const framesContainer = document.getElementById('frames-container');
+        const chatContainer = document.getElementById('chat-container');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const exportBtn = document.getElementById('export-btn');
+        const backBtn = document.getElementById('back-btn');
+        const videoPlayer = document.getElementById('video-player');
+        const videoSource = document.getElementById('video-source');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadProgressBar = document.getElementById('upload-progress-bar');
+        const uploadPercent = document.getElementById('upload-percent');
+        const uploadBtn = document.getElementById('upload-btn');
+        const attachImageBtn = document.getElementById('attach-image-btn');
+        const attachImageInput = document.getElementById('attach-image-input');
+        const attachedImagePreview = document.getElementById('attached-image-preview');
+        const previewImg = document.getElementById('preview-img');
+        const removeImageBtn = document.getElementById('remove-image-btn');
 
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove('drag-over');
+        // ==================== ビデオアップロード処理 ====================
+        uploadZone.addEventListener('click', () => videoInput.click());
+        uploadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            videoInput.click();
+        });
 
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleVideoUpload(files[0]);
-        }
-    });
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('drag-over');
+        });
 
-    videoInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handleVideoUpload(e.target.files[0]);
-        }
-    });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('drag-over');
+        });
 
-    function handleVideoUpload(file) {
-        if (!file.type.startsWith('video/')) {
-            alert('Please select a valid video file');
-            return;
-        }
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
 
-        const formData = new FormData();
-        formData.append('video', file);
-
-        state.isProcessing = true;
-        uploadZone.style.opacity = '0.5';
-        uploadProgress.classList.remove('hidden');
-
-        // Simulate progress for better UX
-        let progress = 0;
-        const progressInterval = setInterval(() => {
-            progress += 10;
-            if (progress <= 90) {
-                uploadProgressBar.style.width = progress + '%';
-                uploadPercent.textContent = progress + '%';
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleVideoUpload(files[0]);
             }
-        }, 200);
+        });
 
-        fetch('/video/upload', {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(data => {
-            clearInterval(progressInterval);
-            uploadProgressBar.style.width = '100%';
-            uploadPercent.textContent = '100%';
+        videoInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleVideoUpload(e.target.files[0]);
+            }
+        });
 
-            if (data.status === 'success') {
-                // 先頭に '/' を付けて保存（一貫性のため）
-                state.videoPath = '/' + data.video_path;
+        // ==================== 画像添付処理 ====================
+        attachImageBtn.addEventListener('click', () => {
+            attachImageInput.click();
+        });
 
-                // Load video in player
+        attachImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                state.uploadedImage = file;
+
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImg.src = e.target.result;
+                    attachedImagePreview.classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        removeImageBtn.addEventListener('click', () => {
+            state.uploadedImage = null;
+            attachedImagePreview.classList.add('hidden');
+            attachImageInput.value = '';
+        });
+
+        function handleVideoUpload(file) {
+            if (!file.type.startsWith('video/')) {
+                alert('Please select a valid video file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('video', file);
+
+            state.isProcessing = true;
+            uploadZone.style.opacity = '0.5';
+            uploadProgress.classList.remove('hidden');
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += 10;
+                if (progress <= 90) {
+                    uploadProgressBar.style.width = progress + '%';
+                    uploadPercent.textContent = progress + '%';
+                }
+            }, 200);
+
+            fetch('/video/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                clearInterval(progressInterval);
+                uploadProgressBar.style.width = '100%';
+                uploadPercent.textContent = '100%';
+
+                if (data.status === 'success') {
+                    state.videoPath = '/' + data.video_path;
+
+                    videoSource.src = state.videoPath;
+                    videoPlayer.load();
+
+                    setTimeout(() => {
+                        showPlayerSection();
+                        extractFrames();
+                    }, 500);
+                } else {
+                    alert('Upload failed: ' + data.message);
+                }
+            })
+            .catch(err => {
+                clearInterval(progressInterval);
+                alert('Error: ' + err.message);
+            })
+            .finally(() => {
+                state.isProcessing = false;
+                uploadZone.style.opacity = '1';
+                setTimeout(() => {
+                    uploadProgress.classList.add('hidden');
+                    uploadProgressBar.style.width = '0%';
+                    uploadPercent.textContent = '0%';
+                }, 1000);
+            });
+        }
+
+        // ==================== フレーム抽出 ====================
+        function extractFrames() {
+            const videoPathForBackend = state.videoPath.startsWith('/')
+                ? state.videoPath.substring(1)
+                : state.videoPath;
+
+            fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: videoPathForBackend })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    state.frames = data.frames;
+                    renderFrames();
+                    if (state.frames.length > 0) {
+                        selectFrame(0);
+                    }
+                } else {
+                    alert('Frame extraction failed: ' + data.message);
+                }
+            })
+            .catch(err => alert('Error: ' + err.message));
+        }
+
+        // ==================== フレームレンダリング ====================
+        function renderFrames() {
+            framesContainer.innerHTML = '';
+            state.frames.forEach((frame, index) => {
+                const frameCard = document.createElement('div');
+                frameCard.className = 'frame-card' + (state.selectedFrame === index ? ' selected' : '') + (state.editedFrames[index] ? ' edited' : '');
+                frameCard.dataset.frameId = index;
+
+                const editedImageUrl = state.editedFrames[index];
+                if (editedImageUrl) {
+                    frameCard.style.backgroundImage = `url('${editedImageUrl}')`;
+                } else {
+                    frameCard.style.backgroundImage = `url('${frame.base64}')`;
+                }
+
+                frameCard.addEventListener('click', () => selectFrame(index));
+
+                const frameNumber = document.createElement('div');
+                frameNumber.className = 'frame-number';
+                frameNumber.textContent = frame.timestamp;
+                frameCard.appendChild(frameNumber);
+
+                framesContainer.appendChild(frameCard);
+            });
+        }
+
+        // ==================== フレーム選択 ====================
+        function selectFrame(frameId) {
+            document.querySelectorAll('.frame-card.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+
+            const newSelected = document.querySelector(`[data-frame-id="${frameId}"]`);
+            if (newSelected) {
+                newSelected.classList.add('selected');
+            }
+
+            state.selectedFrame = frameId;
+            const frame = state.frames[frameId];
+
+            const imageUrl = state.editedFrames[frameId] || frame.base64;
+
+            chatContainer.innerHTML = '';
+
+            // Chat入力を有効化
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+        }
+
+        // ==================== チャット機能 ====================
+        sendBtn.addEventListener('click', () => sendMessage());
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const text = chatInput.value.trim();
+            if (!text || state.isProcessing || state.selectedFrame === null) return;
+
+            // Check if user uploaded an image for video generation
+            if (!state.uploadedImage) {
+                alert('Please attach an image first');
+                return;
+            }
+
+            addChatMessage('user', text);
+            chatInput.value = '';
+            state.isProcessing = true;
+            sendBtn.disabled = true;
+
+            // Add loading message with progress dots
+            const loadingId = addChatMessage('ai', 'Got it, generating video<span id="loading-dots"></span>');
+
+            // Animate dots during 7 second wait
+            let dotCount = 0;
+            const dotInterval = setInterval(() => {
+                const dotsEl = document.getElementById('loading-dots');
+                if (dotsEl) {
+                    dotCount = (dotCount + 1) % 4;
+                    dotsEl.textContent = '.'.repeat(dotCount);
+                }
+            }, 500);
+
+            // Generate video from image
+            const formData = new FormData();
+            formData.append('image', state.uploadedImage);
+            formData.append('prompt', text);
+
+            fetch('/frames/generate-video', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Stop dot animation
+                clearInterval(dotInterval);
+
+                // Remove loading message
+                const loadingMsg = document.getElementById(loadingId);
+                if (loadingMsg) loadingMsg.remove();
+
+                if (data.status === 'success') {
+                    state.generatedVideo = data.video_path;
+
+                    // Show generated video with video player
+                    addChatMessage('ai', 'Video generated successfully! Please review the preview.', true, data.video_url);
+                } else {
+                    addChatMessage('ai', 'Error: ' + data.message);
+                }
+            })
+            .catch(err => {
+                clearInterval(dotInterval);
+                const loadingMsg = document.getElementById(loadingId);
+                if (loadingMsg) loadingMsg.remove();
+                addChatMessage('ai', 'Error: ' + err.message);
+            })
+            .finally(() => {
+                state.isProcessing = false;
+                sendBtn.disabled = false;
+                state.uploadedImage = null; // Reset
+                attachedImagePreview.classList.add('hidden');
+            });
+        }
+
+        function addChatMessage(role, content, isResponse = false, videoUrl = null) {
+            const messageId = 'msg-' + Date.now();
+            const messageDiv = document.createElement('div');
+            messageDiv.id = messageId;
+            messageDiv.className = 'flex gap-3 chat-message';
+
+            if (role === 'user') {
+                messageDiv.innerHTML = `
+                    <div class="user-avatar"></div>
+                    <div class="user-message-content">${content}</div>
+                `;
+            } else {
+                let html = `
+                    <div class="ai-avatar">
+                        <span class="material-symbols-outlined !text-xl text-black">auto_awesome</span>
+                    </div>
+                    <div class="ai-message-content">
+                        <p style="margin-bottom: 12px;">${content}</p>
+                `;
+
+                // Video preview
+                if (videoUrl) {
+                    html += `
+                        <video controls style="width: 100%; border-radius: 8px; margin-top: 12px;">
+                            <source src="${videoUrl}" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                        <button class="apply-btn" id="apply-video-btn" style="margin-top: 12px;">Apply to Frame</button>
+                    `;
+                }
+
+                html += '</div>';
+                messageDiv.innerHTML = html;
+
+                // Video apply button handler
+                if (videoUrl) {
+                    setTimeout(() => {
+                        const applyVideoBtn = messageDiv.querySelector('#apply-video-btn');
+                        if (applyVideoBtn) {
+                            applyVideoBtn.addEventListener('click', () => {
+                                addChatMessage('ai', '✓ Video will be applied to frame on export!');
+                                // Store video path for export
+                                if (!state.editedFrames[state.selectedFrame]) {
+                                    state.editedFrames[state.selectedFrame] = state.generatedVideo;
+                                }
+                            });
+                        }
+                    }, 100);
+                }
+            }
+
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return messageId;
+        }
+
+        // ==================== UI表示切り替え ====================
+        function showPlayerSection() {
+            uploadSection.classList.add('hidden');
+            playerSection.classList.remove('hidden');
+            editPanel.classList.remove('hidden');
+
+            if (state.videoPath) {
                 videoSource.src = state.videoPath;
                 videoPlayer.load();
-
-                setTimeout(() => {
-                    showPlayerSection();
-                    extractFrames();
-                }, 500);
-            } else {
-                alert('Upload failed: ' + data.message);
             }
-        })
-        .catch(err => {
-            clearInterval(progressInterval);
-            alert('Error: ' + err.message);
-        })
-        .finally(() => {
-            state.isProcessing = false;
-            uploadZone.style.opacity = '1';
-            setTimeout(() => {
-                uploadProgress.classList.add('hidden');
-                uploadProgressBar.style.width = '0%';
-                uploadPercent.textContent = '0%';
-            }, 1000);
-        });
-    }
-
-    // ==================== フレーム抽出 ====================
-    function extractFrames() {
-        // バックエンドには先頭の'/'を除いたパスを送信
-        const videoPathForBackend = state.videoPath.startsWith('/')
-            ? state.videoPath.substring(1)
-            : state.videoPath;
-
-        fetch('/frames/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_path: videoPathForBackend })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === 'success') {
-                state.frames = data.frames;
-                renderFrames();
-                if (state.frames.length > 0) {
-                    selectFrame(0);
-                }
-
-                // 動画ソースを設定
-                setVideoSource();
-            } else {
-                alert('Frame extraction failed: ' + data.message);
-            }
-        })
-        .catch(err => alert('Error: ' + err.message));
-    }
-
-    // ==================== 動画ソース設定 ====================
-    function setVideoSource() {
-        if (!state.videoPath) {
-            console.error('No video path set');
-            return;
         }
 
-        // 動画ソースを設定
-        videoSource.src = state.videoPath;
-        videoPlayer.load();
-
-        console.log('Video source set to:', state.videoPath);
-    }
-
-    // === JavaScript: renderFrames を demoai スタイルに修正 ===
-    function renderFrames() {
-        framesContainer.innerHTML = '';
-        state.frames.forEach((frame, index) => {
-            const frameCard = document.createElement('div');
-            // demoai のクラス名を使用
-            frameCard.className = 'frame-card';
-            frameCard.dataset.frameId = index;
-
-            // 編集済みか確認
-            const editedImageUrl = state.editedFrames[index];
-            if (editedImageUrl) {
-                frameCard.classList.add('edited');
-                frameCard.style.backgroundImage = `url('${editedImageUrl}')`;
-            } else {
-                frameCard.style.backgroundImage = `url('${frame.base64}')`;
+        // ==================== エクスポート ====================
+        exportBtn.addEventListener('click', () => {
+            if (state.frames.length === 0) {
+                alert('Please upload a video first');
+                return;
             }
 
-            frameCard.addEventListener('click', () => selectFrame(index));
-            
-            // demoai スタイルのタイムスタンプを追加
-            const frameNumber = document.createElement('div');
-            frameNumber.className = 'frame-number';
-            frameNumber.textContent = frame.timestamp;
-            frameCard.appendChild(frameNumber);
+            if (Object.keys(state.editedFrames).length === 0) {
+                alert('No frames have been edited yet');
+                return;
+            }
 
-            framesContainer.appendChild(frameCard);
-        });
-        
-        // 選択状態を復元
-        if (state.selectedFrame !== null) {
-             document.querySelector(`[data-frame-id="${state.selectedFrame}"]`)?.classList.add('selected');
-        }
-    }
+            exportBtn.disabled = true;
+            exportBtn.innerHTML = '<span class="material-symbols-outlined mr-2 !text-base">hourglass_empty</span>Exporting...';
 
-    // === JavaScript: selectFrame を demoai スタイルに修正 ===
-    function selectFrame(frameId) {
-        // demoai のクラス名を使用
-        document.querySelectorAll('.frame-card.selected').forEach(el => {
-            el.classList.remove('selected');
-        });
-
-        const newSelected = document.querySelector(`[data-frame-id="${frameId}"]`);
-        if (newSelected) {
-            newSelected.classList.add('selected');
-        }
-
-        state.selectedFrame = frameId;
-        const frame = state.frames[frameId];
-        
-        // プレビューにも編集済み画像（あれば）を表示
-        const imageUrl = state.editedFrames[frameId] || frame.base64;
-        selectedFrameThumb.style.backgroundImage = `url('${imageUrl}')`;
-        frameTimestamp.textContent = `Timestamp: ${frame.timestamp}`;
-
-        // チャットをクリア
-        chatContainer.innerHTML = '';
-        state.selectedGeneratedImage = null;
-    }
-
-    // ==================== チャット機能 ====================
-    sendBtn.addEventListener('click', () => sendMessage());
-    chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-
-    function sendMessage() {
-        const text = chatInput.value.trim();
-        if (!text || state.isProcessing || state.selectedFrame === null) return;
-
-        addChatMessage('user', text);
-        chatInput.value = '';
-        state.isProcessing = true;
-        sendBtn.disabled = true;
-
-        // Add loading message
-        const loadingId = addChatMessage('ai', 'Generating variations... Please wait.');
-
-        fetch('/frames/edit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                frame_id: state.selectedFrame,
-                prompt: text
+            fetch('/video/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
             })
-        })
-        .then(res => res.json())
-        .then(data => {
-            // Remove loading message
-            const loadingMsg = document.getElementById(loadingId);
-            if (loadingMsg) loadingMsg.remove();
-
-            if (data.status === 'success') {
-                addChatMessage('ai', 'Here are a few options based on your request:', true, data.variations || []);
-            } else {
-                addChatMessage('ai', 'Error: ' + data.message);
-            }
-        })
-        .catch(err => {
-            const loadingMsg = document.getElementById(loadingId);
-            if (loadingMsg) loadingMsg.remove();
-            addChatMessage('ai', 'Error: ' + err.message);
-        })
-        .finally(() => {
-            state.isProcessing = false;
-            sendBtn.disabled = false;
-        });
-    }
-
-    function addChatMessage(role, content, isResponse = false, variations = []) {
-        const messageId = 'msg-' + Date.now();
-        const messageDiv = document.createElement('div');
-        messageDiv.id = messageId;
-        messageDiv.className = 'flex gap-3 chat-message';
-
-        if (role === 'user') {
-            messageDiv.innerHTML = `
-                <div class="size-8 rounded-full bg-[#667eea] flex-shrink-0 flex items-center justify-center text-white font-bold">U</div>
-                <div class="p-3 rounded-lg bg-[#374151] rounded-tl-none">
-                    <p class="text-gray-300 text-sm">"${content}"</p>
-                </div>
-            `;
-        } else {
-            let html = `
-                <div class="size-8 rounded-full bg-[#34D399] flex-shrink-0 flex items-center justify-center">
-                    <span class="material-symbols-outlined !text-xl text-black">auto_awesome</span>
-                </div>
-                <div class="p-3 rounded-lg bg-[#374151] rounded-bl-none flex-1">
-                    <p class="text-gray-300 text-sm mb-3">${content}</p>
-            `;
-
-            if (isResponse && variations.length > 0) {
-                html += '<div class="generated-image-grid">';
-                variations.forEach((imgUrl, idx) => {
-                    html += `
-                        <div class="generated-image" data-image-id="${idx}" data-image-url="${imgUrl}" style="background-image: url('${imgUrl}');" title="Click to select"></div>
-                    `;
-                });
-                html += '</div>';
-            }
-
-            html += '</div>';
-            messageDiv.innerHTML = html;
-
-            // 生成画像にクリックイベントを追加
-            if (isResponse && variations.length > 0) {
-                setTimeout(() => {
-                    messageDiv.querySelectorAll('.generated-image').forEach(img => {
-                        img.addEventListener('click', (e) => {
-                            messageDiv.querySelectorAll('.generated-image').forEach(i => i.classList.remove('selected'));
-                            e.target.classList.add('selected');
-                            state.selectedGeneratedImage = e.target.dataset.imageUrl;
-
-                            // Apply ボタンを表示
-                            let applyBtn = messageDiv.querySelector('#apply-btn');
-                            if (!applyBtn) {
-                                applyBtn = document.createElement('button');
-                                applyBtn.id = 'apply-btn';
-                                applyBtn.className = 'w-full mt-2 py-2 px-4 bg-[#34D399] text-black text-sm font-bold rounded-lg hover:opacity-90 transition-opacity';
-                                applyBtn.textContent = 'Apply to Frame';
-                                applyBtn.addEventListener('click', applyFrameEdit);
-                                messageDiv.querySelector('.flex-1').appendChild(applyBtn);
-                            }
-                        });
-                    });
-                }, 100);
-            }
-        }
-
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-        return messageId;
-    }
-
-    // === JavaScript: applyFrameEdit を demoai スタイルに修正 ===
-    function applyFrameEdit() {
-        if (!state.selectedGeneratedImage) return;
-
-        fetch('/frames/apply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                frame_id: state.selectedFrame,
-                edited_image_url: state.selectedGeneratedImage
-            })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === 'success') {
-                addChatMessage('ai', '✓ Frame updated successfully!');
-                
-                // Mark as edited in state
-                state.editedFrames[state.selectedFrame] = state.selectedGeneratedImage;
-                
-                // フレームサムネイルを更新 (demoai スタイル)
-                const frameThumb = document.querySelector(`[data-frame-id="${state.selectedFrame}"]`);
-                if (frameThumb) {
-                    frameThumb.style.backgroundImage = `url('${state.selectedGeneratedImage}')`;
-                    frameThumb.classList.add('edited'); // 'edited' クラスを追加
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    window.location.href = data.download_url;
+                } else {
+                    alert('Export failed: ' + data.message);
                 }
-                // プレビューを更新
-                selectedFrameThumb.style.backgroundImage = `url('${state.selectedGeneratedImage}')`;
-            }
-        })
-        .catch(err => alert('Error: ' + err.message));
-    }
-
-    // ==================== UI表示切り替え ====================
-    function showPlayerSection() {
-        uploadSection.classList.add('hidden');
-        playerSection.classList.remove('hidden');
-        editPanel.classList.remove('hidden');
-
-        // 念のため、ここでも動画ソースを設定
-        if (state.videoPath) {
-            videoSource.src = state.videoPath;
-            videoPlayer.load();
-        }
-    }
-
-    // ==================== エクスポート ====================
-    exportBtn.addEventListener('click', () => {
-        if (state.frames.length === 0) {
-            alert('Please upload a video first');
-            return;
-        }
-
-        if (Object.keys(state.editedFrames).length === 0) {
-            alert('No frames have been edited yet');
-            return;
-        }
-
-        exportBtn.disabled = true;
-        exportBtn.innerHTML = '<span class="material-symbols-outlined mr-2 !text-base">hourglass_empty</span>Exporting...';
-
-        fetch('/video/export', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === 'success') {
-                window.location.href = data.download_url;
-            } else {
-                alert('Export failed: ' + data.message);
-            }
-        })
-        .catch(err => alert('Error: ' + err.message))
-        .finally(() => {
-            exportBtn.disabled = false;
-            exportBtn.innerHTML = 'Export';
+            })
+            .catch(err => alert('Error: ' + err.message))
+            .finally(() => {
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = '<span class="truncate">Export</span>';
+            });
         });
-    });
 
-    // ==================== Back ボタン ====================
-    backBtn.addEventListener('click', () => {
-        window.location.href = '/';
-    });
-</script>
+        // ==================== バックボタン ====================
+        backBtn.addEventListener('click', () => {
+            window.location.href = '/';
+        });
+    </script>
 </body>
 </html>

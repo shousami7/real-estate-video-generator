@@ -8,6 +8,7 @@ import json
 import base64
 import subprocess
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import timedelta
@@ -195,7 +196,7 @@ class AIFrameEditor:
             api_key: Google AI API key
         """
         self.api_key = api_key
-        logger.info("Initialized AI Frame Editor")
+        logger.info("Initialized AI Frame Editor (Demo Mode)")
 
     def generate_frame_variations(
         self,
@@ -234,3 +235,42 @@ class AIFrameEditor:
             # フォールバック: 小さなダミー画像
             dummy_img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
             return [dummy_img] * variation_count
+
+    def generate_video_from_image(
+        self,
+        image_path: str,
+        prompt: str,
+        output_path: str,
+        duration: int = 8
+    ) -> str:
+        """
+        Generate video from uploaded image (Demo: returns pre-saved video)
+
+        Args:
+            image_path: Path to uploaded image (not used in demo)
+            prompt: User's text prompt (not used in demo)
+            output_path: Path to save generated video (not used in demo)
+            duration: Video duration in seconds (default: 8)
+
+        Returns:
+            Path to pre-saved demo video
+        """
+        logger.info(f"[DEMO MODE] Simulating video generation...")
+        logger.info(f"Prompt: {prompt}")
+
+        # リアル感のために7秒待機
+        logger.info("Waiting 7 seconds to simulate AI generation...")
+        time.sleep(7)
+
+        # 事前保存した動画のパスを返す
+        demo_video_path = "static/demo_videos/parking_lot_demo.mp4"
+
+        if not os.path.exists(demo_video_path):
+            logger.error(f"Demo video not found: {demo_video_path}")
+            raise FileNotFoundError(
+                f"Demo video not found at: {demo_video_path}\n"
+                f"Please place your demo video at this location."
+            )
+
+        logger.info(f"[DEMO MODE] Returning pre-saved video: {demo_video_path}")
+        return demo_video_path
