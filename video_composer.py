@@ -113,12 +113,22 @@ class VideoComposer:
 
         logger.info(f"Composing {len(video_paths)} videos with {transition_type} transitions")
 
+        # Get actual duration of each video
+        video_durations = []
+        for video_path in video_paths:
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            duration = self.get_video_duration(video_path)
+            video_durations.append(duration)
+            logger.info(f"Video {os.path.basename(video_path)} duration: {duration}s")
+
         # Create output directory if needed
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
 
-        # Build FFmpeg filter graph
+        # Build FFmpeg filter graph with actual durations
         filter_complex = self._build_filter_graph(
             video_count=len(video_paths),
+            video_durations=video_durations,
             transition_type=transition_type,
             transition_duration=transition_duration,
             resolution=resolution
@@ -165,6 +175,9 @@ class VideoComposer:
             if file_size == 0:
                 raise RuntimeError(f"FFmpeg created empty output file: {output_path}")
 
+            # Check final video duration
+            final_duration = self.get_video_duration(output_path)
+            logger.info(f"Final video duration: {final_duration}s")
             logger.info(f"Output file size: {file_size} bytes")
             return output_path
 
@@ -181,15 +194,17 @@ class VideoComposer:
     def _build_filter_graph(
         self,
         video_count: int,
+        video_durations: List[float],
         transition_type: str,
         transition_duration: float,
         resolution: str
     ) -> str:
         """
-        Build FFmpeg filter graph for video transitions
+        Build FFmpeg filter graph for video transitions with proper timing
 
         Args:
             video_count: Number of input videos
+            video_durations: List of actual video durations in seconds
             transition_type: Type of transition effect
             transition_duration: Duration of transition in seconds
             resolution: Output resolution
@@ -199,26 +214,42 @@ class VideoComposer:
         """
         width, height = resolution.split('x')
 
-        # Scale all inputs to the same resolution
+        # Scale all inputs to the same resolution and trim to ensure exact duration
         scale_filters = []
         for i in range(video_count):
-            scale_filters.append(f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v{i}]")
+            # Trim each video to its exact duration to prevent timing issues
+            scale_filters.append(
+                f"[{i}:v]trim=duration={video_durations[i]},scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v{i}]"
+            )
 
-        # Build transition chain
+        # Build transition chain with proper offset calculation
         transition_filters = []
         current_input = "v0"
+        accumulated_offset = 0.0  # Track when each transition should start
 
         for i in range(1, video_count):
             output_label = f"v{i}out" if i < video_count - 1 else "outv"
 
-            # Calculate transition offset
-            # For xfade, offset = duration of previous clip - transition_duration
-            offset = 8.0 - transition_duration  # Assuming 8 second clips
+            # The offset for xfade is when the transition should start
+            # This is the duration of all previous clips minus the overlaps
+            if i == 1:
+                # First transition: starts at (duration of clip 1 - transition_duration)
+                accumulated_offset = video_durations[0] - transition_duration
+            else:
+                # Subsequent transitions: add the duration of the previous clip minus the overlap
+                accumulated_offset += video_durations[i-1] - transition_duration
 
-            transition_filter = f"[{current_input}][v{i}]xfade=transition={transition_type}:duration={transition_duration}:offset={offset}[{output_label}]"
+            transition_filter = f"[{current_input}][v{i}]xfade=transition={transition_type}:duration={transition_duration}:offset={accumulated_offset}[{output_label}]"
             transition_filters.append(transition_filter)
 
+            logger.info(f"Transition {i}: offset={accumulated_offset}s, duration={transition_duration}s")
+
             current_input = output_label
+
+        # Calculate expected total duration
+        total_duration = sum(video_durations) - (video_count - 1) * transition_duration
+        logger.info(f"Expected total video duration: {total_duration}s")
 
         # Combine all filters
         all_filters = scale_filters + transition_filters
