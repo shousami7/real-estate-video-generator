@@ -24,7 +24,7 @@ class VeoVideoGenerator:
     """
 
     # Available Veo models
-    VEO_MODEL = "veo-3.1-generate-preview"  # Veo 3.1 for high-quality video generation
+    VEO_MODEL = "veo-2.0-generate-001"  # Veo 2.0 に変更
 
     def __init__(self, api_key: str):
         """
@@ -80,7 +80,7 @@ class VeoVideoGenerator:
         duration: str = "8s",
         aspect_ratio: str = "16:9",
         resolution: str = "720p",
-        generate_audio: bool = True
+        generate_audio: bool = False  # Veo 2.0はオーディオ非対応のためFalseに変更
     ) -> Any:
         """
         Generate video from image file using Google Veo
