@@ -139,12 +139,11 @@
         </div>
         <div class="flex items-center gap-2">
             <button id="export-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#34D399] text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
-                <span class="material-symbols-outlined mr-2 !text-base">download</span>
                 Export
             </button>
-            <button id="save-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4b5563] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                <span class="material-symbols-outlined mr-2 !text-base">save</span>
-                Save
+            <button id="back-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4b5563] transition-colors">
+                <span class="material-symbols-outlined mr-2 !text-base">arrow_back</span>
+                Back
             </button>
         </div>
     </header>
@@ -181,9 +180,6 @@
                     <div>
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-white text-lg font-bold">Video Frames</h3>
-                            <button id="reset-video-btn" class="text-sm text-gray-300 hover:text-[#34D399] transition-colors">
-                                Upload New Video
-                            </button>
                         </div>
                         <div id="frames-container" class="grid grid-cols-6 gap-4">
                             </div>
@@ -247,12 +243,11 @@
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
     const exportBtn = document.getElementById('export-btn');
-    const saveBtn = document.getElementById('save-btn');
+    const backBtn = document.getElementById('back-btn');
     const videoPlayer = document.getElementById('video-player');
     const videoSource = document.getElementById('video-source');
     const selectedFrameThumb = document.getElementById('selected-frame-thumb');
     const frameTimestamp = document.getElementById('frame-timestamp');
-    const resetVideoBtn = document.getElementById('reset-video-btn');
     const uploadProgress = document.getElementById('upload-progress');
     const uploadProgressBar = document.getElementById('upload-progress-bar');
     const uploadPercent = document.getElementById('upload-percent');
@@ -616,21 +611,6 @@
         }
     }
 
-    resetVideoBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to upload a new video? All edits will be lost.')) {
-            state.videoPath = null;
-            state.frames = [];
-            state.selectedFrame = null;
-            state.editedFrames = {};
-            uploadSection.classList.remove('hidden');
-            playerSection.classList.add('hidden');
-            editPanel.classList.add('hidden');
-            videoInput.value = '';
-            framesContainer.innerHTML = '';
-            chatContainer.innerHTML = '';
-        }
-    });
-
     // ==================== エクスポート ====================
     exportBtn.addEventListener('click', () => {
         if (state.frames.length === 0) {
@@ -661,8 +641,13 @@
         .catch(err => alert('Error: ' + err.message))
         .finally(() => {
             exportBtn.disabled = false;
-            exportBtn.innerHTML = '<span class="material-symbols-outlined mr-2 !text-base">download</span>Export';
+            exportBtn.innerHTML = 'Export';
         });
+    });
+
+    // ==================== Back ボタン ====================
+    backBtn.addEventListener('click', () => {
+        window.location.href = '/';
     });
 </script>
 </body>

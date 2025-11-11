@@ -21,7 +21,14 @@ def index():
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
     session_id = session['session_id']
-    print(f"ユーザーID: {session_id} で接続")
+
+    # Reset generation state on initial page load
+    session.pop('generation_status', None)
+    session.pop('generation_progress', None)
+    session.pop('generation_error', None)
+    session.pop('final_video', None)
+
+    print(f"ユーザーID: {session_id} で接続 (セッション状態をリセット)")
     return render_template('luxury_video_ui.html', session_id=session_id)
 
 @web_ui_blueprint.route('/upload', methods=['POST'])
