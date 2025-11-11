@@ -36,6 +36,61 @@
         }
         /* Progress bar animation */
         .progress-bar { transition: width 0.5s ease-in-out; }
+
+        /* --- demoai/css/main.css からインポート --- */
+        .upload-card {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .upload-card.uploaded {
+            border-color: #34D399 !important;
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.05) 0%, rgba(52, 211, 153, 0.1) 100%);
+        }
+        .upload-card.uploaded::after {
+            content: '✓';
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 28px;
+            height: 28px;
+            background: #34D399;
+            color: black;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            animation: checkmark-pop 0.3s ease-out;
+        }
+        @keyframes checkmark-pop {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.2);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+        /* --- ここまで --- */
     </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display text-gray-800 dark:text-gray-200 antialiased">
@@ -47,16 +102,13 @@
             </div>
 
             <div class="bg-white dark:bg-gray-800/50 p-8 sm:p-10 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700">
-                <!-- Error message display area (hidden) -->
                 <div id="error-alert" class="hidden mb-6 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-600 rounded-lg">
                     <p class="text-sm font-medium text-red-800 dark:text-red-300">Error: <span id="error-message"></span></p>
                 </div>
 
-                <!-- Form area -->
                 <form id="upload-form">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        <!-- Image 1 (Exterior) -->
-                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                        <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">home</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Exterior View</h3>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Building exterior and facade</p>
@@ -65,10 +117,9 @@
                                 Choose File
                             </label>
                             <input class="hidden" id="image_1" name="image_1" type="file" accept="image/png, image/jpeg" required>
-                            <p id="filename_1" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                            <p id="filename_1" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2 h-4"></p>
                         </div>
-                        <!-- Image 2 (Interior) -->
-                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                        <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">living</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Interior Design</h3>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Living spaces and rooms</p>
@@ -77,10 +128,9 @@
                                 Choose File
                             </label>
                             <input class="hidden" id="image_2" name="image_2" type="file" accept="image/png, image/jpeg" required>
-                            <p id="filename_2" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                            <p id="filename_2" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2 h-4"></p>
                         </div>
-                        <!-- Image 3 (Common Areas) -->
-                        <div class="flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                        <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">pool</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Common Areas</h3>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Lobby, amenities and facilities</p>
@@ -89,15 +139,13 @@
                                 Choose File
                             </label>
                             <input class="hidden" id="image_3" name="image_3" type="file" accept="image/png, image/jpeg" required>
-                            <p id="filename_3" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2"></p>
+                            <p id="filename_3" class="text-xs text-gray-500 dark:text-gray-400 mt-3 truncate w-full px-2 h-4"></p>
                         </div>
                     </div>
 
-                    <!-- Hidden submit button for form submission -->
                     <button type="submit" id="upload-btn" class="hidden">Upload</button>
                 </form>
 
-                <!-- Progress bar -->
                 <div class="mt-10">
                     <div class="flex justify-between items-center mb-2">
                         <p id="status-message" class="text-sm font-medium text-gray-700 dark:text-gray-300">Upload Progress</p>
@@ -108,26 +156,27 @@
                     </div>
                 </div>
 
-                <!-- Generation button area -->
                 <div class="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700">
                     <button id="generate-btn" disabled class="w-full bg-primary text-black font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity duration-300 focus:outline-none focus:ring-4 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="material-symbols-outlined">auto_awesome</span>
                         AI Video Generation Start
                     </button>
 
-                    <!-- Edit Now button -->
                     <button id="edit-now-btn" onclick="window.location.href='/video/editor'" class="w-full mt-3 bg-gray-600 dark:bg-[#374151] text-white font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:bg-gray-700 dark:hover:bg-[#4b5563] transition-colors duration-300 focus:outline-none focus:ring-4 focus:ring-gray-500/50">
                         <span class="material-symbols-outlined">edit</span>
                         Edit Now
                     </button>
                 </div>
 
-                <!-- Download/Preview area -->
-                <div id="result-area" class="mt-8 hidden text-center p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-600 rounded-lg">
-                    <p class="text-xl font-bold mb-4 text-gray-900 dark:text-white">✨ Video Generation Complete! ✨</p>
+                <div id="result-area" class="hidden mt-8 p-6 bg-primary/10 border-2 border-primary rounded-lg text-center">
+                    <span class="material-symbols-outlined text-6xl text-primary mb-3">check_circle</span>
+                    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Video Generation Complete!</h3>
+                    <p class="text-gray-600 dark:text-gray-400 mb-6">Your stunning promotional video is ready.</p>
+                    
                     <div class="flex flex-col sm:flex-row gap-3 justify-center items-center">
-                        <a id="download-link" href="#" target="_blank" class="inline-block py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
-                            Download Video (24sec)
+                        <a id="download-link" href="#" target="_blank" class="inline-flex items-center justify-center gap-2 py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
+                            <span class="material-symbols-outlined">download</span>
+                            Download Video
                         </a>
                     </div>
                 </div>
@@ -172,12 +221,15 @@
             errorMessage.textContent = '';
         }
 
-        // ファイル名表示とプログレス更新
+        // [MODIFIED] ファイル名表示とプログレス更新 + .uploaded クラスのトグル
         function updateFileDisplay(inputElement, displayElement) {
+            const card = inputElement.closest('.upload-card'); // 親カードを取得
             if (inputElement.files.length > 0) {
                 displayElement.textContent = inputElement.files[0].name;
+                card.classList.add('uploaded'); // .uploaded クラスを追加
             } else {
                 displayElement.textContent = '';
+                card.classList.remove('uploaded'); // .uploaded クラスを削除
             }
             updateUploadProgress();
         }
@@ -200,9 +252,15 @@
 
             // 3つ全て選択されたら自動的にアップロード
             if (filesSelected === 3 && !isProcessing) {
-                setTimeout(() => {
-                    uploadForm.dispatchEvent(new Event('submit'));
-                }, 500);
+                // generateBtnを有効化 (demoaiの動作に合わせる)
+                generateBtn.disabled = false;
+                
+                // 自動アップロードはコメントアウト (demoaiは手動生成開始のため)
+                // setTimeout(() => {
+                //     uploadForm.dispatchEvent(new Event('submit'));
+                // }, 500);
+            } else {
+                 generateBtn.disabled = true;
             }
         }
 
@@ -211,6 +269,7 @@
         image2Input.addEventListener('change', () => updateFileDisplay(image2Input, filename2));
         image3Input.addEventListener('change', () => updateFileDisplay(image3Input, filename3));
 
+        // [MODIFIED] updateStatusUI: .slide-in クラスの追加
         function updateStatusUI(status, message, percent, finalUrl = null) {
             statusMessage.textContent = message;
             // 進捗バーの更新
@@ -225,60 +284,111 @@
                 isProcessing = true;
                 uploadBtn.disabled = true;
                 generateBtn.disabled = true;
+                generateBtn.textContent = 'Generating...'; // demoai風
             } else {
                 isProcessing = false;
                 uploadBtn.disabled = false;
-                // COMPLETEまたはERROR以外で、画像がアップロードされていれば生成ボタンを有効化
-                // （ここでは画像がアップロードされた後に別途設定）
+                
+                if (status === 'COMPLETE' || status === 'ERROR') {
+                    // generateBtnを非表示にせず、再試行可能にする
+                    generateBtn.style.display = 'flex'; // 常に表示
+                    generateBtn.disabled = false; // 再試行可能にする
+                    generateBtn.textContent = 'AI Video Generation Start'; // テキストを元に戻す
+                } else {
+                     generateBtn.style.display = 'flex'; // blockからflexに変更
+                     generateBtn.disabled = [image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length !== 3;
+                }
             }
 
             // 結果エリアの制御
             if (status === 'COMPLETE' && finalUrl) {
                 resultArea.classList.remove('hidden');
+                resultArea.classList.add('slide-in'); // アニメーションクラスを追加
                 // URLに'/static/'が含まれていれば、プレビュー可能な形式にする
                 const previewUrl = finalUrl.startsWith('/static/') ? finalUrl.substring(1) : finalUrl;
                 downloadLink.href = previewUrl;
             } else {
                 resultArea.classList.add('hidden');
+                resultArea.classList.remove('slide-in');
             }
         }
         
         // --- イベントリスナー ---
         
-        // 1. 画像アップロード処理
+        // 1. 画像アップロード処理 (手動生成開始のため、自動送信を停止)
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (isProcessing) return;
-
-            hideError();
-            updateStatusUI('UPLOADING', 'Uploading images...', 10);
+            // このフォームは自動送信や手動送信ボタン（id="upload-btn"）を持たないため、
+            // 主に generateBtn のクリックがトリガーとなる。
+            // 既存のJSでは `updateUploadProgress` 内で `filesSelected === 3` の際に
+            // submit イベントを dispatch していたが、demoai に合わせるため
+            // そのロジックを無効化し (updateUploadProgressでコメントアウト)、
+            // /generate が /upload の役割も兼ねるようにする。
             
-            const formData = new FormData(uploadForm);
+            // ... ただし、元のロジックでは /upload と /generate が分離していた。
+            // バックエンドを変更しないという制約のため、
+            // /upload の自動送信ロジックを `updateUploadProgress` に戻す。
             
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
+             // 3つ全て選択されたら自動的にアップロード
+            if ([image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length === 3 && !isProcessing) {
+                // 自動アップロードを実行
+                if (isProcessing) return;
 
-                if (result.status === 'success') {
-                    // アップロード成功: 処理を終了し、生成ボタンを有効化
-                    updateStatusUI('IDLE', result.message, 0);
-                    generateBtn.disabled = false; 
-                } else {
-                    // Server-side error
-                    showError(result.message);
-                    updateStatusUI('ERROR', `Upload error occurred.`, 0);
+                hideError();
+                updateStatusUI('UPLOADING', 'Uploading images...', 10);
+                
+                const formData = new FormData(uploadForm);
+                
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        // アップロード成功: 処理を終了し、生成ボタンを有効化
+                        updateStatusUI('IDLE', result.message, 0);
+                        generateBtn.disabled = false; 
+                    } else {
+                        // Server-side error
+                        showError(result.message);
+                        updateStatusUI('ERROR', `Upload error occurred.`, 0);
+                        generateBtn.disabled = true;
+                    }
+                } catch (error) {
+                    // Network error, etc.
+                    showError(`Network error: ${error.message}. Please check if the server is running.`);
+                    updateStatusUI('ERROR', `Communication error occurred.`, 0);
                     generateBtn.disabled = true;
                 }
-            } catch (error) {
-                // Network error, etc.
-                showError(`Network error: ${error.message}. Please check if the server is running.`);
-                updateStatusUI('ERROR', `Communication error occurred.`, 0);
-                generateBtn.disabled = true;
             }
         });
+
+        // updateUploadProgress のロジックを元に戻す（自動送信）
+        function updateUploadProgress() {
+            const filesSelected = [image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length;
+            const progress = (filesSelected / 3) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${Math.round(progress)}%`;
+
+            // メッセージ更新
+            if (filesSelected === 0) {
+                statusMessage.textContent = 'Upload Progress';
+            } else if (filesSelected < 3) {
+                statusMessage.textContent = `${filesSelected}/3 images selected`;
+            } else {
+                statusMessage.textContent = 'Uploading images...';
+            }
+
+            // 3つ全て選択されたら自動的にアップロード
+            if (filesSelected === 3 && !isProcessing) {
+                 setTimeout(() => {
+                     uploadForm.dispatchEvent(new Event('submit'));
+                 }, 500);
+            }
+        }
+
 
         // 2. 動画生成開始処理
         generateBtn.addEventListener('click', async () => {
@@ -332,12 +442,12 @@
                     stopPolling();
                     showError(data.message);
                     updateStatusUI('ERROR', 'An error occurred during video generation.', data.progress_percent || 0);
-                    generateBtn.disabled = false; // Allow retry after error
+                    // generateBtn.disabled = false; // demoaiではエラー時に再試行ボタンは表示されない
                 } else if (data.status === 'COMPLETE') {
                     // On completion
                     stopPolling();
                     updateStatusUI(data.status, data.message, 100, data.final_video_url);
-                    generateBtn.disabled = false; // Allow retry after completion
+                    // generateBtn.disabled = false; // demoaiでは完了時に再試行ボタンは表示されない
                 } else {
                     // In progress
                     const percent = data.progress_percent || 0;

@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com" rel="preconnect"/>
     <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght @400;500;700&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
     <style>
         .material-symbols-outlined {
@@ -16,23 +16,57 @@
         body {
             font-family: 'Space Grotesk', sans-serif;
         }
-        .frame-thumbnail {
-            aspect-ratio: 16/9;
-            background-size: cover;
-            background-position: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: 2px solid transparent;
-            border-radius: 0.5rem;
+
+        /* === demoai/editor.css から移植したスタイル === */
+        .frame-card {
+          position: relative;
+          aspect-ratio: 16 / 9;
+          background-size: cover;
+          background-position: center;
+          border-radius: 0.5rem;
+          cursor: pointer;
+          border: 3px solid transparent;
+          transition: all 0.3s ease;
+          overflow: hidden;
         }
-        .frame-thumbnail:hover {
-            transform: scale(1.05);
-            border-color: #34D399;
+
+        .frame-card:hover {
+          transform: scale(1.05);
+          box-shadow: 0 8px 16px rgba(52, 211, 153, 0.3);
         }
-        .frame-thumbnail.active {
-            border-color: #34D399;
-            box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2);
+
+        .frame-card.selected {
+          border-color: #34D399;
+          box-shadow: 0 0 0 2px #34D399, 0 8px 20px rgba(52, 211, 153, 0.5);
         }
+
+        .frame-card.edited::after {
+          content: '✓ Edited';
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          background: #34D399;
+          color: black;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: bold;
+        }
+
+        .frame-number {
+          position: absolute;
+          bottom: 8px;
+          left: 8px;
+          background: rgba(0, 0, 0, 0.7);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+        /* === ここまでが移植したスタイル === */
+
+
         .chat-message {
             animation: slideIn 0.3s ease-out;
         }
@@ -91,7 +125,6 @@
 </head>
 <body class="bg-background-dark text-white">
 <div class="relative flex h-screen min-h-screen w-full flex-col bg-[#0a0a0a]">
-    <!-- ヘッダー -->
     <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
         <div class="flex items-center gap-4 text-white">
             <div class="size-6 text-[#34D399]">
@@ -116,12 +149,9 @@
         </div>
     </header>
 
-    <!-- メインコンテンツ -->
     <main class="flex flex-1 overflow-hidden">
-        <!-- ビデオエリア -->
         <div class="flex-1 flex flex-col p-6 items-center justify-center">
             <div class="w-full max-w-5xl">
-                <!-- ビデオアップロードセクション（最初） -->
                 <div id="upload-section" class="block">
                     <div class="upload-zone" id="upload-zone">
                         <span class="material-symbols-outlined block text-6xl text-[#34D399] mb-4">movie</span>
@@ -141,35 +171,28 @@
                     </div>
                 </div>
 
-                <!-- ビデオプレイヤーセクション（アップロード後） -->
                 <div id="player-section" class="hidden">
-                    <!-- ビデオプレイヤー -->
                     <div class="rounded-xl overflow-hidden bg-black mb-6 relative video-player flex items-center justify-center">
                         <video id="video-player" class="w-full h-full" controls>
                             <source id="video-source" type="video/mp4">
                         </video>
                     </div>
 
-                    <!-- フレーム選択パネル -->
-                    <div class="bg-[#1a1a1a] rounded-lg p-4 border border-[#374151]">
+                    <div>
                         <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-sm font-bold text-gray-300">Frames</h3>
-                            <button id="reset-video-btn" class="text-xs text-gray-400 hover:text-[#34D399] transition-colors">
+                            <h3 class="text-white text-lg font-bold">Video Frames</h3>
+                            <button id="reset-video-btn" class="text-sm text-gray-300 hover:text-[#34D399] transition-colors">
                                 Upload New Video
                             </button>
                         </div>
-                        <div class="grid grid-cols-6 gap-2 max-h-[120px] overflow-y-auto">
-                            <!-- フレームサムネイル (JavaScriptで動的生成) -->
-                            <div id="frames-container" class="contents"></div>
-                        </div>
+                        <div id="frames-container" class="grid grid-cols-6 gap-4">
+                            </div>
                     </div>
-                </div>
+                    </div>
             </div>
         </div>
 
-        <!-- 右サイドバー: 編集パネル -->
         <aside id="edit-panel" class="w-[420px] flex-shrink-0 bg-[#1a1a1a] border-l border-[#374151] flex flex-col hidden">
-            <!-- Pick Frame ボタン -->
             <div class="p-4 border-b border-[#374151]">
                 <button class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-[#34D399] text-black gap-2 text-base font-bold leading-normal tracking-[0.015em]">
                     <span class="material-symbols-outlined !text-2xl">add_photo_alternate</span>
@@ -177,9 +200,7 @@
                 </button>
             </div>
 
-            <!-- チャットコンテンツ -->
             <div class="flex-1 flex flex-col p-4 overflow-y-auto">
-                <!-- 選択フレーム情報 -->
                 <div id="selected-frame-info" class="flex items-center gap-3 mb-4 pb-4 border-b border-[#374151]">
                     <div id="selected-frame-thumb" class="w-24 h-14 bg-cover bg-center rounded-md bg-gray-700"></div>
                     <div class="flex-1">
@@ -188,17 +209,14 @@
                     </div>
                 </div>
 
-                <!-- チャットメッセージ -->
                 <div id="chat-container" class="space-y-4 flex-1 overflow-y-auto">
-                    <!-- メッセージはJavaScriptで追加 -->
-                </div>
+                    </div>
             </div>
 
-            <!-- 入力フィールド -->
             <div class="p-4 border-t border-[#374151]">
                 <div class="relative">
                     <input id="chat-input" class="w-full h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-[#34D399] focus:ring-0 transition-colors" placeholder="Describe the edit you want..."/>
-                    <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-[#34D399] rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1.2 flex items-center justify-center size-8 bg-[#34D399] rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="material-symbols-outlined !text-xl">arrow_upward</span>
                     </button>
                 </div>
@@ -375,29 +393,59 @@
         console.log('Video source set to:', state.videoPath);
     }
 
+    // === JavaScript: renderFrames を demoai スタイルに修正 ===
     function renderFrames() {
         framesContainer.innerHTML = '';
         state.frames.forEach((frame, index) => {
-            const frameDiv = document.createElement('div');
-            frameDiv.className = 'frame-thumbnail';
-            frameDiv.style.backgroundImage = `url('${frame.base64}')`;
-            frameDiv.dataset.frameId = index;
-            frameDiv.addEventListener('click', () => selectFrame(index));
-            framesContainer.appendChild(frameDiv);
+            const frameCard = document.createElement('div');
+            // demoai のクラス名を使用
+            frameCard.className = 'frame-card';
+            frameCard.dataset.frameId = index;
+
+            // 編集済みか確認
+            const editedImageUrl = state.editedFrames[index];
+            if (editedImageUrl) {
+                frameCard.classList.add('edited');
+                frameCard.style.backgroundImage = `url('${editedImageUrl}')`;
+            } else {
+                frameCard.style.backgroundImage = `url('${frame.base64}')`;
+            }
+
+            frameCard.addEventListener('click', () => selectFrame(index));
+            
+            // demoai スタイルのタイムスタンプを追加
+            const frameNumber = document.createElement('div');
+            frameNumber.className = 'frame-number';
+            frameNumber.textContent = frame.timestamp;
+            frameCard.appendChild(frameNumber);
+
+            framesContainer.appendChild(frameCard);
         });
+        
+        // 選択状態を復元
+        if (state.selectedFrame !== null) {
+             document.querySelector(`[data-frame-id="${state.selectedFrame}"]`)?.classList.add('selected');
+        }
     }
 
-    // ==================== フレーム選択 ====================
+    // === JavaScript: selectFrame を demoai スタイルに修正 ===
     function selectFrame(frameId) {
-        document.querySelectorAll('.frame-thumbnail.active').forEach(el => {
-            el.classList.remove('active');
+        // demoai のクラス名を使用
+        document.querySelectorAll('.frame-card.selected').forEach(el => {
+            el.classList.remove('selected');
         });
 
-        document.querySelector(`[data-frame-id="${frameId}"]`)?.classList.add('active');
+        const newSelected = document.querySelector(`[data-frame-id="${frameId}"]`);
+        if (newSelected) {
+            newSelected.classList.add('selected');
+        }
 
         state.selectedFrame = frameId;
         const frame = state.frames[frameId];
-        selectedFrameThumb.style.backgroundImage = `url('${frame.base64}')`;
+        
+        // プレビューにも編集済み画像（あれば）を表示
+        const imageUrl = state.editedFrames[frameId] || frame.base64;
+        selectedFrameThumb.style.backgroundImage = `url('${imageUrl}')`;
         frameTimestamp.textContent = `Timestamp: ${frame.timestamp}`;
 
         // チャットをクリア
@@ -522,6 +570,7 @@
         return messageId;
     }
 
+    // === JavaScript: applyFrameEdit を demoai スタイルに修正 ===
     function applyFrameEdit() {
         if (!state.selectedGeneratedImage) return;
 
@@ -537,15 +586,18 @@
         .then(data => {
             if (data.status === 'success') {
                 addChatMessage('ai', '✓ Frame updated successfully!');
-                // フレームサムネイルを更新
+                
+                // Mark as edited in state
+                state.editedFrames[state.selectedFrame] = state.selectedGeneratedImage;
+                
+                // フレームサムネイルを更新 (demoai スタイル)
                 const frameThumb = document.querySelector(`[data-frame-id="${state.selectedFrame}"]`);
                 if (frameThumb) {
                     frameThumb.style.backgroundImage = `url('${state.selectedGeneratedImage}')`;
+                    frameThumb.classList.add('edited'); // 'edited' クラスを追加
                 }
+                // プレビューを更新
                 selectedFrameThumb.style.backgroundImage = `url('${state.selectedGeneratedImage}')`;
-
-                // Mark as edited
-                state.editedFrames[state.selectedFrame] = state.selectedGeneratedImage;
             }
         })
         .catch(err => alert('Error: ' + err.message));
