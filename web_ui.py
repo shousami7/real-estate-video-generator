@@ -96,7 +96,7 @@ def upload_files():
 
         return jsonify({
             "status": "success",
-            "message": "画像のアップロードが完了しました。「AI動画生成開始」ボタンを押してください。",
+            "message": "Images uploaded successfully. Click 'AI Video Generation Start' button.",
             "files": uploaded_files
         })
 
@@ -120,14 +120,14 @@ def generate_video():
     if 'session_id' not in session or 'uploaded_files' not in session:
         return jsonify({
             "status": "error",
-            "message": "アップロードされた画像が見つかりません。先に画像をアップロードしてください。"
+            "message": "No uploaded images found. Please upload images first."
         }), 400
 
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return jsonify({
             "status": "error",
-            "message": "GOOGLE_API_KEYが設定されていません。.envファイルを確認してください。"
+            "message": "GOOGLE_API_KEY is not set. Please check your .env file."
         }), 500
 
     session_id = session['session_id']
@@ -153,7 +153,7 @@ def generate_video():
 
         return jsonify({
             "status": "complete",
-            "message": "動画生成が完了しました！",
+            "message": "Video generation completed successfully!",
             "final_video_url": "/download",
             "editor_url": "/video/editor"
         })
@@ -173,16 +173,16 @@ def generate_video():
         # 429エラーをチェック
         if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
             error_msg = (
-                "APIクォータ制限に達しました。\n\n"
-                "Google AI APIの使用量制限を超えています。\n\n"
-                "対処方法:\n"
-                "1. Google AI Studio (https://ai.dev/usage) で使用量を確認してください\n"
-                "2. プランと請求情報を確認してください\n"
-                "3. レート制限の詳細: https://ai.google.dev/gemini-api/docs/rate-limits\n"
-                "4. しばらく待ってから再度お試しください"
+                "API quota limit reached.\n\n"
+                "Google AI API usage limit exceeded.\n\n"
+                "Solutions:\n"
+                "1. Check your usage at Google AI Studio (https://ai.dev/usage)\n"
+                "2. Review your plan and billing information\n"
+                "3. Rate limit details: https://ai.google.dev/gemini-api/docs/rate-limits\n"
+                "4. Please wait a while and try again"
             )
         else:
-            error_msg = f"動画生成中にエラーが発生しました: {error_str}"
+            error_msg = f"Error occurred during video generation: {error_str}"
         
         session['generation_error'] = error_msg
         return jsonify({
@@ -202,22 +202,22 @@ def get_status():
     if status == 'COMPLETE' and 'final_video' in session:
         return jsonify({
             "status": "COMPLETE",
-            "message": "動画生成が完了しました！",
+            "message": "Video generation completed successfully!",
             "progress_percent": 100,
             "final_video_url": "/download",
             "editor_url": "/video/editor"
         })
     elif status == 'ERROR':
-        error_msg = session.get('generation_error', '不明なエラー')
+        error_msg = session.get('generation_error', 'Unknown error')
         return jsonify({
             "status": "ERROR",
-            "message": f"エラー: {error_msg}",
+            "message": f"Error: {error_msg}",
             "progress_percent": progress
         })
     elif status == 'GENERATING_CLIPS':
         return jsonify({
             "status": "GENERATING_CLIPS",
-            "message": "AI動画クリップを生成中... (Veo 3.1)",
+            "message": "Generating AI video clips... (Veo 3.1)",
             "progress_percent": progress
         })
     else:

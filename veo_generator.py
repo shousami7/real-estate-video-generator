@@ -24,7 +24,7 @@ class VeoVideoGenerator:
     """
 
     # Available Veo models
-    VEO_MODEL = "veo-2.0-generate-001"  # Veo 2.0 に変更
+    VEO_MODEL = "veo-3.0-fast-generate-001"  # Veo 3 Fast
 
     def __init__(self, api_key: str):
         """

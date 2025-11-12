@@ -187,12 +187,16 @@
                     <span class="material-symbols-outlined text-6xl text-primary mb-3">check_circle</span>
                     <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Video Generation Complete!</h3>
                     <p class="text-gray-600 dark:text-gray-400 mb-6">Your stunning promotional video is ready.</p>
-                    
+
                     <div class="flex flex-col sm:flex-row gap-3 justify-center items-center">
-                        <a id="download-link" href="#" target="_blank" class="inline-flex items-center justify-center gap-2 py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
+                        <a id="download-link" href="/download" download="luxury_property_video.mp4" class="inline-flex items-center justify-center gap-2 py-3 px-8 bg-primary hover:opacity-90 text-black font-bold rounded-lg transition duration-200">
                             <span class="material-symbols-outlined">download</span>
                             Download Video
                         </a>
+                        <button id="edit-frames-btn" class="inline-flex items-center justify-center gap-2 py-3 px-8 bg-gray-600 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white font-bold rounded-lg transition duration-200">
+                            <span class="material-symbols-outlined">edit</span>
+                            Edit Frames
+                        </button>
                     </div>
                 </div>
             </div>
@@ -204,11 +208,13 @@
         const uploadForm = document.getElementById('upload-form');
         const uploadBtn = document.getElementById('upload-btn');
         const generateBtn = document.getElementById('generate-btn');
+        const editNowBtn = document.getElementById('edit-now-btn');
         const statusMessage = document.getElementById('status-message');
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
         const resultArea = document.getElementById('result-area');
         const downloadLink = document.getElementById('download-link');
+        const editFramesBtn = document.getElementById('edit-frames-btn');
         const errorAlert = document.getElementById('error-alert');
         const errorMessage = document.getElementById('error-message');
         
@@ -293,38 +299,44 @@
 
             // ボタンの状態制御
             const isIdleOrComplete = (status === 'IDLE' || status === 'COMPLETE' || status === 'ERROR');
-            
+
             // 処理中は、全てのボタンを無効化
             if (!isIdleOrComplete) {
                 isProcessing = true;
                 uploadBtn.disabled = true;
                 generateBtn.disabled = true;
-                generateBtn.textContent = 'Generating...'; // demoai風
+                generateBtn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Generating...';
             } else {
                 isProcessing = false;
                 uploadBtn.disabled = false;
-                
-                if (status === 'COMPLETE' || status === 'ERROR') {
-                    // generateBtnを非表示にせず、再試行可能にする
-                    generateBtn.style.display = 'flex'; // 常に表示
-                    generateBtn.disabled = false; // 再試行可能にする
-                    generateBtn.textContent = 'AI Video Generation Start'; // テキストを元に戻す
-                } else {
-                     generateBtn.style.display = 'flex'; // blockからflexに変更
-                     generateBtn.disabled = [image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length !== 3;
-                }
-            }
 
-            // 結果エリアの制御
-            if (status === 'COMPLETE' && finalUrl) {
-                resultArea.classList.remove('hidden');
-                resultArea.classList.add('slide-in'); // アニメーションクラスを追加
-                // URLに'/static/'が含まれていれば、プレビュー可能な形式にする
-                const previewUrl = finalUrl.startsWith('/static/') ? finalUrl.substring(1) : finalUrl;
-                downloadLink.href = previewUrl;
-            } else {
-                resultArea.classList.add('hidden');
-                resultArea.classList.remove('slide-in');
+                if (status === 'COMPLETE') {
+                    // FIXED: Show result area with download button
+                    resultArea.classList.remove('hidden');
+                    resultArea.classList.add('slide-in');
+
+                    // FIXED: Set download link href
+                    if (finalUrl) {
+                        downloadLink.href = finalUrl;
+                    }
+
+                    // Hide generate and edit now buttons on completion
+                    generateBtn.style.display = 'none';
+                    editNowBtn.style.display = 'none';
+                } else if (status === 'ERROR') {
+                    generateBtn.disabled = false;
+                    generateBtn.innerHTML = '<span class="material-symbols-outlined">auto_awesome</span> AI Video Generation Start';
+                    generateBtn.style.display = 'flex';
+                    editNowBtn.style.display = 'flex';
+                    resultArea.classList.add('hidden');
+                    resultArea.classList.remove('slide-in');
+                } else {
+                    // IDLE状態
+                    generateBtn.style.display = 'flex';
+                    generateBtn.disabled = [image1Input, image2Input, image3Input].filter(input => input.files.length > 0).length !== 3;
+                    generateBtn.innerHTML = '<span class="material-symbols-outlined">auto_awesome</span> AI Video Generation Start';
+                    editNowBtn.style.display = 'flex';
+                }
             }
         }
         
@@ -418,14 +430,21 @@
                     method: 'POST'
                 });
                 const result = await response.json();
-                
-                if (result.status === 'started' || result.status === 'info') {
+
+                if (result.status === 'complete') {
+                    // FIXED: Handle immediate completion (synchronous generation)
+                    updateStatusUI('COMPLETE', result.message, 100, result.final_video_url);
+                } else if (result.status === 'started' || result.status === 'info') {
                     // Once generation starts, begin polling for status
                     updateStatusUI('GENERATING_CLIPS', result.message, 20);
                     startPolling();
-                } else {
+                } else if (result.status === 'error') {
                     // Start failure (e.g., insufficient images, already in progress, etc.)
                     showError(result.message);
+                    updateStatusUI('ERROR', `Failed to start generation.`, 0);
+                } else {
+                    // Unknown status
+                    showError(result.message || 'Unknown error occurred');
                     updateStatusUI('ERROR', `Failed to start generation.`, 0);
                 }
             } catch (error) {
@@ -481,6 +500,13 @@
                 clearInterval(pollInterval);
                 pollInterval = null;
             }
+        }
+
+        // FIXED: Edit Frames button handler
+        if (editFramesBtn) {
+            editFramesBtn.addEventListener('click', () => {
+                window.location.href = '/video/editor';
+            });
         }
 
         // Check status on initial load (load previous state if exists)
