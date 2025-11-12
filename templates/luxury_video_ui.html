@@ -42,6 +42,21 @@
             position: relative;
             overflow: hidden;
             transition: all 0.3s ease;
+            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+        }
+        .upload-card .card-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .upload-card .description-text {
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .upload-card.uploaded {
             border-color: #34D399 !important;
@@ -111,7 +126,7 @@
                         <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">home</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Exterior View</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Building exterior and facade</p>
+                            <p class="description-text text-sm text-gray-500 dark:text-gray-400 mb-4">Building exterior and facade</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_1">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File
@@ -122,7 +137,7 @@
                         <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">living</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Interior Design</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Living spaces and rooms</p>
+                            <p class="description-text text-sm text-gray-500 dark:text-gray-400 mb-4">Living spaces and rooms</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_2">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File
@@ -133,7 +148,7 @@
                         <div class="upload-card flex flex-col items-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                             <span class="material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3">pool</span>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Common Areas</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Lobby, amenities and facilities</p>
+                            <p class="description-text text-sm text-gray-500 dark:text-gray-400 mb-4">Lobby, amenities and facilities</p>
                             <label class="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" for="image_3">
                                 <span class="material-symbols-outlined text-base">upload_file</span>
                                 Choose File

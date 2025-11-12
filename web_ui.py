@@ -223,7 +223,7 @@ def get_status():
     else:
         return jsonify({
             "status": "IDLE",
-            "message": "待機中",
+            "message": "Upload Progress",
             "progress_percent": 0
         })
 
