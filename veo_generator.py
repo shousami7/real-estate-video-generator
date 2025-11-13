@@ -129,7 +129,7 @@ class VeoVideoGenerator:
             max_polls = 120  # 10 minutes with 5 second intervals
 
             while not operation.done:
-                time.sleep(5)
+                time.sleep(30)
                 poll_count += 1
 
                 # Get updated operation status

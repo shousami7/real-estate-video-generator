@@ -10,6 +10,7 @@ Complete automation system for generating high-end property videos using **Googl
 - **High-End Prompts**: Pre-configured cinematic prompts for luxury real estate
 - **Complete Workflow**: From image upload to final video output
 - **Progress Tracking**: Real-time progress bars and detailed logging
+- **Async Task Queue**: Celery + Redis keep the Flask server responsive
 
 ## System Architecture
 
@@ -51,6 +52,10 @@ Complete automation system for generating high-end property videos using **Googl
    - macOS: `brew install ffmpeg`
    - Ubuntu: `sudo apt install ffmpeg`
    - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+3. **Redis** (Celery broker / result backend)
+   - macOS: `brew install redis && brew services start redis`
+   - Ubuntu: `sudo apt install redis-server && sudo systemctl enable --now redis`
+   - Windows: Use [Memurai](https://www.memurai.com/download) or Docker (`docker run -p 6379:6379 redis`)
 
 ### Python Dependencies
 
@@ -67,6 +72,8 @@ Dependencies:
 - `Pillow>=10.0.0` - Image processing
 - `tqdm>=4.66.0` - Progress bars
 - `Flask>=2.3.0` - Web application framework (for web UI)
+- `celery>=5.3.6` - Background task queue
+- `redis>=5.0.0` - Message broker / result backend for Celery
 
 ## Installation
 
@@ -84,11 +91,15 @@ ffmpeg -version
 cat > .env << EOF
 GOOGLE_API_KEY=your_google_api_key_here
 SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
 EOF
 
 # Or manually create .env file with:
 # GOOGLE_API_KEY=your_google_api_key_here
 # SECRET_KEY=your_random_secret_key_here
+# CELERY_BROKER_URL=redis://localhost:6379/0
+# CELERY_RESULT_BACKEND=redis://localhost:6379/0
 ```
 
 ## Getting Google AI API Key
@@ -113,6 +124,9 @@ The easiest way to use the system is through the web interface:
 
 # Or start directly with Python
 python3 app.py
+
+# In a separate terminal, start a Celery worker
+celery -A celery_app.celery worker --loglevel=info
 ```
 
 Then open your browser and navigate to:
@@ -124,9 +138,12 @@ Features:
 - User-friendly interface with drag-and-drop image upload
 - Real-time progress tracking
 - Automatic video preview and download
+- Background generation means you can close the browser or cancel while clips render
 - No command-line knowledge required
 
-**Note**: The web UI currently uses synchronous processing. For production use with multiple users, consider implementing a task queue like Celery or RQ.
+**Broker setup**: By default Celery expects Redis at `redis://localhost:6379/0`. Override with
+`CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` in your `.env` if you are using a hosted Redis or
+another broker.
 
 ### Command-Line Interface
 

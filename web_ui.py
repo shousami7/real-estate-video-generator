@@ -3,12 +3,15 @@ import os
 import uuid
 import logging
 from flask import (
-    Blueprint, render_template, request, jsonify, session, send_from_directory, send_file
+    Blueprint, render_template, request, jsonify, session, send_from_directory
 )
 from werkzeug.utils import secure_filename
-from generate_property_video import PropertyVideoGenerator
+from celery import states
+from celery.result import AsyncResult
+
 from frame_editor import FrameEditor, AIFrameEditor
-from pathlib import Path
+from celery_app import celery
+from tasks import generate_property_video_task
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,9 +116,7 @@ def upload_files():
 @web_ui_blueprint.route('/generate', methods=['POST'])
 def generate_video():
     """
-    Start the video generation process.
-    NOTE: This is a synchronous implementation that will block the server.
-    For production use, consider using Celery, RQ, or similar task queue.
+    Enqueue the video generation process (non-blocking via Celery).
     """
     if 'session_id' not in session or 'uploaded_files' not in session:
         return jsonify({
@@ -130,76 +131,89 @@ def generate_video():
             "message": "GOOGLE_API_KEY is not set. Please check your .env file."
         }), 500
 
+    # Prevent duplicate submissions while a task is still running
+    existing_task_id = session.get('generation_task_id')
+    if existing_task_id:
+        existing_task = AsyncResult(existing_task_id, app=celery)
+        if existing_task.state not in states.READY_STATES:
+            return jsonify({
+                "status": "error",
+                "message": "A video generation task is already running. Please wait for it to finish or cancel it."
+            }), 409
+
     session_id = session['session_id']
-    image_paths = session['uploaded_files']
+    image_paths = [os.path.abspath(path) for path in session['uploaded_files']]
 
-    # Mark generation as started
-    session['generation_status'] = 'GENERATING_CLIPS'
-    session['generation_progress'] = 20
+    # Reset previous session state
+    session['generation_status'] = 'QUEUED'
+    session['generation_progress'] = 5
+    session.pop('generation_error', None)
+    session.pop('final_video', None)
 
-    generator = PropertyVideoGenerator(
-        api_key=api_key,
-        output_dir='output',
-        session_name=session_id
+    task = generate_property_video_task.apply_async(
+        args=[session_id, image_paths, api_key],
+        kwargs={"options": {
+            "clip_duration": 8,
+            "transition_type": "fade",
+            "transition_duration": 0.5,
+            "output_name": "final_property_video.mp4"
+        }}
     )
 
-    try:
-        final_video_path = generator.generate_complete_property_video(
-            image_paths=image_paths
-        )
-        session['final_video'] = final_video_path
-        session['generation_status'] = 'COMPLETE'
-        session['generation_progress'] = 100
+    session['generation_task_id'] = task.id
 
-        return jsonify({
-            "status": "complete",
-            "message": "Video generation completed successfully!",
-            "final_video_url": "/download",
-            "editor_url": "/video/editor"
-        })
-    except ValueError as e:
-        # クォータ超過などのユーザー向けエラーメッセージ
-        error_msg = str(e)
-        session['generation_status'] = 'ERROR'
-        session['generation_error'] = error_msg
-        return jsonify({
-            "status": "error",
-            "message": error_msg
-        }), 500
-    except Exception as e:
-        session['generation_status'] = 'ERROR'
-        error_str = str(e)
-        
-        # 429エラーをチェック
-        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
-            error_msg = (
-                "API quota limit reached.\n\n"
-                "Google AI API usage limit exceeded.\n\n"
-                "Solutions:\n"
-                "1. Check your usage at Google AI Studio (https://ai.dev/usage)\n"
-                "2. Review your plan and billing information\n"
-                "3. Rate limit details: https://ai.google.dev/gemini-api/docs/rate-limits\n"
-                "4. Please wait a while and try again"
-            )
-        else:
-            error_msg = f"Error occurred during video generation: {error_str}"
-        
-        session['generation_error'] = error_msg
-        return jsonify({
-            "status": "error",
-            "message": error_msg
-        }), 500
+    return jsonify({
+        "status": "started",
+        "message": "Video generation started in the background. You can monitor progress below.",
+        "task_id": task.id
+    }), 202
 
 @web_ui_blueprint.route('/status')
 def get_status():
     """
-    Check the progress of video generation.
-    Returns detailed status information for the frontend.
+    Check the progress of the async video generation task.
     """
-    status = session.get('generation_status', 'IDLE')
-    progress = session.get('generation_progress', 0)
+    task_id = session.get('generation_task_id')
 
-    if status == 'COMPLETE' and 'final_video' in session:
+    if not task_id:
+        return jsonify({
+            "status": "IDLE",
+            "message": "Upload Progress",
+            "progress_percent": 0
+        })
+
+    task = AsyncResult(task_id, app=celery)
+    meta = task.info if isinstance(task.info, dict) else {}
+    progress = meta.get('progress', session.get('generation_progress', 0))
+    message = meta.get('message', "Processing video request...")
+    stage = meta.get('stage', task.state)
+
+    if task.state == states.PENDING:
+        session['generation_status'] = 'QUEUED'
+        session['generation_progress'] = progress
+        return jsonify({
+            "status": "QUEUED",
+            "message": "Waiting for an available worker...",
+            "progress_percent": progress
+        })
+
+    if task.state in {'STARTED', 'GENERATING_CLIPS', 'COMPOSING'}:
+        session['generation_status'] = stage
+        session['generation_progress'] = progress
+        session.modified = True
+        return jsonify({
+            "status": stage or "GENERATING_CLIPS",
+            "message": message,
+            "progress_percent": progress
+        })
+
+    if task.state == states.SUCCESS:
+        final_video = meta.get('final_video') or session.get('final_video')
+        if final_video:
+            session['final_video'] = final_video
+        session['generation_status'] = 'COMPLETE'
+        session['generation_progress'] = 100
+        session.modified = True
         return jsonify({
             "status": "COMPLETE",
             "message": "Video generation completed successfully!",
@@ -207,25 +221,31 @@ def get_status():
             "final_video_url": "/download",
             "editor_url": "/video/editor"
         })
-    elif status == 'ERROR':
-        error_msg = session.get('generation_error', 'Unknown error')
+
+    if task.state in {states.FAILURE, states.REVOKED}:
+        error_msg = session.get('generation_error')
+        if not error_msg:
+            if isinstance(task.info, Exception):
+                error_msg = str(task.info)
+            else:
+                error_msg = meta.get('message', 'An unknown error occurred during video generation.')
+        status_label = "CANCELLED" if task.state == states.REVOKED else "ERROR"
+        session['generation_status'] = status_label
+        session['generation_error'] = error_msg
+        session['generation_progress'] = progress
+        session.modified = True
         return jsonify({
-            "status": "ERROR",
-            "message": f"Error: {error_msg}",
+            "status": status_label,
+            "message": f"{status_label}: {error_msg}",
             "progress_percent": progress
         })
-    elif status == 'GENERATING_CLIPS':
-        return jsonify({
-            "status": "GENERATING_CLIPS",
-            "message": "Generating AI video clips... (Veo 3.1)",
-            "progress_percent": progress
-        })
-    else:
-        return jsonify({
-            "status": "IDLE",
-            "message": "Upload Progress",
-            "progress_percent": 0
-        })
+
+    # Fallback (should not normally reach here)
+    return jsonify({
+        "status": task.state or "IDLE",
+        "message": message,
+        "progress_percent": progress
+    })
 
 @web_ui_blueprint.route('/download')
 def download_video():
@@ -233,12 +253,52 @@ def download_video():
     Download the generated video.
     """
     if 'final_video' not in session:
+        task_id = session.get('generation_task_id')
+        if task_id:
+            task = AsyncResult(task_id, app=celery)
+            if task.successful() and isinstance(task.result, dict):
+                final_video = task.result.get('final_video')
+                if final_video:
+                    session['final_video'] = final_video
+
+    if 'final_video' not in session:
         return jsonify({"error": "No video found for this session"}), 404
 
     video_path = session['final_video']
     directory = os.path.dirname(video_path)
     filename = os.path.basename(video_path)
     return send_from_directory(directory, filename, as_attachment=True)
+
+
+@web_ui_blueprint.route('/generate/cancel', methods=['POST'])
+def cancel_generation():
+    """
+    Cancel an in-progress video generation task.
+    """
+    task_id = session.get('generation_task_id')
+    if not task_id:
+        return jsonify({
+            "status": "error",
+            "message": "No generation task found for this session."
+        }), 400
+
+    task = AsyncResult(task_id, app=celery)
+    if task.state in states.READY_STATES:
+        return jsonify({
+            "status": "info",
+            "message": "Task has already finished."
+        }), 200
+
+    celery.control.revoke(task_id, terminate=True, signal="SIGTERM")
+    session['generation_status'] = 'CANCELLED'
+    session['generation_progress'] = 0
+    session['generation_error'] = 'Task cancelled by user.'
+    session.modified = True
+
+    return jsonify({
+        "status": "cancelled",
+        "message": "Video generation task was cancelled."
+    }), 202
 
 
 # ============================================================================
