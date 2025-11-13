@@ -57,10 +57,18 @@ class VeoVideoGenerator:
             uploaded_file = self.client.files.upload(file=image_path)
             logger.info(f"Image uploaded successfully: {uploaded_file.name}")
 
-            # Wait for file to be processed
+            # Wait for file to be processed with timeout
             logger.info("Waiting for image to be processed...")
+            poll_start = time.time()
+            max_wait = 60  # 60 second timeout
+            poll_interval = 5  # 5 second polling interval
+
             while uploaded_file.state == "PROCESSING":
-                time.sleep(2)
+                if time.time() - poll_start > max_wait:
+                    raise TimeoutError(f"Image processing timed out after {max_wait} seconds")
+
+                logger.info(f"Image still processing... (polling every {poll_interval}s)")
+                time.sleep(poll_interval)
                 uploaded_file = self.client.files.get(uploaded_file.name)
 
             if uploaded_file.state == "FAILED":
@@ -303,9 +311,10 @@ class VeoVideoGenerator:
 
             logger.info(f"Downloading video from: {file_uri}")
 
-            # Download with retry logic
-            max_retries = 3
+            # Download with retry logic (reduced retries since failures should fail fast)
+            max_retries = 2
             retry_delay = 2  # seconds
+            logger.warning(f"Download configured with {max_retries} max retries")
 
             for attempt in range(max_retries):
                 try:

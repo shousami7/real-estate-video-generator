@@ -85,6 +85,9 @@ class PropertyVideoGenerator:
         """
         Generate video clips from images using Google Veo
 
+        WARNING: Each image generates a separate paid Veo API call.
+        For 3 images, this creates 3 billable API requests.
+
         Args:
             image_paths: List of paths to input images (3 images expected)
             prompts: Optional list of prompts (uses defaults if not provided)
@@ -105,6 +108,9 @@ class PropertyVideoGenerator:
         for img_path in image_paths:
             if not os.path.exists(img_path):
                 raise FileNotFoundError(f"Image not found: {img_path}")
+
+        # Warn about API costs
+        logger.warning(f"⚠️  Generating {len(image_paths)} video clips = {len(image_paths)} billable Veo API calls")
 
         video_clips = []
 

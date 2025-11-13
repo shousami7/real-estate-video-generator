@@ -11,7 +11,7 @@ from celery.result import AsyncResult
 
 from frame_editor import FrameEditor, AIFrameEditor
 from celery_app import celery
-from tasks import generate_property_video_task
+from tasks import generate_property_video_task, property_video_generation_task
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -116,7 +116,9 @@ def upload_files():
 @web_ui_blueprint.route('/generate', methods=['POST'])
 def generate_video():
     """
-    Enqueue the video generation process (non-blocking via Celery).
+    Enqueue the async video generation process (non-blocking via Celery).
+
+    WARNING: This will create 3 separate billable Veo API calls (one per image).
     """
     if 'session_id' not in session or 'uploaded_files' not in session:
         return jsonify({
@@ -144,28 +146,43 @@ def generate_video():
     session_id = session['session_id']
     image_paths = [os.path.abspath(path) for path in session['uploaded_files']]
 
+    # Generate unique task ID for tracking
+    db_task_id = str(uuid.uuid4())
+    user_id = session_id  # Using session_id as user_id for now
+
     # Reset previous session state
     session['generation_status'] = 'QUEUED'
     session['generation_progress'] = 5
     session.pop('generation_error', None)
     session.pop('final_video', None)
 
-    task = generate_property_video_task.apply_async(
-        args=[session_id, image_paths, api_key],
-        kwargs={"options": {
-            "clip_duration": 8,
-            "transition_type": "fade",
-            "transition_duration": 0.5,
-            "output_name": "final_property_video.mp4"
-        }}
+    # Launch async task with new property_video_generation_task
+    task = property_video_generation_task.apply_async(
+        args=[db_task_id, session_id, image_paths, user_id],
+        kwargs={
+            "api_key": api_key,
+            "options": {
+                "clip_duration": 8,
+                "transition_type": "fade",
+                "transition_duration": 0.5,
+                "output_name": "final_property_video.mp4"
+            }
+        }
     )
 
     session['generation_task_id'] = task.id
+    session['db_task_id'] = db_task_id
+
+    num_api_calls = len(image_paths)
+    logger.warning(f"⚠️  Starting video generation: {num_api_calls} images = {num_api_calls} Veo API calls")
 
     return jsonify({
         "status": "started",
-        "message": "Video generation started in the background. You can monitor progress below.",
-        "task_id": task.id
+        "message": f"Video generation started. Processing {num_api_calls} images (= {num_api_calls} Veo API calls).",
+        "task_id": task.id,
+        "celery_task_id": task.id,
+        "db_task_id": db_task_id,
+        "api_calls": num_api_calls
     }), 202
 
 @web_ui_blueprint.route('/status')
