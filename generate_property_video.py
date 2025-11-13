@@ -244,6 +244,90 @@ class PropertyVideoGenerator:
 
         return final_video
 
+    def generate_extended_property_video(
+        self,
+        image_path: str,
+        output_name: str = "extended_property_video.mp4",
+        initial_prompt: Optional[str] = None,
+        extension_prompts: Optional[List[str]] = None,
+        num_extensions: int = 2
+    ) -> str:
+        """
+        Generate extended video from single image using Veo 3.1 extension feature
+
+        This method generates one long video instead of multiple clips:
+        - 8s initial generation + 7s per extension
+        - Example: 2 extensions = 8s + 7s + 7s = 22s total
+        - Cost: 1 generation + N extensions = (1 + N) API calls
+
+        Args:
+            image_path: Path to single input image
+            output_name: Name of output video file
+            initial_prompt: Prompt for initial 8s generation (uses default if not provided)
+            extension_prompts: List of prompts for extensions (generates defaults if not provided)
+            num_extensions: Number of 7s extensions to add (default: 2 for ~22s total)
+
+        Returns:
+            Path to the final extended video
+        """
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        # Use default prompts if not provided
+        if initial_prompt is None:
+            initial_prompt = self.DEFAULT_PROMPTS[0]  # Use first default prompt
+
+        if extension_prompts is None:
+            # Generate default extension prompts
+            extension_prompts = [
+                f"Continue the cinematic camera movement, maintaining the luxurious atmosphere, "
+                f"smooth professional transition, elegant architectural details, extension {i+1}"
+                for i in range(num_extensions)
+            ]
+        elif len(extension_prompts) != num_extensions:
+            raise ValueError(
+                f"Number of extension prompts ({len(extension_prompts)}) must match "
+                f"num_extensions ({num_extensions})"
+            )
+
+        expected_duration = 8 + num_extensions * 7
+
+        logger.info("="*80)
+        logger.info("EXTENDED PROPERTY VIDEO GENERATION (Veo 3.1 Extension)")
+        logger.info("="*80)
+        logger.info(f"Image: {Path(image_path).name}")
+        logger.info(f"Extensions: {num_extensions}")
+        logger.info(f"Expected duration: ~{expected_duration}s")
+        logger.info(f"API calls: {1 + num_extensions} (1 generation + {num_extensions} extensions)")
+        logger.warning(f"⚠️  Total billable API calls: {1 + num_extensions}")
+        logger.info("="*80)
+
+        # Generate extended video
+        output_path = self.session_dir / output_name
+
+        try:
+            final_video = self.veo_generator.generate_and_extend(
+                image_path=image_path,
+                initial_prompt=initial_prompt,
+                extension_prompts=extension_prompts,
+                output_path=str(output_path),
+                resolution="720p"
+            )
+
+            logger.info("\n" + "="*80)
+            logger.info("✓ EXTENDED VIDEO GENERATION COMPLETED!")
+            logger.info("="*80)
+            logger.info(f"Final video: {final_video}")
+            logger.info(f"Duration: ~{expected_duration}s")
+            logger.info(f"Session directory: {self.session_dir}")
+            logger.info("="*80)
+
+            return final_video
+
+        except Exception as e:
+            logger.error(f"✗ Failed to generate extended video: {e}")
+            raise
+
 
 def main():
     """

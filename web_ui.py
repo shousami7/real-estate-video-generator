@@ -185,6 +185,96 @@ def generate_video():
         "api_calls": num_api_calls
     }), 202
 
+@web_ui_blueprint.route('/generate-extended', methods=['POST'])
+def generate_extended_video():
+    """
+    Enqueue extended video generation using Veo 3.1 extension feature.
+
+    Uses ONE image and extends it to create a longer video:
+    - 8s initial + 7s per extension
+    - Example: 2 extensions = 22s total
+    - API calls: 1 generation + N extensions
+    """
+    if 'session_id' not in session or 'uploaded_files' not in session:
+        return jsonify({
+            "status": "error",
+            "message": "No uploaded images found. Please upload images first."
+        }), 400
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return jsonify({
+            "status": "error",
+            "message": "GOOGLE_API_KEY is not set. Please check your .env file."
+        }), 500
+
+    # Prevent duplicate submissions
+    existing_task_id = session.get('generation_task_id')
+    if existing_task_id:
+        existing_task = AsyncResult(existing_task_id, app=celery)
+        if existing_task.state not in states.READY_STATES:
+            return jsonify({
+                "status": "error",
+                "message": "A video generation task is already running. Please wait for it to finish or cancel it."
+            }), 409
+
+    session_id = session['session_id']
+    # Use only the first image
+    image_path = os.path.abspath(session['uploaded_files'][0])
+
+    # Get options from request
+    data = request.get_json() or {}
+    num_extensions = int(data.get('num_extensions', 2))
+    initial_prompt = data.get('initial_prompt')
+    extension_prompts = data.get('extension_prompts')
+
+    # Generate unique task ID
+    db_task_id = str(uuid.uuid4())
+    user_id = session_id
+
+    # Reset session state
+    session['generation_status'] = 'QUEUED'
+    session['generation_progress'] = 5
+    session.pop('generation_error', None)
+    session.pop('final_video', None)
+
+    # Launch extended video task
+    from tasks import extended_property_video_task
+
+    task = extended_property_video_task.apply_async(
+        args=[db_task_id, session_id, image_path, user_id],
+        kwargs={
+            "api_key": api_key,
+            "options": {
+                "num_extensions": num_extensions,
+                "initial_prompt": initial_prompt,
+                "extension_prompts": extension_prompts,
+                "output_name": "extended_property_video.mp4"
+            }
+        }
+    )
+
+    session['generation_task_id'] = task.id
+    session['db_task_id'] = db_task_id
+
+    total_api_calls = 1 + num_extensions
+    expected_duration = 8 + num_extensions * 7
+
+    logger.warning(
+        f"⚠️  Starting extended video generation: {total_api_calls} API calls "
+        f"(1 generation + {num_extensions} extensions) = ~{expected_duration}s video"
+    )
+
+    return jsonify({
+        "status": "started",
+        "message": f"Extended video generation started. {total_api_calls} API calls (1 generation + {num_extensions} extensions).",
+        "task_id": task.id,
+        "celery_task_id": task.id,
+        "db_task_id": db_task_id,
+        "api_calls": total_api_calls,
+        "expected_duration": expected_duration
+    }), 202
+
 @web_ui_blueprint.route('/status')
 def get_status():
     """

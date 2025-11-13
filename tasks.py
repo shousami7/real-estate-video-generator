@@ -214,3 +214,122 @@ def generate_property_video_task(
     logger.info("Completed background generation for session %s", session_id)
     return result
 
+
+@celery.task(
+    bind=True,
+    name="tasks.extended_property_video_task",
+    max_retries=0,
+    soft_time_limit=1800,
+    time_limit=2400
+)
+def extended_property_video_task(
+    self,
+    db_task_id: str,
+    session_id: str,
+    image_path: str,
+    user_id: str,
+    api_key: Optional[str] = None,
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Celery task for generating extended property videos using Veo 3.1 extension feature.
+
+    This generates ONE long video from a single image using the extension API:
+    - 8s base + 7s per extension
+    - Example: 2 extensions = 22s total
+
+    WARNING: API calls = 1 generation + N extensions
+    For 2 extensions: 3 total billable API calls
+
+    Args:
+        db_task_id: Supabase task record ID
+        session_id: User session ID
+        image_path: Path to single input image
+        user_id: User ID
+        api_key: Google API key (optional, defaults to env var)
+        options: Optional generation parameters including:
+            - num_extensions (int): Number of 7s extensions (default: 2)
+            - initial_prompt (str): Prompt for initial 8s generation
+            - extension_prompts (List[str]): Prompts for each extension
+            - output_name (str): Output filename
+
+    Returns:
+        Dict containing result metadata
+    """
+    from generate_property_video import PropertyVideoGenerator
+
+    options = options or {}
+    num_extensions = int(options.get("num_extensions", 2))
+    initial_prompt = options.get("initial_prompt")
+    extension_prompts = options.get("extension_prompts")
+    output_name = options.get("output_name", "extended_property_video.mp4")
+
+    # Get API key from options or environment
+    if not api_key:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY not found in environment")
+
+    # Normalize image path
+    abs_image_path = os.path.abspath(image_path)
+    if not os.path.exists(abs_image_path):
+        raise FileNotFoundError(f"Image not found: {abs_image_path}")
+
+    total_api_calls = 1 + num_extensions
+    expected_duration = 8 + num_extensions * 7
+
+    # Warn about API costs
+    logger.warning(
+        f"⚠️  Task {db_task_id}: Extended video generation = {total_api_calls} billable API calls "
+        f"(1 generation + {num_extensions} extensions)"
+    )
+
+    logger.info(f"Starting extended video generation for task {db_task_id} (celery task {self.request.id})")
+
+    # Update progress: Starting
+    self.update_state(
+        state="PROGRESS",
+        meta=_task_meta(10, "Starting extended video generation", "STARTING"),
+    )
+
+    generator = PropertyVideoGenerator(
+        api_key=api_key,
+        output_dir="output",
+        session_name=session_id,
+    )
+
+    try:
+        # Update progress: Generating extended video
+        self.update_state(
+            state="PROGRESS",
+            meta=_task_meta(50, f"Generating extended video (~{expected_duration}s)", "GENERATING_EXTENDED"),
+        )
+
+        final_video = generator.generate_extended_property_video(
+            image_path=abs_image_path,
+            output_name=output_name,
+            initial_prompt=initial_prompt,
+            extension_prompts=extension_prompts,
+            num_extensions=num_extensions,
+        )
+
+        # Success - 100%
+        result = {
+            "final_video": final_video,
+            "session_id": session_id,
+            "session_dir": str(generator.session_dir),
+            "api_calls_used": total_api_calls,
+            "duration_seconds": expected_duration,
+            "db_task_id": db_task_id,
+            "user_id": user_id,
+        }
+
+        logger.info(f"Completed extended video generation for task {db_task_id}")
+        logger.info(f"API calls made: {total_api_calls} (1 generation + {num_extensions} extensions)")
+
+        return result
+
+    except Exception as exc:
+        logger.exception(f"Extended video generation failed for task {db_task_id}")
+        raise exc
+

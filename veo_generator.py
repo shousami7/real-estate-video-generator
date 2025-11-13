@@ -410,6 +410,147 @@ class VeoVideoGenerator:
 
         return video_path
 
+    def extend_video(
+        self,
+        previous_operation,
+        extension_prompt: str,
+        resolution: str = "720p"
+    ) -> Any:
+        """
+        Extend a previously generated video by 7 seconds using Veo 3.1
+
+        Args:
+            previous_operation: Completed operation from a previous video generation
+            extension_prompt: Text prompt describing the desired motion for the extension
+            resolution: Video resolution ("720p" or "1080p")
+
+        Returns:
+            Operation object for extended video generation
+        """
+        logger.info(f"Extending video with prompt: {extension_prompt[:100]}...")
+
+        try:
+            # Extract video from previous operation
+            if not previous_operation.done:
+                raise ValueError("Previous operation is not complete yet")
+
+            if not hasattr(previous_operation, 'response'):
+                raise ValueError("Previous operation does not have a response")
+
+            response = previous_operation.response
+
+            # Extract video file from response
+            video_file = None
+            if hasattr(response, 'generated_videos') and response.generated_videos:
+                video_data = response.generated_videos[0]
+                if hasattr(video_data, 'video'):
+                    video_file = video_data.video
+            elif hasattr(response, 'video'):
+                video_file = response.video
+            elif hasattr(response, 'file'):
+                video_file = response.file
+
+            if not video_file:
+                raise ValueError("No video file found in previous operation response")
+
+            logger.info("Extending video using Veo 3.1...")
+
+            # Extend video - pass the video file object directly
+            operation = self.client.models.generate_videos(
+                model=self.VEO_MODEL,
+                video=video_file,  # Use the video from previous generation
+                prompt=extension_prompt,
+                config=types.GenerateVideosConfig(
+                    resolution=resolution
+                )
+            )
+
+            logger.info(f"Video extension started. Operation name: {operation.name}")
+
+            # Poll until extension completes
+            logger.info("Waiting for video extension to complete...")
+            poll_count = 0
+            max_polls = 10  # 5 minutes with 30 second intervals
+
+            while not operation.done:
+                time.sleep(30)
+                poll_count += 1
+
+                # Get updated operation status
+                operation = self.client.operations.get(operation)
+
+                if poll_count % 2 == 0:  # Log every 60 seconds
+                    logger.info(f"Still extending... ({poll_count * 30}s elapsed)")
+
+                if poll_count >= max_polls:
+                    raise TimeoutError("Video extension timed out after 5 minutes")
+
+            logger.info("Video extension completed!")
+            return operation
+
+        except Exception as e:
+            logger.error(f"Video extension failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
+
+    def generate_and_extend(
+        self,
+        image_path: str,
+        initial_prompt: str,
+        extension_prompts: list,
+        output_path: str,
+        resolution: str = "720p"
+    ) -> str:
+        """
+        Generate video from image and extend it multiple times
+
+        Creates: 8s base + 7s per extension
+        Example: 2 extensions = 8s + 7s + 7s = 22s total
+
+        Args:
+            image_path: Path to input image
+            initial_prompt: Prompt for initial 8-second generation
+            extension_prompts: List of prompts for each extension (each adds ~7s)
+            output_path: Path to save the final extended video
+            resolution: Video resolution ("720p" or "1080p")
+
+        Returns:
+            Path to the downloaded extended video
+        """
+        logger.info("="*80)
+        logger.info(f"Starting generation with {len(extension_prompts)} extensions")
+        logger.info(f"Expected duration: ~{8 + len(extension_prompts) * 7} seconds")
+        logger.info("="*80)
+
+        # Step 1: Generate initial 8-second video
+        logger.info("Step 1: Generating initial 8-second video...")
+        operation = self.generate_video(
+            image_path=image_path,
+            prompt=initial_prompt,
+            resolution=resolution
+        )
+
+        # Step 2: Extend video multiple times
+        for i, ext_prompt in enumerate(extension_prompts, 1):
+            logger.info(f"Step {i+1}: Extension {i}/{len(extension_prompts)}...")
+            operation = self.extend_video(
+                previous_operation=operation,
+                extension_prompt=ext_prompt,
+                resolution=resolution
+            )
+
+        # Step 3: Download final extended video
+        logger.info("Final step: Downloading extended video...")
+        video_path = self.download_video(operation, output_path)
+
+        final_duration = 8 + len(extension_prompts) * 7
+        logger.info("="*80)
+        logger.info(f"Extended video completed! (~{final_duration}s)")
+        logger.info("="*80)
+
+        return video_path
+
 
 if __name__ == "__main__":
     # Example usage
