@@ -134,7 +134,7 @@ class VeoVideoGenerator:
             # Poll until video generation completes
             logger.info("Waiting for video generation to complete...")
             poll_count = 0
-            max_polls = 120  # 10 minutes with 5 second intervals
+            max_polls = 10  # 5 minutes with 30 second intervals
 
             while not operation.done:
                 time.sleep(30)
@@ -143,11 +143,11 @@ class VeoVideoGenerator:
                 # Get updated operation status
                 operation = self.client.operations.get(operation)
 
-                if poll_count % 6 == 0:  # Log every 30 seconds
-                    logger.info(f"Still generating... ({poll_count * 5}s elapsed)")
+                if poll_count % 2 == 0:  # Log every 60 seconds
+                    logger.info(f"Still generating... ({poll_count * 30}s elapsed)")
 
                 if poll_count >= max_polls:
-                    raise TimeoutError("Video generation timed out after 10 minutes")
+                    raise TimeoutError("Video generation timed out after 5 minutes")
 
             logger.info("Video generation completed!")
             return operation
