@@ -48,7 +48,10 @@ class PropertyVideoGenerator:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
+        project_id: Optional[str] = None,
+        location: str = "us-central1",
+        use_vertex_ai: bool = False,
         output_dir: str = "output",
         session_name: Optional[str] = None
     ):
@@ -56,12 +59,24 @@ class PropertyVideoGenerator:
         Initialize the Property Video Generator
 
         Args:
-            api_key: Google AI API key
+            api_key: Google AI API key (for Google AI Studio mode)
+            project_id: GCP Project ID (for Vertex AI mode)
+            location: GCP region (default: us-central1)
+            use_vertex_ai: Whether to use Vertex AI instead of Google AI Studio
             output_dir: Base output directory
             session_name: Optional session name (defaults to timestamp)
         """
         self.api_key = api_key
-        self.veo_generator = VeoVideoGenerator(api_key)
+        self.project_id = project_id
+        self.use_vertex_ai = use_vertex_ai
+
+        # Initialize Veo generator with appropriate mode
+        self.veo_generator = VeoVideoGenerator(
+            api_key=api_key,
+            project_id=project_id,
+            location=location,
+            use_vertex_ai=use_vertex_ai
+        )
         self.video_composer = VideoComposer()
 
         # Create session directory
@@ -276,10 +291,28 @@ Examples:
         """
     )
 
-    parser.add_argument(
+    # Authentication options
+    auth_group = parser.add_argument_group('Authentication (choose one mode)')
+    auth_group.add_argument(
         "--api-key",
         type=str,
-        help="Google AI API key (or set GOOGLE_API_KEY environment variable)"
+        help="Google AI API key for Google AI Studio mode (or set GOOGLE_API_KEY env var)"
+    )
+    auth_group.add_argument(
+        "--project-id",
+        type=str,
+        help="GCP Project ID for Vertex AI mode (or set GOOGLE_CLOUD_PROJECT env var)"
+    )
+    auth_group.add_argument(
+        "--location",
+        type=str,
+        default="us-central1",
+        help="GCP region for Vertex AI (default: us-central1)"
+    )
+    auth_group.add_argument(
+        "--use-vertex-ai",
+        action="store_true",
+        help="Use Vertex AI instead of Google AI Studio (enables GCP credits usage)"
     )
 
     parser.add_argument(
@@ -360,16 +393,35 @@ Examples:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Get API key
+    # Get authentication parameters
     api_key = args.api_key or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        logger.error("Error: API key not provided. Use --api-key or set GOOGLE_API_KEY environment variable.")
-        sys.exit(1)
+    project_id = args.project_id or os.getenv("GOOGLE_CLOUD_PROJECT")
+    use_vertex_ai = args.use_vertex_ai
+
+    # Validate authentication parameters
+    if use_vertex_ai:
+        if not project_id:
+            logger.error("Error: --project-id is required for Vertex AI mode (or set GOOGLE_CLOUD_PROJECT env var)")
+            sys.exit(1)
+        logger.info("=" * 80)
+        logger.info("🚀 VERTEX AI MODE ENABLED - Using GCP Credits!")
+        logger.info("=" * 80)
+    else:
+        if not api_key:
+            logger.error("Error: --api-key is required for Google AI Studio mode (or set GOOGLE_API_KEY env var)")
+            logger.error("Tip: Use --use-vertex-ai --project-id YOUR_PROJECT to use Vertex AI instead")
+            sys.exit(1)
+        logger.info("=" * 80)
+        logger.info("Using Google AI Studio Mode")
+        logger.info("=" * 80)
 
     try:
         # Initialize generator
         generator = PropertyVideoGenerator(
             api_key=api_key,
+            project_id=project_id,
+            location=args.location,
+            use_vertex_ai=use_vertex_ai,
             output_dir=args.output_dir,
             session_name=args.session_name
         )

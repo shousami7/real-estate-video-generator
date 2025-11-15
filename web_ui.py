@@ -126,12 +126,24 @@ def generate_video():
             "message": "No uploaded images found. Please upload images first."
         }), 400
 
+    # Get authentication parameters
     api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        return jsonify({
-            "status": "error",
-            "message": "GOOGLE_API_KEY is not set. Please check your .env file."
-        }), 500
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+    location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+    # Determine if Vertex AI should be used
+    use_vertex_ai = bool(project_id)
+
+    # Validate authentication
+    if use_vertex_ai:
+        logger.info(f"🚀 Using Vertex AI Mode - Project: {project_id}, Location: {location}")
+    else:
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "GOOGLE_API_KEY or GOOGLE_CLOUD_PROJECT must be set. Please check your .env file."
+            }), 500
+        logger.info("Using Google AI Studio Mode")
 
     # Prevent duplicate submissions while a task is still running
     existing_task_id = session.get('generation_task_id')
@@ -176,6 +188,9 @@ def generate_video():
         args=[db_task_id, session_id, image_paths, user_id],
         kwargs={
             "api_key": api_key,
+            "project_id": project_id,
+            "location": location,
+            "use_vertex_ai": use_vertex_ai,
             "options": {
                 "clip_duration": clip_duration,
                 "transition_type": "fade",
