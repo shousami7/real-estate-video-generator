@@ -251,26 +251,71 @@ class VeoVideoGenerator:
         logger.info(f"Downloading from URI: {uri}")
 
         try:
-            # Prepare authentication headers
-            headers = {
-                'X-Goog-API-Key': self.api_key
-            }
+            # Prepare authentication headers based on mode
+            headers = {}
 
-            logger.info("Making authenticated request to download video...")
+            if self.use_vertex_ai:
+                # For Vertex AI, use Google Cloud credentials
+                logger.info("Using Vertex AI authentication for download")
+                try:
+                    from google.auth import default
+                    from google.auth.transport.requests import Request
+
+                    # Get credentials
+                    credentials, _ = default()
+
+                    # Refresh credentials if needed
+                    if not credentials.valid:
+                        if credentials.expired and credentials.refresh_token:
+                            credentials.refresh(Request())
+
+                    # Add bearer token to headers
+                    if credentials.token:
+                        headers['Authorization'] = f'Bearer {credentials.token}'
+                        logger.info("Added OAuth2 bearer token to request headers")
+                    else:
+                        logger.warning("No access token available, attempting unauthenticated download")
+
+                except Exception as auth_error:
+                    logger.warning(f"Failed to get Vertex AI credentials: {auth_error}")
+                    logger.warning("Attempting unauthenticated download...")
+            else:
+                # For Google AI Studio, use API key
+                if self.api_key:
+                    headers['X-Goog-API-Key'] = self.api_key
+                    logger.info("Using API key authentication for download")
+                else:
+                    logger.warning("No API key available, attempting unauthenticated download")
+
+            logger.info(f"Making authenticated request to download video...")
+            logger.info(f"Request headers (masked): {list(headers.keys())}")
 
             # Download using requests with authentication
             response = requests.get(uri, headers=headers, timeout=300, stream=True)
 
             logger.info(f"Response status code: {response.status_code}")
+
+            # Provide more detailed error information
+            if response.status_code != 200:
+                logger.error(f"Download failed with status {response.status_code}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                try:
+                    error_body = response.text[:500]  # First 500 chars
+                    logger.error(f"Response body: {error_body}")
+                except:
+                    pass
+
             response.raise_for_status()
 
             # Write to file in chunks
+            total_bytes = 0
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+                        total_bytes += len(chunk)
 
-            logger.info(f"File downloaded successfully from URI")
+            logger.info(f"File downloaded successfully from URI ({total_bytes} bytes written)")
 
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP Error {e.response.status_code}")
@@ -282,6 +327,8 @@ class VeoVideoGenerator:
             raise
         except Exception as e:
             logger.error(f"Failed to download from URI {uri}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def download_video(self, operation, output_path: str) -> str:
@@ -357,11 +404,12 @@ class VeoVideoGenerator:
 
             logger.info(f"Downloading video from: {file_uri}")
 
-            # Download with retry logic (reduced retries since failures should fail fast)
-            max_retries = 2
-            retry_delay = 2  # seconds
-            logger.warning(f"Download configured with {max_retries} max retries")
+            # Download with retry logic
+            max_retries = 3
+            retry_delay = 3  # seconds
+            logger.info(f"Download configured with {max_retries} max retries and {retry_delay}s initial delay")
 
+            last_error = None
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
@@ -377,26 +425,42 @@ class VeoVideoGenerator:
                     if file_size == 0:
                         raise IOError(f"Downloaded file is empty: {output_path}")
 
-                    logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
+                    logger.info(f"✓ Video downloaded successfully: {output_path} ({file_size:,} bytes)")
                     return output_path
 
                 except (BrokenPipeError, ConnectionError, IOError, requests.exceptions.RequestException) as e:
-                    logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+                    last_error = e
+                    error_type = type(e).__name__
+                    logger.warning(f"✗ Download attempt {attempt + 1}/{max_retries} failed: {error_type}: {e}")
 
                     # Clean up partial file if it exists
                     if os.path.exists(output_path):
                         try:
+                            partial_size = os.path.getsize(output_path)
                             os.remove(output_path)
-                            logger.info(f"Removed partial file: {output_path}")
+                            logger.info(f"Removed partial file: {output_path} ({partial_size} bytes)")
                         except Exception as cleanup_error:
                             logger.warning(f"Failed to remove partial file: {cleanup_error}")
 
                     if attempt < max_retries - 1:
-                        logger.info(f"Retrying in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        current_delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.info(f"Retrying in {current_delay} seconds...")
+                        time.sleep(current_delay)
                     else:
-                        raise RuntimeError(f"Failed to download video after {max_retries} attempts") from e
+                        # Provide detailed error message on final failure
+                        error_msg = (
+                            f"Failed to download video after {max_retries} attempts.\n"
+                            f"Last error: {error_type}: {str(last_error)}\n"
+                            f"Video URI: {file_uri}\n"
+                            f"Output path: {output_path}\n"
+                        )
+                        if self.use_vertex_ai:
+                            error_msg += "\nNote: Using Vertex AI mode. Ensure your service account has proper permissions."
+                        else:
+                            error_msg += "\nNote: Using Google AI Studio mode. Check your API key and quota limits."
+
+                        logger.error(error_msg)
+                        raise RuntimeError(f"Failed to download video after {max_retries} attempts: {error_type}") from e
 
         except Exception as e:
             logger.error(f"Failed to download video: {e}")
