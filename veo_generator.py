@@ -13,6 +13,12 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 import logging
 import requests
+try:
+    from google.auth.transport.requests import Request
+    from google.auth import default as get_default_credentials
+    HAS_GOOGLE_AUTH = True
+except ImportError:
+    HAS_GOOGLE_AUTH = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,7 +36,7 @@ class VeoVideoGenerator:
 
     # Available Veo models
     VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
-    VEO_MODEL_VERTEX = "veo-3.1-generate-preview"   # Vertex AI
+    VEO_MODEL_VERTEX = "veo-3.0-fast-generate-001"  # Vertex AI (Fast model)
 
     def __init__(
         self,
@@ -251,12 +257,34 @@ class VeoVideoGenerator:
         logger.info(f"Downloading from URI: {uri}")
 
         try:
-            # Prepare authentication headers
-            headers = {
-                'X-Goog-API-Key': self.api_key
-            }
+            # Prepare authentication headers based on mode
+            headers = {}
 
-            logger.info("Making authenticated request to download video...")
+            if self.use_vertex_ai:
+                # For Vertex AI, try to use GCP authentication
+                logger.info("Using Vertex AI mode - preparing GCP authentication")
+
+                # First, try unauthenticated (pre-signed URLs)
+                # If that fails, we'll try with credentials
+                if HAS_GOOGLE_AUTH:
+                    try:
+                        credentials, project = get_default_credentials()
+                        if credentials.token is None:
+                            credentials.refresh(Request())
+                        headers['Authorization'] = f'Bearer {credentials.token}'
+                        logger.info("Using GCP OAuth2 credentials for download")
+                    except Exception as auth_error:
+                        logger.warning(f"Could not get GCP credentials, trying unauthenticated: {auth_error}")
+                else:
+                    logger.info("google-auth not available, attempting unauthenticated download")
+            else:
+                # For Google AI Studio, use API key
+                if not self.api_key:
+                    raise ValueError("API key is required for Google AI Studio mode downloads")
+                headers['X-Goog-API-Key'] = self.api_key
+                logger.info("Using Google AI Studio mode with API key authentication")
+
+            logger.info("Making request to download video...")
 
             # Download using requests with authentication
             response = requests.get(uri, headers=headers, timeout=300, stream=True)
@@ -357,46 +385,84 @@ class VeoVideoGenerator:
 
             logger.info(f"Downloading video from: {file_uri}")
 
-            # Download with retry logic (reduced retries since failures should fail fast)
-            max_retries = 2
-            retry_delay = 2  # seconds
-            logger.warning(f"Download configured with {max_retries} max retries")
+            # Try to download using SDK native methods first
+            sdk_download_successful = False
 
-            for attempt in range(max_retries):
+            # Method 1: Try to use client.files.download if available
+            try:
+                if hasattr(self.client, 'files') and hasattr(self.client.files, 'download'):
+                    logger.info("Attempting download using genai SDK native method...")
+                    downloaded_file = self.client.files.download(file_uri)
+                    with open(output_path, 'wb') as f:
+                        f.write(downloaded_file)
+                    sdk_download_successful = True
+                    logger.info("Successfully downloaded using SDK native method")
+            except Exception as sdk_error:
+                logger.warning(f"SDK native download failed: {sdk_error}")
+
+            # Method 2: Check if video_file has video data directly
+            if not sdk_download_successful and hasattr(video_file, 'video_data'):
                 try:
-                    logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
+                    logger.info("Attempting to extract video data from video_file object...")
+                    with open(output_path, 'wb') as f:
+                        f.write(video_file.video_data)
+                    sdk_download_successful = True
+                    logger.info("Successfully extracted video data from object")
+                except Exception as data_error:
+                    logger.warning(f"Failed to extract video data: {data_error}")
 
-                    # Download from URI
-                    self._download_from_uri(file_uri, output_path)
-
-                    # Verify file was written
-                    if not os.path.exists(output_path):
-                        raise IOError(f"Failed to write file: {output_path}")
-
+            # If SDK download was successful, verify and return
+            if sdk_download_successful:
+                if os.path.exists(output_path):
                     file_size = os.path.getsize(output_path)
-                    if file_size == 0:
-                        raise IOError(f"Downloaded file is empty: {output_path}")
-
                     logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
                     return output_path
+                else:
+                    logger.warning("SDK download reported success but file not found, falling back to HTTP download")
+                    sdk_download_successful = False
 
-                except (BrokenPipeError, ConnectionError, IOError, requests.exceptions.RequestException) as e:
-                    logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+            # Method 3: Fall back to HTTP download with retry logic
+            if not sdk_download_successful:
+                logger.info("Falling back to HTTP download method...")
+                max_retries = 2
+                retry_delay = 2  # seconds
+                logger.info(f"Download configured with {max_retries} max retries")
 
-                    # Clean up partial file if it exists
-                    if os.path.exists(output_path):
-                        try:
-                            os.remove(output_path)
-                            logger.info(f"Removed partial file: {output_path}")
-                        except Exception as cleanup_error:
-                            logger.warning(f"Failed to remove partial file: {cleanup_error}")
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
 
-                    if attempt < max_retries - 1:
-                        logger.info(f"Retrying in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                    else:
-                        raise RuntimeError(f"Failed to download video after {max_retries} attempts") from e
+                        # Download from URI
+                        self._download_from_uri(file_uri, output_path)
+
+                        # Verify file was written
+                        if not os.path.exists(output_path):
+                            raise IOError(f"Failed to write file: {output_path}")
+
+                        file_size = os.path.getsize(output_path)
+                        if file_size == 0:
+                            raise IOError(f"Downloaded file is empty: {output_path}")
+
+                        logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
+                        return output_path
+
+                    except (BrokenPipeError, ConnectionError, IOError, requests.exceptions.RequestException) as e:
+                        logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+
+                        # Clean up partial file if it exists
+                        if os.path.exists(output_path):
+                            try:
+                                os.remove(output_path)
+                                logger.info(f"Removed partial file: {output_path}")
+                            except Exception as cleanup_error:
+                                logger.warning(f"Failed to remove partial file: {cleanup_error}")
+
+                        if attempt < max_retries - 1:
+                            logger.info(f"Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            raise RuntimeError(f"Failed to download video after {max_retries} attempts") from e
 
         except Exception as e:
             logger.error(f"Failed to download video: {e}")
