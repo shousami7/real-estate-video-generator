@@ -213,6 +213,11 @@ def generate_video():
     num_api_calls = len(image_paths)
     logger.warning(f"⚠️  Starting video generation: {num_api_calls} images = {num_api_calls} Veo API calls")
 
+    # Check if running in eager mode (synchronous)
+    is_eager_mode = celery.conf.task_always_eager
+    if is_eager_mode:
+        logger.info("Running in SYNCHRONOUS mode - task will execute immediately")
+
     # Check if task completed immediately (synchronous mode)
     if task.ready():
         logger.info("Task completed synchronously")
@@ -240,6 +245,28 @@ def generate_video():
             }), 500
 
     # Async mode - task is queued
+    # Check if Celery workers are available (with timeout)
+    try:
+        inspector = celery.control.inspect(timeout=1.0)
+        active_workers = inspector.active()
+
+        if not active_workers:
+            logger.error("⚠️  No Celery workers are running! Task will remain queued until a worker starts.")
+            logger.error("⚠️  Start a worker with: celery -A celery_app worker --loglevel=info")
+            return jsonify({
+                "status": "error",
+                "message": "No Celery workers are running. Please start a Celery worker or enable synchronous mode (CELERY_ALWAYS_EAGER=true in .env).",
+                "help": "Start a worker with: celery -A celery_app worker --loglevel=info"
+            }), 500
+    except Exception as e:
+        logger.error(f"⚠️  Failed to check for Celery workers: {e}")
+        logger.error("⚠️  This usually means Redis is not available. Task will remain queued.")
+        return jsonify({
+            "status": "error",
+            "message": "Failed to connect to Celery broker. Please ensure Redis is running or enable synchronous mode (CELERY_ALWAYS_EAGER=true in .env).",
+            "help": "Start Redis with: brew services start redis (macOS) or sudo systemctl start redis (Linux)"
+        }), 500
+
     return jsonify({
         "status": "started",
         "message": f"Video generation started. Processing {num_api_calls} images (= {num_api_calls} Veo API calls).",

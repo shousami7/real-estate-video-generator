@@ -29,11 +29,18 @@ def check_redis_available(broker_url: str) -> bool:
             port = int(url_parts[1]) if len(url_parts) > 1 else 6379
 
             # Try to connect with a short timeout
-            client = redis.Redis(host=host, port=port, socket_connect_timeout=1)
+            client = redis.Redis(host=host, port=port, socket_connect_timeout=1, socket_timeout=1)
             client.ping()
+            logger.info(f"✓ Redis connection successful at {host}:{port}")
             return True
+        else:
+            logger.debug(f"Broker URL does not start with redis://: {broker_url}")
+            return False
+    except ImportError:
+        logger.warning("⚠️  Redis module not installed. Install with: pip install redis")
+        return False
     except Exception as e:
-        logger.debug(f"Redis connection check failed: {e}")
+        logger.info(f"Redis connection check failed: {e}")
         return False
 
 
@@ -52,8 +59,19 @@ def make_celery() -> Celery:
     redis_available = check_redis_available(broker_url)
 
     if not redis_available and not force_sync:
+        print("\n" + "="*80)
+        print("⚠️  REDIS NOT AVAILABLE - Running in SYNCHRONOUS mode")
+        print("="*80)
+        print("Tasks will execute immediately and block the web request.")
+        print("\nTo enable async processing (recommended for production):")
+        print("  macOS:  brew services start redis")
+        print("  Linux:  sudo systemctl start redis")
+        print("  Docker: docker run -d -p 6379:6379 redis:latest")
+        print("\nThen start a Celery worker:")
+        print("  celery -A celery_app worker --loglevel=info")
+        print("="*80 + "\n")
         logger.warning("⚠️  Redis is not available. Running in SYNCHRONOUS mode (tasks will block).")
-        logger.warning("⚠️  To enable async processing, start Redis: brew services start redis (macOS) or sudo systemctl start redis (Linux)")
+        logger.warning("⚠️  To enable async processing, start Redis and a Celery worker")
         force_sync = True
 
     celery_app = Celery(
@@ -76,8 +94,13 @@ def make_celery() -> Celery:
     )
 
     if force_sync:
+        print("✓ Celery configured in SYNCHRONOUS mode (CELERY_ALWAYS_EAGER=True)")
+        print("  - Video generation will block the web request")
+        print("  - Progress updates may not work as expected\n")
         logger.info("✓ Celery configured in SYNCHRONOUS mode (CELERY_ALWAYS_EAGER=True)")
     else:
+        print("✓ Celery configured in ASYNC mode with Redis")
+        print("  - Make sure to start a Celery worker: celery -A celery_app worker --loglevel=info\n")
         logger.info("✓ Celery configured in ASYNC mode with Redis")
 
     return celery_app

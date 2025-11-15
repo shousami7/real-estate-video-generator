@@ -116,34 +116,67 @@ EOF
 
 ### Web UI (Recommended)
 
-The easiest way to use the system is through the web interface:
+The easiest way to use the system is through the web interface.
+
+#### Option 1: Async Mode (Recommended for Production)
+
+This mode uses Redis + Celery workers for non-blocking background processing:
 
 ```bash
-# Start the Flask web server using the startup script (recommended)
-./start.sh
+# 1. Start Redis (if not already running)
+# macOS:
+brew services start redis
 
-# Or start directly with Python
+# Linux:
+sudo systemctl start redis
+
+# Docker:
+docker run -d -p 6379:6379 redis:latest
+
+# 2. Start the Flask web server
 python3 app.py
 
-# In a separate terminal, start a Celery worker
-celery -A celery_app.celery worker --loglevel=info
+# 3. In a separate terminal, start a Celery worker
+celery -A celery_app worker --loglevel=info
 ```
 
-Then open your browser and navigate to:
+**Benefits**:
+- Non-blocking: Web server stays responsive during video generation
+- Real-time progress updates
+- Can handle multiple concurrent requests
+- You can close the browser while videos are being generated
+
+#### Option 2: Synchronous Mode (Simple Setup)
+
+If you don't want to set up Redis, you can run in synchronous mode:
+
+```bash
+# 1. Create or edit .env file and add:
+CELERY_ALWAYS_EAGER=true
+
+# 2. Start the Flask web server
+python3 app.py
+```
+
+**Note**: In synchronous mode:
+- Video generation will block the web request (browser will wait)
+- Progress bar may not update in real-time
+- Only one generation can run at a time
+- Suitable for development/testing or single-user scenarios
+
+#### Access the Web UI
+
+Open your browser and navigate to:
 ```
 http://localhost:5001
 ```
 
 Features:
 - User-friendly interface with drag-and-drop image upload
-- Real-time progress tracking
+- Real-time progress tracking (async mode)
 - Automatic video preview and download
-- Background generation means you can close the browser or cancel while clips render
+- Background generation (async mode only)
 - No command-line knowledge required
-
-**Broker setup**: By default Celery expects Redis at `redis://localhost:6379/0`. Override with
-`CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` in your `.env` if you are using a hosted Redis or
-another broker.
 
 ### Command-Line Interface
 
