@@ -1,16 +1,12 @@
 import os
-from typing import Any, Dict, List, Optional
+import shutil
+from typing import Any, Dict, List, Optional, Tuple
 
 from celery.utils.log import get_task_logger
 from dotenv import load_dotenv
 
 from celery_app import celery
 from generate_property_video import PropertyVideoGenerator
-<<<<<<< HEAD
-
-logger = get_task_logger(__name__)
-
-=======
 from supabase_storage import (
     is_supabase_configured,
     upload_file_to_supabase,
@@ -23,7 +19,9 @@ load_dotenv()
 if is_supabase_configured():
     logger.info("✓ Supabase client initialized in Celery worker")
 else:
-    logger.warning("⚠️  SUPABASE_URL or SUPABASE_KEY not set in Celery worker. Generated videos will be served from local storage.")
+    logger.warning(
+        "⚠️  SUPABASE_URL or SUPABASE_KEY not set in Celery worker. Generated videos will be served from local storage."
+    )
 
 LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
 os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
@@ -89,8 +87,6 @@ def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> s
 
     return fallback_url
 
->>>>>>> 3e82d0b (supa)
-
 def _normalize_image_paths(image_paths: List[str]) -> List[str]:
     """
     Ensure all image paths are absolute so the Celery worker can access them.
@@ -154,8 +150,6 @@ def property_video_generation_task(
     Returns:
         Dict containing result metadata
     """
-    from generate_property_video import PropertyVideoGenerator
-
     options = options or {}
     clip_duration = int(options.get("clip_duration", 8))
     transition_type = options.get("transition_type", "fade")
@@ -181,7 +175,9 @@ def property_video_generation_task(
 
     # Warn about API costs
     mode_name = "Vertex AI (GCP Credits)" if use_vertex_ai else "Google AI Studio"
-    logger.warning(f"⚠️  Task {db_task_id}: Generating {len(image_paths)} clips = {len(image_paths)} billable API calls ({mode_name})")
+    logger.warning(
+        f"⚠️  Task {db_task_id}: Generating {len(image_paths)} clips = {len(image_paths)} billable API calls ({mode_name})"
+    )
 
     logger.info(f"Starting property video generation for task {db_task_id} (celery task {self.request.id})")
 
@@ -233,16 +229,18 @@ def property_video_generation_task(
             meta=_task_meta(80, "Composing final video with transitions", "COMPOSING"),
         )
 
-        final_video = generator.compose_final_video(
+        final_video_path = generator.compose_final_video(
             video_clips=video_clips,
             output_name=output_name,
             transition_type=transition_type,
             transition_duration=transition_duration,
         )
 
+        final_video_url = _upload_final_video_to_supabase(session_id, final_video_path)
+
         # Success - 100%
         result = {
-            "final_video": final_video,
+            "final_video": final_video_url,
             "session_id": session_id,
             "session_dir": str(generator.session_dir),
             "clips_generated": len(video_clips),
@@ -338,7 +336,7 @@ def generate_property_video_task(
             state="COMPOSING",
             meta=_task_meta(70, "Composing final video", "COMPOSING"),
         )
-        final_video = generator.compose_final_video(
+        final_video_path = generator.compose_final_video(
             video_clips=video_clips,
             output_name=output_name,
             transition_type=transition_type,
@@ -349,8 +347,10 @@ def generate_property_video_task(
         logger.exception("Video generation failed for session %s", session_id)
         raise exc
 
+    final_video_url = _upload_final_video_to_supabase(session_id, final_video_path)
+
     result = {
-        "final_video": final_video,
+        "final_video": final_video_url,
         "session_id": session_id,
         "session_dir": str(generator.session_dir),
     }
