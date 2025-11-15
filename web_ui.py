@@ -183,22 +183,29 @@ def generate_video():
     session.pop('generation_error', None)
     session.pop('final_video', None)
 
-    # Launch async task with new property_video_generation_task
-    task = property_video_generation_task.apply_async(
-        args=[db_task_id, session_id, image_paths, user_id],
-        kwargs={
-            "api_key": api_key,
-            "project_id": project_id,
-            "location": location,
-            "use_vertex_ai": use_vertex_ai,
-            "options": {
-                "clip_duration": clip_duration,
-                "transition_type": "fade",
-                "transition_duration": 0.5,
-                "output_name": "final_property_video.mp4"
+    # Launch task (will be async if Redis available, sync otherwise)
+    try:
+        task = property_video_generation_task.apply_async(
+            args=[db_task_id, session_id, image_paths, user_id],
+            kwargs={
+                "api_key": api_key,
+                "project_id": project_id,
+                "location": location,
+                "use_vertex_ai": use_vertex_ai,
+                "options": {
+                    "clip_duration": clip_duration,
+                    "transition_type": "fade",
+                    "transition_duration": 0.5,
+                    "output_name": "final_property_video.mp4"
+                }
             }
-        }
-    )
+        )
+    except Exception as e:
+        logger.error(f"Failed to queue task: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to start video generation: {str(e)}"
+        }), 500
 
     session['generation_task_id'] = task.id
     session['db_task_id'] = db_task_id
@@ -206,13 +213,41 @@ def generate_video():
     num_api_calls = len(image_paths)
     logger.warning(f"⚠️  Starting video generation: {num_api_calls} images = {num_api_calls} Veo API calls")
 
+    # Check if task completed immediately (synchronous mode)
+    if task.ready():
+        logger.info("Task completed synchronously")
+        try:
+            result = task.get()
+            session['final_video'] = result.get('final_video')
+            session['generation_status'] = 'COMPLETE'
+            session['generation_progress'] = 100
+            return jsonify({
+                "status": "completed",
+                "message": f"Video generation completed! ({num_api_calls} Veo API calls used)",
+                "task_id": task.id,
+                "final_video_url": "/download",
+                "api_calls": num_api_calls,
+                "sync_mode": True
+            }), 200
+        except Exception as e:
+            logger.error(f"Synchronous task failed: {e}")
+            session['generation_status'] = 'ERROR'
+            session['generation_error'] = str(e)
+            return jsonify({
+                "status": "error",
+                "message": f"Video generation failed: {str(e)}",
+                "sync_mode": True
+            }), 500
+
+    # Async mode - task is queued
     return jsonify({
         "status": "started",
         "message": f"Video generation started. Processing {num_api_calls} images (= {num_api_calls} Veo API calls).",
         "task_id": task.id,
         "celery_task_id": task.id,
         "db_task_id": db_task_id,
-        "api_calls": num_api_calls
+        "api_calls": num_api_calls,
+        "sync_mode": False
     }), 202
 
 @web_ui_blueprint.route('/status')
