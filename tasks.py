@@ -2,12 +2,94 @@ import os
 from typing import Any, Dict, List, Optional
 
 from celery.utils.log import get_task_logger
+from dotenv import load_dotenv
 
 from celery_app import celery
 from generate_property_video import PropertyVideoGenerator
+<<<<<<< HEAD
 
 logger = get_task_logger(__name__)
 
+=======
+from supabase_storage import (
+    is_supabase_configured,
+    upload_file_to_supabase,
+)
+
+logger = get_task_logger(__name__)
+
+load_dotenv()
+
+if is_supabase_configured():
+    logger.info("✓ Supabase client initialized in Celery worker")
+else:
+    logger.warning("⚠️  SUPABASE_URL or SUPABASE_KEY not set in Celery worker. Generated videos will be served from local storage.")
+
+LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
+os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
+
+
+def _local_generated_video_path(session_id: str, file_name: str) -> Tuple[str, str]:
+    """
+    Returns the (relative_path, absolute_path) for storing generated videos locally.
+    """
+    relative_path = os.path.join(session_id, "generated", file_name)
+    absolute_path = os.path.join(LOCAL_UPLOAD_ROOT, relative_path)
+    os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
+    # Normalize for URLs
+    normalized_relative = relative_path.replace("\\", "/")
+    return normalized_relative, absolute_path
+
+
+def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> str:
+    """
+    Upload the final generated video to Supabase Storage and return its public URL.
+    """
+    if not os.path.exists(local_video_path):
+        raise FileNotFoundError(f"Generated video not found at: {local_video_path}")
+
+    file_name = os.path.basename(local_video_path)
+    storage_path = f"{session_id}/generated/{file_name}"
+
+    public_url: Optional[str] = None
+
+    if is_supabase_configured():
+        logger.info(f"Uploading final video to Supabase: {local_video_path} -> {storage_path}")
+        public_url, upload_error = upload_file_to_supabase(
+            storage_path=storage_path,
+            local_file_path=local_video_path,
+            content_type="video/mp4",
+            cache_control="3600",
+        )
+        if upload_error:
+            public_url = None
+            logger.warning(
+                "Supabase upload failed, falling back to local delivery: %s",
+                upload_error,
+            )
+    else:
+        logger.warning("Supabase client not initialized in Celery worker. Using local storage for final video.")
+
+    if public_url:
+        try:
+            os.remove(local_video_path)
+            logger.info(f"Removed local video file after upload: {local_video_path}")
+        except Exception as cleanup_error:
+            logger.warning(f"Could not remove local video file: {cleanup_error}")
+        return public_url
+
+    relative_path, absolute_path = _local_generated_video_path(session_id, file_name)
+    if os.path.abspath(local_video_path) != os.path.abspath(absolute_path):
+        shutil.move(local_video_path, absolute_path)
+    else:
+        logger.info("Final video already located at %s", absolute_path)
+
+    fallback_url = f"/uploads/local/{relative_path}"
+    logger.info(f"Serving final video locally at {fallback_url}")
+
+    return fallback_url
+
+>>>>>>> 3e82d0b (supa)
 
 def _normalize_image_paths(image_paths: List[str]) -> List[str]:
     """

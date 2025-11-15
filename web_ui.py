@@ -12,12 +12,55 @@ from celery.result import AsyncResult
 from frame_editor import FrameEditor, AIFrameEditor
 from celery_app import celery
 from tasks import generate_property_video_task, property_video_generation_task
+from supabase_storage import (
+    is_supabase_configured,
+    upload_bytes_to_supabase,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 web_ui_blueprint = Blueprint('web_ui', __name__, template_folder='templates', static_folder='static')
 
+<<<<<<< HEAD
+=======
+# -----------------------------------------------------------------------------
+# Supabase Client Initialization
+# -----------------------------------------------------------------------------
+load_dotenv()
+
+LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
+os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
+
+if is_supabase_configured():
+    logger.info("✓ Supabase client ready (web process)")
+else:
+    logger.warning("⚠️  SUPABASE_URL or SUPABASE_KEY not set. Falling back to local storage only.")
+
+
+def _local_storage_full_path(relative_path: str) -> str:
+    """
+    Build an absolute path inside the uploads directory while preventing traversal.
+    """
+    safe_relative = os.path.normpath(relative_path).lstrip(os.sep)
+    full_path = os.path.join(LOCAL_UPLOAD_ROOT, safe_relative)
+    if os.path.commonpath([LOCAL_UPLOAD_ROOT, os.path.abspath(full_path)]) != os.path.abspath(LOCAL_UPLOAD_ROOT):
+        raise ValueError("Invalid storage path outside upload root")
+    return full_path
+
+
+def _save_bytes_to_local_storage(relative_path: str, file_bytes: bytes) -> str:
+    """
+    Persist bytes to LOCAL_UPLOAD_ROOT/relative_path and return the absolute path.
+    """
+    full_path = _local_storage_full_path(relative_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path, "wb") as destination:
+        destination.write(file_bytes)
+    return full_path
+
+
+>>>>>>> 3e82d0b (supa)
 @web_ui_blueprint.route('/')
 def index():
     """Web UIのエントリーポイントです。"""
@@ -57,10 +100,19 @@ def upload_files():
         session_id = session['session_id']
         print(f"[UPLOAD] Processing upload for session: {session_id}")
 
+<<<<<<< HEAD
         # アップロードディレクトリ作成
         upload_path = os.path.join('uploads', session_id)
         os.makedirs(upload_path, exist_ok=True)
         print(f"[UPLOAD] Upload directory: {upload_path}")
+=======
+        supabase_available = is_supabase_configured()
+        if not supabase_available:
+            logger.warning("Supabase client not available. Uploads will be stored locally only.")
+
+        uploaded_file_records: List[Dict[str, str]] = []
+        response_file_urls: List[str] = []
+>>>>>>> 3e82d0b (supa)
 
         # ファイルチェック（詳細なエラーメッセージ付き）
         uploaded_files = []
@@ -93,9 +145,60 @@ def upload_files():
             uploaded_files.append(file_path)
             print(f"[UPLOAD] Saved {file_key} to: {file_path}")
 
+<<<<<<< HEAD
         # セッションに保存
         session['uploaded_files'] = uploaded_files
         print(f"[UPLOAD SUCCESS] Uploaded {len(uploaded_files)} files")
+=======
+            local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
+            upload_record: Dict[str, str] = {
+                "file_key": file_key,
+                "filename": filename,
+                "storage_path": storage_path,
+                "local_path": local_path,
+                "content_type": file.content_type or "application/octet-stream",
+            }
+
+            public_url: Optional[str] = None
+            if supabase_available:
+                public_url, upload_error = upload_bytes_to_supabase(
+                    storage_path=storage_path,
+                    file_bytes=file_bytes,
+                    content_type=upload_record["content_type"]
+                )
+                if upload_error:
+                    public_url = None
+                    logger.warning(
+                        "Supabase upload failed for %s. Falling back to local storage. Error: %s",
+                        storage_path,
+                        upload_error,
+                        exc_info=True
+                    )
+                else:
+                    print(f"[UPLOAD] Saved {file_key} to Supabase URL: {public_url}")
+
+            if public_url:
+                upload_record["public_url"] = public_url
+                upload_record["storage_backend"] = "supabase"
+                response_file_urls.append(public_url)
+            else:
+                upload_record["storage_backend"] = "local"
+                response_file_urls.append(f"/uploads/local/{storage_path}")
+                logger.info(f"[UPLOAD] Stored {file_key} locally at {local_path}")
+
+            uploaded_file_records.append(upload_record)
+
+        session['uploaded_files'] = uploaded_file_records
+        print(f"[UPLOAD SUCCESS] Uploaded {len(uploaded_file_records)} files (Supabase available={supabase_available})")
+
+        storage_backends = {record.get("storage_backend") for record in uploaded_file_records}
+        if storage_backends == {"local"}:
+            storage_note = " (stored locally)"
+        elif "local" in storage_backends and "supabase" in storage_backends:
+            storage_note = " (partial Supabase upload; local copies kept)"
+        else:
+            storage_note = ""
+>>>>>>> 3e82d0b (supa)
 
         return jsonify({
             "status": "success",
