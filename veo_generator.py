@@ -1,6 +1,7 @@
 """
 Google Veo Video Generator Module
 Handles image-to-video generation using Google Generative AI (Veo) API
+Supports both Google AI Studio (API key) and Vertex AI (GCP project)
 """
 
 from google import genai
@@ -21,21 +22,65 @@ logger = logging.getLogger(__name__)
 class VeoVideoGenerator:
     """
     Manages video generation using Google Generative AI Veo Image-to-Video API
+
+    Supports two modes:
+    1. Google AI Studio (API key authentication)
+    2. Vertex AI (GCP project + service account authentication)
     """
 
     # Available Veo models
-    VEO_MODEL = "veo-3.0-fast-generate-001"  # Veo 3 Fast
+    VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
+    VEO_MODEL_VERTEX = "veo-3.1-generate-preview"   # Vertex AI
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        project_id: Optional[str] = None,
+        location: str = "us-central1",
+        use_vertex_ai: bool = False
+    ):
         """
         Initialize the Veo Video Generator
 
         Args:
-            api_key: Google AI API key
+            api_key: Google AI API key (for Google AI Studio mode)
+            project_id: GCP Project ID (for Vertex AI mode)
+            location: GCP region (default: us-central1)
+            use_vertex_ai: Whether to use Vertex AI instead of Google AI Studio
         """
+        self.use_vertex_ai = use_vertex_ai
+        self.project_id = project_id
+        self.location = location
         self.api_key = api_key
-        self.client = genai.Client(api_key=api_key)
-        logger.info(f"Initialized Veo Video Generator with model: {self.VEO_MODEL}")
+
+        # Determine which model to use
+        self.model = self.VEO_MODEL_VERTEX if use_vertex_ai else self.VEO_MODEL_STUDIO
+
+        # Initialize client based on mode
+        if use_vertex_ai:
+            if not project_id:
+                raise ValueError("project_id is required for Vertex AI mode")
+
+            logger.info(f"Initializing Vertex AI client (Project: {project_id}, Location: {location})")
+            self.client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location
+            )
+            logger.info(f"✓ Vertex AI Mode - Using GCP credits")
+            logger.info(f"✓ Model: {self.model}")
+            logger.info(f"✓ Project: {project_id}")
+            logger.info(f"✓ Location: {location}")
+        else:
+            if not api_key:
+                raise ValueError("api_key is required for Google AI Studio mode")
+
+            logger.info("Initializing Google AI Studio client")
+            self.client = genai.Client(api_key=api_key)
+            logger.info(f"✓ Google AI Studio Mode")
+            logger.info(f"✓ Model: {self.model}")
+
+        logger.info(f"Veo Video Generator initialized successfully")
 
     def upload_image(self, image_path: str):
         """
@@ -104,8 +149,9 @@ class VeoVideoGenerator:
         Returns:
             Operation object for video generation
         """
-        logger.info(f"Submitting video generation request")
-        logger.info(f"Model: {self.VEO_MODEL}")
+        mode_name = "Vertex AI" if self.use_vertex_ai else "Google AI Studio"
+        logger.info(f"Submitting video generation request ({mode_name})")
+        logger.info(f"Model: {self.model}")
         logger.info(f"Prompt: {prompt[:100]}...")
         logger.info(f"Settings: {duration}, {aspect_ratio}, {resolution}")
 
@@ -114,8 +160,8 @@ class VeoVideoGenerator:
             if not os.path.exists(image_path):
                 raise FileNotFoundError(f"Image file not found: {image_path}")
 
-            # Generate video using Veo 3.1
-            logger.info("Generating video with Google Veo 3.1...")
+            # Generate video using Veo
+            logger.info(f"Generating video with {mode_name}...")
 
             # Load image using types.Image.from_file() - automatically handles encoding and mime type
             logger.info(f"Loading image from: {image_path}")
@@ -124,7 +170,7 @@ class VeoVideoGenerator:
 
             # Start video generation operation
             operation = self.client.models.generate_videos(
-                model=self.VEO_MODEL,
+                model=self.model,
                 prompt=prompt,
                 image=image
             )
