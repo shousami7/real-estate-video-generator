@@ -47,6 +47,9 @@ def property_video_generation_task(
     image_paths: List[str],
     user_id: str,
     api_key: Optional[str] = None,
+    project_id: Optional[str] = None,
+    location: str = "us-central1",
+    use_vertex_ai: bool = False,
     options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
@@ -60,7 +63,10 @@ def property_video_generation_task(
         session_id: User session ID
         image_paths: List of image paths (exactly 3 required)
         user_id: User ID
-        api_key: Google API key (optional, defaults to env var)
+        api_key: Google API key (for Google AI Studio mode, optional, defaults to env var)
+        project_id: GCP Project ID (for Vertex AI mode, optional, defaults to env var)
+        location: GCP region for Vertex AI (default: us-central1)
+        use_vertex_ai: Whether to use Vertex AI instead of Google AI Studio
         options: Optional generation parameters
 
     Returns:
@@ -75,16 +81,25 @@ def property_video_generation_task(
     output_name = options.get("output_name", "final_property_video.mp4")
     prompts = options.get("prompts")
 
-    # Get API key from options or environment
-    if not api_key:
-        api_key = os.getenv("GOOGLE_API_KEY")
+    # Get authentication parameters from environment if not provided
+    if use_vertex_ai:
+        if not project_id:
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+            if not project_id:
+                raise ValueError("project_id required for Vertex AI mode (set GOOGLE_CLOUD_PROJECT env var)")
+        logger.info(f"🚀 Using Vertex AI Mode - Project: {project_id}")
+    else:
         if not api_key:
-            raise ValueError("GOOGLE_API_KEY not found in environment")
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError("GOOGLE_API_KEY not found in environment")
+        logger.info("Using Google AI Studio Mode")
 
     normalized_paths = _normalize_image_paths(image_paths)
 
     # Warn about API costs
-    logger.warning(f"⚠️  Task {db_task_id}: Generating {len(image_paths)} clips = {len(image_paths)} billable Veo API calls")
+    mode_name = "Vertex AI (GCP Credits)" if use_vertex_ai else "Google AI Studio"
+    logger.warning(f"⚠️  Task {db_task_id}: Generating {len(image_paths)} clips = {len(image_paths)} billable API calls ({mode_name})")
 
     logger.info(f"Starting property video generation for task {db_task_id} (celery task {self.request.id})")
 
@@ -96,6 +111,9 @@ def property_video_generation_task(
 
     generator = PropertyVideoGenerator(
         api_key=api_key,
+        project_id=project_id,
+        location=location,
+        use_vertex_ai=use_vertex_ai,
         output_dir="output",
         session_name=session_id,
     )
@@ -152,11 +170,23 @@ def generate_property_video_task(
     self,
     session_id: str,
     image_paths: List[str],
-    api_key: str,
+    api_key: Optional[str] = None,
+    project_id: Optional[str] = None,
+    location: str = "us-central1",
+    use_vertex_ai: bool = False,
     options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Celery task that generates the real estate marketing video in the background.
+
+    Args:
+        session_id: User session ID
+        image_paths: List of image paths
+        api_key: Google API key (for Google AI Studio mode)
+        project_id: GCP Project ID (for Vertex AI mode)
+        location: GCP region for Vertex AI
+        use_vertex_ai: Whether to use Vertex AI instead of Google AI Studio
+        options: Optional generation parameters
     """
     options = options or {}
     clip_duration = int(options.get("clip_duration", 8))
@@ -175,6 +205,9 @@ def generate_property_video_task(
 
     generator = PropertyVideoGenerator(
         api_key=api_key,
+        project_id=project_id,
+        location=location,
+        use_vertex_ai=use_vertex_ai,
         output_dir="output",
         session_name=session_id,
     )
