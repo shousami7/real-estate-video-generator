@@ -171,6 +171,27 @@
                     </div>
                 </div>
 
+                <div class="mt-10 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Generation Settings</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div>
+                            <label for="clip-duration-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Clip duration (seconds)
+                            </label>
+                            <input
+                                id="clip-duration-input"
+                                type="number"
+                                min="4"
+                                max="20"
+                                step="1"
+                                value="8"
+                                class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:border-primary focus:ring-primary"
+                            >
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">How long each uploaded photo is shown in the final video.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700">
                     <button id="generate-btn" disabled class="w-full bg-primary text-black font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity duration-300 focus:outline-none focus:ring-4 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="material-symbols-outlined">auto_awesome</span>
@@ -217,6 +238,7 @@
         const editFramesBtn = document.getElementById('edit-frames-btn');
         const errorAlert = document.getElementById('error-alert');
         const errorMessage = document.getElementById('error-message');
+        const clipDurationInput = document.getElementById('clip-duration-input');
         
         // 処理中の状態フラグ
         let isProcessing = false;
@@ -240,6 +262,23 @@
         function hideError() {
             errorAlert.classList.add('hidden');
             errorMessage.textContent = '';
+        }
+
+        function syncClipDurationInput() {
+            if (!clipDurationInput) return 8;
+            const min = parseInt(clipDurationInput.min, 10) || 4;
+            const max = parseInt(clipDurationInput.max, 10) || 20;
+            let value = parseInt(clipDurationInput.value, 10);
+            if (Number.isNaN(value)) {
+                value = 8;
+            }
+            value = Math.min(max, Math.max(min, value));
+            clipDurationInput.value = value;
+            return value;
+        }
+
+        if (clipDurationInput) {
+            clipDurationInput.addEventListener('change', syncClipDurationInput);
         }
 
         // [MODIFIED] ファイル名表示とプログレス更新 + .uploaded クラスのトグル
@@ -422,12 +461,28 @@
             if (isProcessing || generateBtn.disabled) return;
 
             hideError();
+            const clipDuration = syncClipDurationInput();
+            if (!clipDuration || Number.isNaN(clipDuration)) {
+                const rangeMessage = clipDurationInput
+                    ? `${clipDurationInput.min || 4}〜${clipDurationInput.max || 20}秒の範囲で入力してください。`
+                    : 'Enter a valid clip duration in seconds.';
+                showError(rangeMessage);
+                if (clipDurationInput) {
+                    clipDurationInput.focus();
+                }
+                return;
+            }
+
             // When generate-btn is pressed, enter processing state and update UI
             updateStatusUI('STARTING', 'Sending video generation request...', 15);
 
             try {
                 const response = await fetch('/generate', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ clip_duration: clipDuration })
                 });
                 const result = await response.json();
 

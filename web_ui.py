@@ -146,6 +146,21 @@ def generate_video():
     session_id = session['session_id']
     image_paths = [os.path.abspath(path) for path in session['uploaded_files']]
 
+    # Parse generation options from client
+    request_data = request.get_json(silent=True) or {}
+    clip_duration = request_data.get('clip_duration')
+    if clip_duration is None and 'clip_duration' in request.form:
+        clip_duration = request.form.get('clip_duration')
+
+    def _sanitize_clip_duration(value, default=8):
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(4, min(20, parsed))
+
+    clip_duration = _sanitize_clip_duration(clip_duration, default=8)
+
     # Generate unique task ID for tracking
     db_task_id = str(uuid.uuid4())
     user_id = session_id  # Using session_id as user_id for now
@@ -162,7 +177,7 @@ def generate_video():
         kwargs={
             "api_key": api_key,
             "options": {
-                "clip_duration": 8,
+                "clip_duration": clip_duration,
                 "transition_type": "fade",
                 "transition_duration": 0.5,
                 "output_name": "final_property_video.mp4"
