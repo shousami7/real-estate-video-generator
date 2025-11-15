@@ -119,16 +119,30 @@ def property_video_generation_task(
     )
 
     try:
-        # Update progress: Generating clips (50%)
+        # Update progress: Generating clips (20%)
         self.update_state(
             state="PROGRESS",
-            meta=_task_meta(50, f"Generating {len(image_paths)} AI video clips", "GENERATING_CLIPS"),
+            meta=_task_meta(20, f"Starting generation of {len(image_paths)} AI video clips", "GENERATING_CLIPS"),
         )
+
+        # Define progress callback for detailed updates
+        def clip_progress_callback(current: int, total: int, message: str):
+            # Calculate progress: 20% to 80% for clip generation
+            base_progress = 20
+            clip_range = 60
+            progress = base_progress + int((current / total) * clip_range)
+
+            self.update_state(
+                state="GENERATING_CLIPS",
+                meta=_task_meta(progress, message, "GENERATING_CLIPS"),
+            )
+            logger.info(f"Progress update: {progress}% - {message}")
 
         video_clips = generator.generate_video_clips(
             image_paths=normalized_paths,
             prompts=prompts,
             duration=clip_duration,
+            progress_callback=clip_progress_callback,
         )
 
         # Update progress: Composing (80%)
@@ -215,12 +229,27 @@ def generate_property_video_task(
     try:
         self.update_state(
             state="GENERATING_CLIPS",
-            meta=_task_meta(20, "Generating AI video clips", "GENERATING_CLIPS"),
+            meta=_task_meta(20, "Starting generation of AI video clips", "GENERATING_CLIPS"),
         )
+
+        # Define progress callback for detailed updates
+        def clip_progress_callback(current: int, total: int, message: str):
+            # Calculate progress: 20% to 70% for clip generation
+            base_progress = 20
+            clip_range = 50
+            progress = base_progress + int((current / total) * clip_range)
+
+            self.update_state(
+                state="GENERATING_CLIPS",
+                meta=_task_meta(progress, message, "GENERATING_CLIPS"),
+            )
+            logger.info(f"Progress update: {progress}% - {message}")
+
         video_clips = generator.generate_video_clips(
             image_paths=normalized_paths,
             prompts=prompts,
             duration=clip_duration,
+            progress_callback=clip_progress_callback,
         )
 
         self.update_state(

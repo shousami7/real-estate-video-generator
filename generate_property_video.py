@@ -95,7 +95,8 @@ class PropertyVideoGenerator:
         self,
         image_paths: List[str],
         prompts: Optional[List[str]] = None,
-        duration: int = 8
+        duration: int = 8,
+        progress_callback: Optional[callable] = None
     ) -> List[str]:
         """
         Generate video clips from images using Google Veo
@@ -107,6 +108,7 @@ class PropertyVideoGenerator:
             image_paths: List of paths to input images (3 images expected)
             prompts: Optional list of prompts (uses defaults if not provided)
             duration: Duration of each clip in seconds
+            progress_callback: Optional callback function(current, total, message) for progress updates
 
         Returns:
             List of paths to generated video clips
@@ -141,6 +143,10 @@ class PropertyVideoGenerator:
                 logger.info(f"Clip {i+1}/{len(image_paths)}: {Path(image_path).name}")
                 logger.info(f"{'='*80}")
 
+                # Call progress callback before starting this clip
+                if progress_callback:
+                    progress_callback(i, len(image_paths), f"Generating video clip {i+1}/{len(image_paths)}")
+
                 try:
                     video_path = self.veo_generator.generate_from_image_file(
                         image_path=image_path,
@@ -150,6 +156,10 @@ class PropertyVideoGenerator:
                     )
                     video_clips.append(video_path)
                     logger.info(f"✓ Clip {i+1} completed: {video_path}")
+
+                    # Call progress callback after completing this clip
+                    if progress_callback:
+                        progress_callback(i + 1, len(image_paths), f"Completed video clip {i+1}/{len(image_paths)}")
 
                 except Exception as e:
                     logger.error(f"✗ Failed to generate clip {i+1}: {e}")
