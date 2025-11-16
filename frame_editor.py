@@ -13,6 +13,8 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import timedelta
 
+from utils.video_duration import probe_video_duration
+
 # PIL is optional - only needed if image resizing is required
 try:
     from PIL import Image
@@ -51,23 +53,8 @@ class FrameEditor:
         Returns:
             Duration in seconds
         """
-        cmd = [
-            self.ffmpeg_path,
-            "-i", self.video_path,
-            "-hide_banner"
-        ]
-
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-            for line in result.stderr.split('\n'):
-                if 'Duration:' in line:
-                    time_str = line.split('Duration:')[1].split(',')[0].strip()
-                    h, m, s = time_str.split(':')
-                    duration = float(h) * 3600 + float(m) * 60 + float(s)
-                    return duration
-
-            return 0.0
+            return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
         except Exception as e:
             logger.error(f"Error getting video duration: {e}")
             return 0.0
