@@ -17,7 +17,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "uploads")
 _SUPABASE_DISABLED_REASON: Optional[str] = None
 
@@ -37,8 +37,8 @@ def _init_supabase_client() -> Optional["Client"]:
     """
     Initialize a Supabase client if credentials are provided.
     """
-    if not SUPABASE_URL or not SUPABASE_KEY or create_client is None:
-        if not (SUPABASE_URL and SUPABASE_KEY):
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or create_client is None:
+        if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
             logger.debug("Supabase credentials not provided; storage uploads disabled.")
         return None
 
@@ -48,7 +48,7 @@ def _init_supabase_client() -> Optional["Client"]:
         return None
 
     try:
-        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         logger.info("Supabase client initialized")
         return client
     except Exception:
@@ -106,6 +106,7 @@ def upload_bytes_to_supabase(
                 error_message = response_error.get("message", "Unknown Supabase upload error")
             else:
                 error_message = str(response_error)
+            logger.error("Supabase upload error for %s: %s", storage_path, error_message)
             raise RuntimeError(error_message)
 
         public_url_response = client.storage.from_(SUPABASE_BUCKET_NAME).get_public_url(storage_path)
@@ -123,6 +124,7 @@ def upload_bytes_to_supabase(
     except Exception as exc:
         # If Supabase is unreachable (e.g., network/DNS blocked), disable further attempts.
         _disable_supabase(f"upload failed: {exc}")
+        logger.error("Supabase upload failed for %s: %s", storage_path, exc)
         logger.debug("Detailed Supabase upload failure for %s", storage_path, exc_info=True)
         return None, str(exc)
 

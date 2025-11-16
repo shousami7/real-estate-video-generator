@@ -104,7 +104,7 @@ EOF
 
 ### Supabase Storage Integration
 
-When `SUPABASE_URL`, `SUPABASE_KEY`, and `SUPABASE_BUCKET_NAME` are configured the application automatically:
+When `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_BUCKET_NAME` are configured the application automatically:
 
 - uploads images received by `POST /upload` to Supabase Storage while keeping a local cache for Celery,
 - pushes the final MP4 rendered by Celery (`property_video_generation_task`) to the same bucket and returns the public URL to the browser, and

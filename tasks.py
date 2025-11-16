@@ -20,7 +20,7 @@ if is_supabase_configured():
     logger.info("✓ Supabase client initialized in Celery worker")
 else:
     logger.warning(
-        "⚠️  SUPABASE_URL or SUPABASE_KEY not set in Celery worker. Generated videos will be served from local storage."
+        "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in Celery worker. Generated videos will be served from local storage."
     )
 
 LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
@@ -61,7 +61,7 @@ def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> s
         )
         if upload_error:
             public_url = None
-            logger.warning(
+            logger.error(
                 "Supabase upload failed, falling back to local delivery: %s",
                 upload_error,
             )
@@ -357,4 +357,3 @@ def generate_property_video_task(
 
     logger.info("Completed background generation for session %s", session_id)
     return result
-

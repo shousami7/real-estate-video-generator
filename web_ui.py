@@ -34,7 +34,7 @@ os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 if is_supabase_configured():
     logger.info("✓ Supabase client ready (web process)")
 else:
-    logger.warning("⚠️  SUPABASE_URL or SUPABASE_KEY not set. Falling back to local storage only.")
+    logger.warning("⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. Falling back to local storage only.")
 
 
 def _local_storage_full_path(relative_path: str) -> str:
@@ -160,7 +160,7 @@ def upload_files():
                 )
                 if upload_error:
                     public_url = None
-                    logger.warning(
+                    logger.error(
                         "Supabase upload failed for %s. Falling back to local storage. Error: %s",
                         storage_path,
                         upload_error,
