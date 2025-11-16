@@ -61,6 +61,11 @@ def _save_bytes_to_local_storage(relative_path: str, file_bytes: bytes) -> str:
 @web_ui_blueprint.route('/')
 def index():
     """Web UIのエントリーポイントです。"""
+    # Ensure every new launch of the UI starts from a clean slate. Without this,
+    # Flask's signed session cookie can keep the previous run's status, causing
+    # the browser to show stale progress when the server restarts.
+    session.clear()
+
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
     session_id = session['session_id']
