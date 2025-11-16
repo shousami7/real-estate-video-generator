@@ -15,6 +15,14 @@ This project now supports **both Google AI Studio and Vertex AI** for video gene
 | **Scalability** | Limited | Production-ready |
 | **For Startups** | Development/Testing | **Production Recommended** |
 
+> ℹ️ **Model compatibility**
+>
+> Veo 3.0 Fast currently supports text-to-video generation only. Image/video
+> conditioning automatically falls back to an older compatible model
+> (`veo-2.2`). You can override both the primary model and the fallback via the
+> `VEO_MODEL_OVERRIDE` and `VEO_IMAGE_MODEL_OVERRIDE` environment variables if
+> Google introduces new capabilities.
+
 ---
 
 ## Migration Steps

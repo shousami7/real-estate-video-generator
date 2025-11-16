@@ -38,6 +38,9 @@ class VeoVideoGenerator:
     # Available Veo models (3.0 fast GA)
     VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
     VEO_MODEL_VERTEX = "veo-3.0-fast-generate-001"  # Vertex AI (Fast model)
+    # Image conditioning is not yet available on 3.0 fast, so we provide a
+    # fallback that is used automatically when an image input is required.
+    VEO_IMAGE_CONDITIONING_FALLBACK = "veo-2.2"  # Supports image/video inputs
 
     def __init__(
         self,
@@ -61,7 +64,16 @@ class VeoVideoGenerator:
         self.api_key = api_key
 
         # Determine which model to use
-        self.model = self.VEO_MODEL_VERTEX if use_vertex_ai else self.VEO_MODEL_STUDIO
+        env_model_override = os.getenv("VEO_MODEL_OVERRIDE")
+        self.model = env_model_override or (
+            self.VEO_MODEL_VERTEX if use_vertex_ai else self.VEO_MODEL_STUDIO
+        )
+
+        # Fallback model when the active model does not support image/video
+        # references. This can be overridden via env for future upgrades.
+        self.image_conditioning_model = os.getenv(
+            "VEO_IMAGE_MODEL_OVERRIDE", self.VEO_IMAGE_CONDITIONING_FALLBACK
+        )
 
         # Initialize client based on mode
         if use_vertex_ai:
@@ -133,6 +145,34 @@ class VeoVideoGenerator:
             logger.error(f"Failed to upload image: {e}")
             raise
 
+    def _select_model(self, needs_reference_input: bool) -> str:
+        """Return the best model for the current request."""
+
+        if not needs_reference_input:
+            return self.model
+
+        # Veo 3.0 fast currently does not support image/video references, so
+        # transparently fall back to an older build that still supports the
+        # feature. This keeps the worker online without requiring manual
+        # intervention while also allowing overrides via env vars.
+        unsupported_for_images = {
+            self.VEO_MODEL_STUDIO,
+            self.VEO_MODEL_VERTEX,
+        }
+
+        if self.model in unsupported_for_images:
+            if self.image_conditioning_model == self.model:
+                return self.model
+
+            logger.warning(
+                "Model %s does not support image/video references. Falling back to %s",
+                self.model,
+                self.image_conditioning_model,
+            )
+            return self.image_conditioning_model
+
+        return self.model
+
     def generate_video(
         self,
         image_path: Optional[str],
@@ -177,8 +217,10 @@ class VeoVideoGenerator:
             # Generate video using Veo
             logger.info(f"Generating video with {mode_name}...")
 
+            needs_reference = bool(image_path) or previous_video is not None
+
             request_kwargs = {
-                "model": self.model,
+                "model": self._select_model(needs_reference_input=needs_reference),
                 "prompt": prompt,
             }
 
