@@ -261,17 +261,16 @@ class VeoVideoGenerator:
             selected_model = self._select_model(needs_reference_input=needs_reference)
             logger.info(f"Selected model for request: {selected_model}")
 
+            source = self._build_generate_videos_source(
+                prompt=prompt,
+                image_path=image_path if previous_video is None else None,
+                previous_video=previous_video,
+            )
+
             request_kwargs = {
                 "model": selected_model,
-                "prompt": prompt,
+                "source": source,
             }
-
-            if previous_video is not None:
-                request_kwargs["video"] = self._normalize_video_reference(previous_video)
-            else:
-                logger.info(f"Loading image from: {image_path}")
-                request_kwargs["image"] = types.Image.from_file(location=image_path)
-                logger.info("Image loaded successfully")
 
             request_kwargs["config"] = types.GenerateVideosConfig(
                 aspect_ratio=aspect_ratio,
@@ -570,6 +569,41 @@ class VeoVideoGenerator:
             import traceback
             logger.error(traceback.format_exc())
             raise
+
+    def _build_generate_videos_source(
+        self,
+        prompt: Optional[str],
+        image_path: Optional[str],
+        previous_video: Optional[Any],
+    ) -> types.GenerateVideosSource:
+        """
+        Construct the strongly typed source payload for generate_videos.
+
+        Using the structured GenerateVideosSource avoids deprecated arguments
+        and ensures compatibility with both Vertex AI and Google AI Studio,
+        which reduces the "requested feature is not supported" errors that
+        occur when mixing prompt/image/video inputs.
+        """
+
+        source_kwargs: Dict[str, Any] = {}
+
+        if prompt:
+            source_kwargs["prompt"] = prompt
+
+        if previous_video is not None:
+            logger.info("Using previous video reference for scene extension requests")
+            source_kwargs["video"] = self._normalize_video_reference(previous_video)
+        elif image_path:
+            logger.info(f"Loading image from: {image_path}")
+            source_kwargs["image"] = types.Image.from_file(location=image_path)
+            logger.info("Image loaded successfully")
+
+        if not source_kwargs:
+            raise ValueError(
+                "At least one of prompt, image_path, or previous_video must be provided"
+            )
+
+        return types.GenerateVideosSource(**source_kwargs)
 
     def _extract_generated_video(self, response: Any) -> Optional[Any]:
         """
