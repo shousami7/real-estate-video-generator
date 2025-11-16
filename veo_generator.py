@@ -212,6 +212,25 @@ class VeoVideoGenerator:
             request_kwargs["model"] = fallback_model
             return self.client.models.generate_videos(**request_kwargs)
 
+    def _extract_operation_error_message(self, operation_error: Any) -> str:
+        """Return a readable error message from a long-running operation."""
+
+        if operation_error is None:
+            return ""
+
+        if isinstance(operation_error, Exception):
+            return str(operation_error)
+
+        message = getattr(operation_error, "message", None)
+        if message:
+            return str(message)
+
+        details = getattr(operation_error, "details", None)
+        if details:
+            return str(details)
+
+        return str(operation_error)
+
     def generate_video(
         self,
         image_path: Optional[str],
@@ -258,53 +277,83 @@ class VeoVideoGenerator:
 
             needs_reference = bool(image_path) or previous_video is not None
 
-            selected_model = self._select_model(needs_reference_input=needs_reference)
-            logger.info(f"Selected model for request: {selected_model}")
-
-            request_kwargs = {
-                "model": selected_model,
+            base_kwargs: Dict[str, Any] = {
                 "prompt": prompt,
+                "config": types.GenerateVideosConfig(
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution
+                )
             }
 
             if previous_video is not None:
-                request_kwargs["video"] = self._normalize_video_reference(previous_video)
+                base_kwargs["video"] = self._normalize_video_reference(previous_video)
             else:
                 logger.info(f"Loading image from: {image_path}")
-                request_kwargs["image"] = types.Image.from_file(location=image_path)
+                base_kwargs["image"] = types.Image.from_file(location=image_path)
                 logger.info("Image loaded successfully")
 
-            request_kwargs["config"] = types.GenerateVideosConfig(
-                aspect_ratio=aspect_ratio,
-                resolution=resolution
-            )
+            fallback_model = self.image_conditioning_model
+            models_to_try = [self._select_model(needs_reference_input=needs_reference)]
+            if needs_reference and models_to_try[0] != fallback_model:
+                models_to_try.append(fallback_model)
 
-            operation = self._generate_with_fallback(
-                request_kwargs,
-                selected_model=selected_model,
-                needs_reference=needs_reference,
-            )
-            logger.info(f"Video generation started. Operation name: {operation.name}")
+            for selected_model in models_to_try:
+                logger.info(f"Selected model for request: {selected_model}")
+                request_kwargs = dict(base_kwargs)
+                request_kwargs["model"] = selected_model
 
-            # Poll until video generation completes
-            logger.info("Waiting for video generation to complete...")
-            poll_count = 0
-            max_polls = 10  # 5 minutes with 30 second intervals
+                operation = self._generate_with_fallback(
+                    request_kwargs,
+                    selected_model=selected_model,
+                    needs_reference=needs_reference,
+                )
 
-            while not operation.done:
-                time.sleep(30)
-                poll_count += 1
+                logger.info(f"Video generation started. Operation name: {operation.name}")
 
-                # Get updated operation status
-                operation = self.client.operations.get(operation)
+                # Poll until video generation completes
+                logger.info("Waiting for video generation to complete...")
+                poll_count = 0
+                max_polls = 10  # 5 minutes with 30 second intervals
 
-                if poll_count % 2 == 0:  # Log every 60 seconds
-                    logger.info(f"Still generating... ({poll_count * 30}s elapsed)")
+                while not operation.done:
+                    time.sleep(30)
+                    poll_count += 1
 
-                if poll_count >= max_polls:
-                    raise TimeoutError("Video generation timed out after 5 minutes")
+                    # Get updated operation status
+                    operation = self.client.operations.get(operation)
 
-            logger.info("Video generation completed!")
-            return operation
+                    if poll_count % 2 == 0:  # Log every 60 seconds
+                        logger.info(f"Still generating... ({poll_count * 30}s elapsed)")
+
+                    if poll_count >= max_polls:
+                        raise TimeoutError("Video generation timed out after 5 minutes")
+
+                operation_error = getattr(operation, "error", None)
+                if operation_error:
+                    error_message = self._extract_operation_error_message(operation_error)
+                    logger.error(f"Video generation failed: {error_message}")
+
+                    should_retry_async = (
+                        needs_reference and
+                        selected_model != fallback_model and
+                        self._is_feature_unsupported_error(error_message)
+                    )
+
+                    if should_retry_async:
+                        logger.warning(
+                            "Async generation failed due to unsupported feature on %s. "
+                            "Retrying with fallback %s",
+                            selected_model,
+                            fallback_model,
+                        )
+                        continue
+
+                    raise RuntimeError(f"Video generation failed: {error_message}")
+
+                logger.info("Video generation completed!")
+                return operation
+
+            raise RuntimeError("Video generation failed before completion")
 
         except Exception as e:
             error_str = str(e)
