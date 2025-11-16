@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 import logging
 import requests
+from urllib.parse import urlparse
 try:
     from google.auth.transport.requests import Request
     from google.auth import default as get_default_credentials
@@ -269,6 +270,16 @@ class VeoVideoGenerator:
         logger.info(f"Downloading from URI: {uri}")
 
         try:
+            # Normalize Google Cloud Storage URIs to standard HTTPS endpoints
+            parsed = urlparse(uri)
+            if parsed.scheme in {"gs", "gcs"}:
+                bucket = parsed.netloc
+                object_path = parsed.path.lstrip("/")
+                if not bucket or not object_path:
+                    raise ValueError(f"Invalid GCS URI: {uri}")
+                uri = f"https://storage.googleapis.com/{bucket}/{object_path}"
+                logger.info(f"Converted GCS URI to HTTPS endpoint: {uri}")
+
             # Prepare authentication headers based on mode
             headers = {}
 
