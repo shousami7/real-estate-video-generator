@@ -274,7 +274,8 @@ class VeoVideoGenerator:
                 logger.info("Image loaded successfully")
 
             request_kwargs["config"] = types.GenerateVideosConfig(
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                resolution=resolution
             )
 
             operation = self._generate_with_fallback(
