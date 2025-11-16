@@ -35,12 +35,12 @@ class VeoVideoGenerator:
     2. Vertex AI (GCP project + service account authentication)
     """
 
-    # Available Veo models (3.0 fast GA)
-    VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
-    VEO_MODEL_VERTEX = "veo-3.0-fast-generate-001"  # Vertex AI (Fast model)
-    # Image conditioning is not yet available on 3.0 fast, so we provide a
-    # fallback that is used automatically when an image input is required.
-    VEO_IMAGE_CONDITIONING_FALLBACK = "veo-2.2"  # Supports image/video inputs
+    # Available Veo models (3.0 general supports image conditioning)
+    VEO_MODEL_STUDIO = "veo-3.0-generate-001"  # Google AI Studio (General)
+    VEO_MODEL_VERTEX = "veo-3.0-generate-001"  # Vertex AI (General)
+    # If an override points to a model without image conditioning (e.g. 3.0 Fast),
+    # fall back to a compatible model by default.
+    VEO_IMAGE_CONDITIONING_FALLBACK = "veo-3.0-generate-001"
 
     def __init__(
         self,
@@ -151,14 +151,9 @@ class VeoVideoGenerator:
         if not needs_reference_input:
             return self.model
 
-        # Veo 3.0 fast currently does not support image/video references, so
-        # transparently fall back to an older build that still supports the
-        # feature. This keeps the worker online without requiring manual
-        # intervention while also allowing overrides via env vars.
-        unsupported_for_images = {
-            self.VEO_MODEL_STUDIO,
-            self.VEO_MODEL_VERTEX,
-        }
+        # Only Veo 3.0 Fast lacks image/video references; fall back when that
+        # model is explicitly selected.
+        unsupported_for_images = {"veo-3.0-fast-generate-001"}
 
         if self.model in unsupported_for_images:
             if self.image_conditioning_model == self.model:

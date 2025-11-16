@@ -8,6 +8,14 @@ echo "Starting Celery Worker for Real Estate Video Generator"
 echo "================================================================================"
 echo ""
 
+# Activate virtual environment if present so local Celery binary is used
+if [ -f "venv/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    source venv/bin/activate
+    echo "✓ Using virtual environment at venv/"
+    echo ""
+fi
+
 # Check if Redis is running
 if ! redis-cli ping > /dev/null 2>&1; then
     echo "❌ Redis is not running!"
