@@ -9,6 +9,8 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 
+from utils.video_duration import probe_video_duration
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -59,29 +61,8 @@ class VideoComposer:
         Returns:
             Duration in seconds
         """
-        cmd = [
-            self.ffmpeg_path,
-            "-i", video_path,
-            "-hide_banner"
-        ]
-
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True
-            )
-
-            # Parse duration from stderr output
-            for line in result.stderr.split('\n'):
-                if 'Duration:' in line:
-                    time_str = line.split('Duration:')[1].split(',')[0].strip()
-                    h, m, s = time_str.split(':')
-                    duration = float(h) * 3600 + float(m) * 60 + float(s)
-                    return duration
-
-            raise ValueError("Could not parse video duration")
-
+            return probe_video_duration(video_path, ffmpeg_path=self.ffmpeg_path)
         except Exception as e:
             logger.error(f"Error getting video duration: {e}")
             # Return default duration
