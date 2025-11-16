@@ -375,15 +375,21 @@ class VeoVideoGenerator:
                 # For Vertex AI, try to use GCP authentication
                 logger.info("Using Vertex AI mode - preparing GCP authentication")
 
-                # First, try unauthenticated (pre-signed URLs)
-                # If that fails, we'll try with credentials
                 if HAS_GOOGLE_AUTH:
                     try:
                         credentials, project = get_default_credentials()
-                        if credentials.token is None:
+                        needs_refresh = (
+                            getattr(credentials, "expired", False)
+                            or getattr(credentials, "token", None) is None
+                        )
+                        if needs_refresh:
                             credentials.refresh(Request())
-                        headers['Authorization'] = f'Bearer {credentials.token}'
-                        logger.info("Using GCP OAuth2 credentials for download")
+                        token = getattr(credentials, "token", None)
+                        if token:
+                            headers['Authorization'] = f'Bearer {token}'
+                            logger.info("Using GCP OAuth2 credentials for download")
+                        else:
+                            logger.warning("Loaded GCP credentials but no access token available; continuing without auth")
                     except Exception as auth_error:
                         logger.warning(f"Could not get GCP credentials, trying unauthenticated: {auth_error}")
                 else:
