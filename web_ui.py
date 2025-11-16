@@ -1,7 +1,9 @@
-
 import os
 import uuid
 import logging
+from typing import Dict, List, Optional
+
+from dotenv import load_dotenv
 from flask import (
     Blueprint, render_template, request, jsonify, session, send_from_directory
 )
@@ -17,18 +19,15 @@ from supabase_storage import (
     upload_bytes_to_supabase,
 )
 
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 web_ui_blueprint = Blueprint('web_ui', __name__, template_folder='templates', static_folder='static')
-
-<<<<<<< HEAD
-=======
 # -----------------------------------------------------------------------------
 # Supabase Client Initialization
 # -----------------------------------------------------------------------------
-load_dotenv()
-
 LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
 os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 
@@ -59,8 +58,6 @@ def _save_bytes_to_local_storage(relative_path: str, file_bytes: bytes) -> str:
         destination.write(file_bytes)
     return full_path
 
-
->>>>>>> 3e82d0b (supa)
 @web_ui_blueprint.route('/')
 def index():
     """Web UIのエントリーポイントです。"""
@@ -100,22 +97,14 @@ def upload_files():
         session_id = session['session_id']
         print(f"[UPLOAD] Processing upload for session: {session_id}")
 
-<<<<<<< HEAD
-        # アップロードディレクトリ作成
-        upload_path = os.path.join('uploads', session_id)
-        os.makedirs(upload_path, exist_ok=True)
-        print(f"[UPLOAD] Upload directory: {upload_path}")
-=======
         supabase_available = is_supabase_configured()
         if not supabase_available:
             logger.warning("Supabase client not available. Uploads will be stored locally only.")
 
         uploaded_file_records: List[Dict[str, str]] = []
         response_file_urls: List[str] = []
->>>>>>> 3e82d0b (supa)
 
         # ファイルチェック（詳細なエラーメッセージ付き）
-        uploaded_files = []
         for i in range(3):
             file_key = f'image_{i+1}'
 
@@ -140,16 +129,14 @@ def upload_files():
 
             # ファイル保存
             filename = secure_filename(file.filename)
-            file_path = os.path.join(upload_path, filename)
-            file.save(file_path)
-            uploaded_files.append(file_path)
-            print(f"[UPLOAD] Saved {file_key} to: {file_path}")
+            storage_path = os.path.join(session_id, filename).replace("\\", "/")
+            file_bytes = file.read()
+            if not file_bytes:
+                return jsonify({
+                    "error": "Empty file",
+                    "detail": f"{file_key} has no content."
+                }), 400
 
-<<<<<<< HEAD
-        # セッションに保存
-        session['uploaded_files'] = uploaded_files
-        print(f"[UPLOAD SUCCESS] Uploaded {len(uploaded_files)} files")
-=======
             local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
             upload_record: Dict[str, str] = {
                 "file_key": file_key,
@@ -189,6 +176,7 @@ def upload_files():
             uploaded_file_records.append(upload_record)
 
         session['uploaded_files'] = uploaded_file_records
+        session['uploaded_file_paths'] = [record["local_path"] for record in uploaded_file_records]
         print(f"[UPLOAD SUCCESS] Uploaded {len(uploaded_file_records)} files (Supabase available={supabase_available})")
 
         storage_backends = {record.get("storage_backend") for record in uploaded_file_records}
@@ -198,12 +186,11 @@ def upload_files():
             storage_note = " (partial Supabase upload; local copies kept)"
         else:
             storage_note = ""
->>>>>>> 3e82d0b (supa)
 
         return jsonify({
             "status": "success",
-            "message": "Images uploaded successfully. Click 'AI Video Generation Start' button.",
-            "files": uploaded_files
+            "message": f"Images uploaded successfully. Click 'AI Video Generation Start' button.{storage_note}",
+            "files": response_file_urls
         })
 
     except Exception as e:
@@ -259,7 +246,22 @@ def generate_video():
             }), 409
 
     session_id = session['session_id']
-    image_paths = [os.path.abspath(path) for path in session['uploaded_files']]
+    stored_files = session.get('uploaded_file_paths') or session.get('uploaded_files') or []
+    image_paths: List[str] = []
+
+    if stored_files and isinstance(stored_files[0], dict):
+        for record in stored_files:
+            local_path = record.get("local_path")
+            if local_path:
+                image_paths.append(os.path.abspath(local_path))
+    else:
+        image_paths = [os.path.abspath(path) for path in stored_files]
+
+    if len(image_paths) != 3:
+        return jsonify({
+            "status": "error",
+            "message": "Please upload 3 images before starting generation."
+        }), 400
 
     # Parse generation options from client
     request_data = request.get_json(silent=True) or {}

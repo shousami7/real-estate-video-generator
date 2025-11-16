@@ -34,9 +34,9 @@ class VeoVideoGenerator:
     2. Vertex AI (GCP project + service account authentication)
     """
 
-    # Available Veo models
-    VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
-    VEO_MODEL_VERTEX = "veo-3.0-fast-generate-001"  # Vertex AI (Fast model)
+    # Available Veo models (3.1 fast preview)
+    VEO_MODEL_STUDIO = "veo-3.1-fast-generate-preview"  # Google AI Studio
+    VEO_MODEL_VERTEX = "veo-3.1-fast-generate-preview"  # Vertex AI (Fast model)
 
     def __init__(
         self,
@@ -134,23 +134,25 @@ class VeoVideoGenerator:
 
     def generate_video(
         self,
-        image_path: str,
+        image_path: Optional[str],
         prompt: str,
         duration: str = "8s",
         aspect_ratio: str = "16:9",
         resolution: str = "720p",
-        generate_audio: bool = False  # Veo 2.0はオーディオ非対応のためFalseに変更
+        generate_audio: bool = False,  # Veo 2.0はオーディオ非対応のためFalseに変更
+        previous_video: Any = None,
     ) -> Any:
         """
-        Generate video from image file using Google Veo
+        Generate video (or extend an existing one) using Google Veo.
 
         Args:
-            image_path: Path to the image file
+            image_path: Path to the image file (required for the first segment)
             prompt: Text prompt describing the desired video motion
-            duration: Video duration ("4s", "6s", or "8s") - Note: Veo 3.1 generates 8s videos
+            duration: Informational string for logging (API uses default length per segment)
             aspect_ratio: Video aspect ratio ("16:9" or "9:16")
             resolution: Video resolution ("720p" or "1080p")
             generate_audio: Whether to generate audio (default: True)
+            previous_video: Response video object from a prior generate_videos call for scene extension
 
         Returns:
             Operation object for video generation
@@ -159,28 +161,34 @@ class VeoVideoGenerator:
         logger.info(f"Submitting video generation request ({mode_name})")
         logger.info(f"Model: {self.model}")
         logger.info(f"Prompt: {prompt[:100]}...")
-        logger.info(f"Settings: {duration}, {aspect_ratio}, {resolution}")
+        logger.info(
+            f"Settings: {duration}, {aspect_ratio}, {resolution}, "
+            f"{'extension' if previous_video else 'new video'}"
+        )
 
         try:
-            # Validate image file exists
-            if not os.path.exists(image_path):
-                raise FileNotFoundError(f"Image file not found: {image_path}")
+            if previous_video is None:
+                if not image_path:
+                    raise ValueError("image_path is required for the first segment")
+                if not os.path.exists(image_path):
+                    raise FileNotFoundError(f"Image file not found: {image_path}")
 
             # Generate video using Veo
             logger.info(f"Generating video with {mode_name}...")
 
-            # Load image using types.Image.from_file() - automatically handles encoding and mime type
-            logger.info(f"Loading image from: {image_path}")
-            image = types.Image.from_file(location=image_path)
-            logger.info(f"Image loaded successfully")
+            request_kwargs = {
+                "model": self.model,
+                "prompt": prompt,
+            }
 
-            # Start video generation operation
-            operation = self.client.models.generate_videos(
-                model=self.model,
-                prompt=prompt,
-                image=image
-            )
+            if previous_video is not None:
+                request_kwargs["video"] = previous_video
+            else:
+                logger.info(f"Loading image from: {image_path}")
+                request_kwargs["image"] = types.Image.from_file(location=image_path)
+                logger.info("Image loaded successfully")
 
+            operation = self.client.models.generate_videos(**request_kwargs)
             logger.info(f"Video generation started. Operation name: {operation.name}")
 
             # Poll until video generation completes
@@ -345,24 +353,7 @@ class VeoVideoGenerator:
             logger.info(f"Operation response attributes: {dir(response)}")
 
             # Try to extract video file information from response
-            video_file = None
-
-            # Method 1: Check for generated_videos attribute
-            if hasattr(response, 'generated_videos') and response.generated_videos:
-                video_data = response.generated_videos[0]
-                if hasattr(video_data, 'video'):
-                    video_file = video_data.video
-                    logger.info("Found video in generated_videos[0].video")
-
-            # Method 2: Check if response itself is a video file
-            elif hasattr(response, 'video'):
-                video_file = response.video
-                logger.info("Found video in response.video")
-
-            # Method 3: Check if response has file information
-            elif hasattr(response, 'file'):
-                video_file = response.file
-                logger.info("Found video in response.file")
+            video_file = self._extract_generated_video(response)
 
             if not video_file:
                 # Log response for debugging
@@ -470,6 +461,32 @@ class VeoVideoGenerator:
             logger.error(traceback.format_exc())
             raise
 
+    def _extract_generated_video(self, response: Any) -> Optional[Any]:
+        """
+        Extract the generated video object from a response payload.
+
+        The Google GenAI response shape can vary slightly between releases,
+        so we normalize the extraction in one place.
+        """
+        if not response:
+            return None
+
+        if hasattr(response, "generated_videos") and response.generated_videos:
+            video_data = response.generated_videos[0]
+            if hasattr(video_data, "video"):
+                return video_data.video
+
+        if hasattr(response, "video"):
+            return response.video
+
+        if hasattr(response, "videos") and response.videos:
+            return response.videos[0]
+
+        if hasattr(response, "file"):
+            return response.file
+
+        return None
+
     def generate_from_image_file(
         self,
         image_path: str,
@@ -481,13 +498,13 @@ class VeoVideoGenerator:
         generate_audio: bool = True
     ) -> str:
         """
-        Complete workflow: generate video from image, download result
+        Complete workflow: generate (and optionally extend) video from image, then download result.
 
         Args:
             image_path: Path to input image
             prompt: Video generation prompt
             output_path: Path to save the generated video
-            duration: Video duration ("4s", "6s", or "8s") - Note: Veo 3.1 generates 8s videos
+            duration: Target duration (e.g. "10s" or 10) - Veo 3.1 fast supports extension up to ~141s
             aspect_ratio: Video aspect ratio ("16:9" or "9:16")
             resolution: Video resolution ("720p" or "1080p")
             generate_audio: Whether to generate audio
@@ -503,18 +520,77 @@ class VeoVideoGenerator:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
 
-        # Step 1: Generate video (image is encoded internally)
-        operation = self.generate_video(
-            image_path=image_path,
-            prompt=prompt,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            generate_audio=generate_audio
-        )
+        def _parse_duration_seconds(value: Any) -> float:
+            if value is None:
+                return 8.0
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                cleaned = value.strip().lower()
+                if cleaned.endswith("s"):
+                    cleaned = cleaned[:-1]
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    pass
+            return 8.0
 
-        # Step 2: Download video
-        video_path = self.download_video(operation, output_path)
+        target_seconds = _parse_duration_seconds(duration)
+        max_supported = 141.0  # Veo 3.1 scene extension limit
+        if target_seconds > max_supported:
+            logger.info(f"Requested duration {target_seconds}s exceeds model limit; clamping to {max_supported}s")
+            target_seconds = max_supported
+
+        # Scene extension loop: chain generate_videos calls by feeding the previous video back in.
+        total_seconds = 0.0
+        segment_index = 0
+        previous_video = None
+        last_operation = None
+        default_segment_len = 8.0  # fallback if API doesn't return duration_seconds
+
+        while total_seconds + 0.1 < target_seconds:
+            segment_index += 1
+            logger.info(f"Starting segment {segment_index} (current total ~{total_seconds:.2f}s, target {target_seconds:.2f}s)")
+
+            last_operation = self.generate_video(
+                image_path=image_path if previous_video is None else None,
+                prompt=prompt,
+                duration=f"{target_seconds - total_seconds:.2f}s",
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                generate_audio=generate_audio,
+                previous_video=previous_video,
+            )
+
+            response_video = self._extract_generated_video(getattr(last_operation, "response", None))
+            if not response_video:
+                raise ValueError("No video returned from generation operation")
+
+            segment_seconds = getattr(response_video, "duration_seconds", None)
+            if segment_seconds is None:
+                segment_seconds = getattr(response_video, "duration", default_segment_len)
+            try:
+                segment_seconds = float(segment_seconds)
+            except Exception:
+                segment_seconds = default_segment_len
+
+            total_seconds += segment_seconds
+            previous_video = response_video
+
+            logger.info(
+                f"Segment {segment_index} finished: {segment_seconds:.2f}s "
+                f"(cumulative {total_seconds:.2f}s)"
+            )
+
+            if segment_index > 30:  # safety guard to prevent runaway loops
+                logger.warning("Aborting extension loop after 30 segments to avoid runaway generation")
+                break
+
+        if last_operation is None:
+            raise RuntimeError("Video generation did not start; no operation returned")
+
+        # Download the final extended video
+        video_path = self.download_video(last_operation, output_path)
 
         logger.info("="*80)
         logger.info("Workflow completed successfully!")
