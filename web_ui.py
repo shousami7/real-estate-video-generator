@@ -164,8 +164,10 @@ def upload_files():
                         "Supabase upload failed for %s. Falling back to local storage. Error: %s",
                         storage_path,
                         upload_error,
-                        exc_info=True
                     )
+                    supabase_available = is_supabase_configured()
+                    if not supabase_available:
+                        logger.info("Supabase has been disabled after an upload failure; continuing with local storage.")
                 else:
                     print(f"[UPLOAD] Saved {file_key} to Supabase URL: {public_url}")
 

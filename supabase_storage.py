@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,18 @@ logger = logging.getLogger(__name__)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "uploads")
+_SUPABASE_DISABLED_REASON: Optional[str] = None
+
+
+def _disable_supabase(reason: str) -> None:
+    """
+    Disable Supabase uploads for the current process after a fatal error,
+    so we do not keep retrying and spamming stack traces.
+    """
+    global SUPABASE_CLIENT, _SUPABASE_DISABLED_REASON
+    SUPABASE_CLIENT = None
+    _SUPABASE_DISABLED_REASON = reason
+    logger.warning("Supabase disabled for this process: %s. Falling back to local storage.", reason)
 
 
 def _init_supabase_client() -> Optional["Client"]:
@@ -27,6 +40,11 @@ def _init_supabase_client() -> Optional["Client"]:
     if not SUPABASE_URL or not SUPABASE_KEY or create_client is None:
         if not (SUPABASE_URL and SUPABASE_KEY):
             logger.debug("Supabase credentials not provided; storage uploads disabled.")
+        return None
+
+    parsed_url = urlparse(SUPABASE_URL)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        logger.warning("Invalid SUPABASE_URL provided; storage uploads will use local disk.")
         return None
 
     try:
@@ -57,6 +75,9 @@ def upload_bytes_to_supabase(
     """
     Upload raw bytes to Supabase Storage. Returns (public_url, error_message).
     """
+    if _SUPABASE_DISABLED_REASON:
+        return None, _SUPABASE_DISABLED_REASON
+
     client = SUPABASE_CLIENT
     if not client:
         return None, "Supabase client is not configured."
@@ -100,7 +121,9 @@ def upload_bytes_to_supabase(
 
         return public_url, None
     except Exception as exc:
-        logger.warning("Supabase upload failed for %s: %s", storage_path, exc, exc_info=True)
+        # If Supabase is unreachable (e.g., network/DNS blocked), disable further attempts.
+        _disable_supabase(f"upload failed: {exc}")
+        logger.debug("Detailed Supabase upload failure for %s", storage_path, exc_info=True)
         return None, str(exc)
 
 
