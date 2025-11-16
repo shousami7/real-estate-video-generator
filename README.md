@@ -110,7 +110,21 @@ When `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_BUCKET_NAME` are
 - pushes the final MP4 rendered by Celery (`property_video_generation_task`) to the same bucket and returns the public URL to the browser, and
 - removes the temporary local video once the upload succeeds.
 
-If the Supabase credentials are not present, the system gracefully falls back to serving everything from `uploads/` as before.
+**Quick setup**
+
+1. Create a [Supabase](https://supabase.com/) project and note the project URL (e.g. `https://xyzcompany.supabase.co`).
+2. In **Project Settings → API**, copy the **service role key** (starts with `ey...`). This key is required for uploads.
+3. Go to **Storage → Buckets** and either create a bucket (default name: `uploads`) or use an existing one with `public` access enabled.
+4. Copy `.env.example` to `.env` and fill in the Supabase values:
+
+   ```bash
+   cp .env.example .env
+   # then edit .env to add your Supabase credentials
+   ```
+
+5. (Optional) Set `SUPABASE_REQUIRED=true` in `.env` to **disallow local disk fallbacks**. When enabled, the Flask app and Celery worker will refuse to start—or will raise errors during uploads—unless Supabase is reachable. This is helpful when you "極力ローカルに保存したく無い" (want to avoid local storage).
+
+If the Supabase credentials are not present and `SUPABASE_REQUIRED` is left `false`, the system gracefully falls back to serving everything from `uploads/` as before.
 
 ## Getting Google AI API Key
 

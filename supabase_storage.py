@@ -16,9 +16,17 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+def _env_truthy(var_name: str, default: str = "") -> bool:
+    return os.getenv(var_name, default).strip().lower() in TRUTHY_VALUES
+
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "uploads")
+SUPABASE_REQUIRED = _env_truthy("SUPABASE_REQUIRED", "false")
 _SUPABASE_DISABLED_REASON: Optional[str] = None
 
 
@@ -31,6 +39,10 @@ def _disable_supabase(reason: str) -> None:
     SUPABASE_CLIENT = None
     _SUPABASE_DISABLED_REASON = reason
     logger.warning("Supabase disabled for this process: %s. Falling back to local storage.", reason)
+    if SUPABASE_REQUIRED:
+        raise RuntimeError(
+            "Supabase uploads are required (SUPABASE_REQUIRED=1) but have been disabled: %s" % reason
+        )
 
 
 def _init_supabase_client() -> Optional["Client"]:
@@ -39,12 +51,25 @@ def _init_supabase_client() -> Optional["Client"]:
     """
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or create_client is None:
         if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
-            logger.debug("Supabase credentials not provided; storage uploads disabled.")
+            message = (
+                "Supabase credentials not provided; storage uploads disabled."
+            )
+        else:
+            message = "Supabase package not available; install supabase-py to enable uploads."
+
+        logger.debug(message)
+        if SUPABASE_REQUIRED:
+            raise RuntimeError(
+                "Supabase uploads are required (SUPABASE_REQUIRED=1) but cannot be initialized: %s"
+                % message
+            )
         return None
 
     parsed_url = urlparse(SUPABASE_URL)
     if not parsed_url.scheme or not parsed_url.netloc:
         logger.warning("Invalid SUPABASE_URL provided; storage uploads will use local disk.")
+        if SUPABASE_REQUIRED:
+            raise RuntimeError("Supabase uploads are required but SUPABASE_URL is invalid: %s" % SUPABASE_URL)
         return None
 
     try:
@@ -53,6 +78,10 @@ def _init_supabase_client() -> Optional["Client"]:
         return client
     except Exception:
         logger.exception("Failed to initialize Supabase client; falling back to local storage.")
+        if SUPABASE_REQUIRED:
+            raise RuntimeError(
+                "Supabase uploads are required (SUPABASE_REQUIRED=1) but the client could not be created."
+            )
         return None
 
 
@@ -64,6 +93,11 @@ def is_supabase_configured() -> bool:
     Returns True when the Supabase client is available.
     """
     return SUPABASE_CLIENT is not None
+
+
+def is_supabase_required() -> bool:
+    """Return True when SUPABASE_REQUIRED=1 (local fallback should be disabled)."""
+    return SUPABASE_REQUIRED
 
 
 def upload_bytes_to_supabase(
