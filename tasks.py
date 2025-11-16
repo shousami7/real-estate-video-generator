@@ -9,6 +9,7 @@ from celery_app import celery
 from generate_property_video import PropertyVideoGenerator
 from supabase_storage import (
     is_supabase_configured,
+    is_supabase_required,
     upload_file_to_supabase,
 )
 
@@ -16,12 +17,19 @@ logger = get_task_logger(__name__)
 
 load_dotenv()
 
+SUPABASE_REQUIRED = is_supabase_required()
+
 if is_supabase_configured():
     logger.info("✓ Supabase client initialized in Celery worker")
 else:
-    logger.warning(
+    warning_message = (
         "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in Celery worker. Generated videos will be served from local storage."
     )
+    if SUPABASE_REQUIRED:
+        raise RuntimeError(
+            "SUPABASE_REQUIRED=1 but the Celery worker could not initialize the Supabase client."
+        )
+    logger.warning(warning_message)
 
 LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
 os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
@@ -66,6 +74,8 @@ def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> s
                 upload_error,
             )
     else:
+        if SUPABASE_REQUIRED:
+            raise RuntimeError("Supabase uploads are required but the client is unavailable in the worker.")
         logger.warning("Supabase client not initialized in Celery worker. Using local storage for final video.")
 
     if public_url:
@@ -75,6 +85,9 @@ def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> s
         except Exception as cleanup_error:
             logger.warning(f"Could not remove local video file: {cleanup_error}")
         return public_url
+
+    if SUPABASE_REQUIRED:
+        raise RuntimeError("Supabase uploads are required but the final video could not be uploaded.")
 
     relative_path, absolute_path = _local_generated_video_path(session_id, file_name)
     if os.path.abspath(local_video_path) != os.path.abspath(absolute_path):

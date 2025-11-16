@@ -16,6 +16,7 @@ from celery_app import celery
 from tasks import generate_property_video_task, property_video_generation_task
 from supabase_storage import (
     is_supabase_configured,
+    is_supabase_required,
     upload_bytes_to_supabase,
 )
 
@@ -31,10 +32,17 @@ web_ui_blueprint = Blueprint('web_ui', __name__, template_folder='templates', st
 LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads"))
 os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 
+SUPABASE_REQUIRED = is_supabase_required()
+
 if is_supabase_configured():
     logger.info("✓ Supabase client ready (web process)")
 else:
-    logger.warning("⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. Falling back to local storage only.")
+    message = "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. Falling back to local storage only."
+    if SUPABASE_REQUIRED:
+        raise RuntimeError(
+            "SUPABASE_REQUIRED=1 but no Supabase credentials were found. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+        )
+    logger.warning(message)
 
 
 def _local_storage_full_path(relative_path: str) -> str:
@@ -104,6 +112,10 @@ def upload_files():
 
         supabase_available = is_supabase_configured()
         if not supabase_available:
+            if SUPABASE_REQUIRED:
+                raise RuntimeError(
+                    "Supabase uploads are required but the client is unavailable. Check your credentials."
+                )
             logger.warning("Supabase client not available. Uploads will be stored locally only.")
 
         uploaded_file_records: List[Dict[str, str]] = []
@@ -176,6 +188,10 @@ def upload_files():
                 upload_record["storage_backend"] = "supabase"
                 response_file_urls.append(public_url)
             else:
+                if SUPABASE_REQUIRED:
+                    raise RuntimeError(
+                        "Supabase uploads are required but upload failed for %s" % storage_path
+                    )
                 upload_record["storage_backend"] = "local"
                 response_file_urls.append(f"/uploads/local/{storage_path}")
                 logger.info(f"[UPLOAD] Stored {file_key} locally at {local_path}")
