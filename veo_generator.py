@@ -6,6 +6,7 @@ Supports both Google AI Studio (API key) and Vertex AI (GCP project)
 
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 from google.api_core import exceptions as google_exceptions
 import os
 import time
@@ -168,6 +169,49 @@ class VeoVideoGenerator:
 
         return self.model
 
+    def _is_feature_unsupported_error(self, error: Exception) -> bool:
+        """Detect if an error is caused by requesting an unsupported feature."""
+
+        message = str(error).lower()
+        unsupported_phrases = [
+            "requested feature is not supported",
+            "does not support image",
+            "does not support video",
+            "unsupported feature",
+        ]
+
+        return any(phrase in message for phrase in unsupported_phrases)
+
+    def _generate_with_fallback(
+        self,
+        request_kwargs: Dict[str, Any],
+        selected_model: str,
+        needs_reference: bool,
+    ) -> Any:
+        """Call the API and retry with the fallback model when needed."""
+
+        try:
+            return self.client.models.generate_videos(**request_kwargs)
+        except genai_errors.ClientError as error:
+            should_retry = (
+                needs_reference and
+                selected_model != self.image_conditioning_model and
+                self._is_feature_unsupported_error(error)
+            )
+
+            if not should_retry:
+                raise
+
+            fallback_model = self.image_conditioning_model
+            logger.warning(
+                "Model %s rejected the request (unsupported feature). Retrying with fallback %s",
+                selected_model,
+                fallback_model,
+            )
+
+            request_kwargs["model"] = fallback_model
+            return self.client.models.generate_videos(**request_kwargs)
+
     def generate_video(
         self,
         image_path: Optional[str],
@@ -214,8 +258,11 @@ class VeoVideoGenerator:
 
             needs_reference = bool(image_path) or previous_video is not None
 
+            selected_model = self._select_model(needs_reference_input=needs_reference)
+            logger.info(f"Selected model for request: {selected_model}")
+
             request_kwargs = {
-                "model": self._select_model(needs_reference_input=needs_reference),
+                "model": selected_model,
                 "prompt": prompt,
             }
 
@@ -230,7 +277,11 @@ class VeoVideoGenerator:
                 aspect_ratio=aspect_ratio
             )
 
-            operation = self.client.models.generate_videos(**request_kwargs)
+            operation = self._generate_with_fallback(
+                request_kwargs,
+                selected_model=selected_model,
+                needs_reference=needs_reference,
+            )
             logger.info(f"Video generation started. Operation name: {operation.name}")
 
             # Poll until video generation completes
