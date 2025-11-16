@@ -485,6 +485,6 @@ For issues or questions:
 
 ## Credits
 
-- **AI Model**: Google Veo 3.1
+- **AI Model**: Google Veo 3.0 Fast
 - **Video Processing**: FFmpeg
 - **Python Libraries**: google-genai, requests, Pillow, tqdm, python-dotenv

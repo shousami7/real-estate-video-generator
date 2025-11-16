@@ -34,9 +34,9 @@ class VeoVideoGenerator:
     2. Vertex AI (GCP project + service account authentication)
     """
 
-    # Available Veo models (3.1 fast preview)
-    VEO_MODEL_STUDIO = "veo-3.1-fast-generate-preview"  # Google AI Studio
-    VEO_MODEL_VERTEX = "veo-3.1-fast-generate-preview"  # Vertex AI (Fast model)
+    # Available Veo models (3.0 fast GA)
+    VEO_MODEL_STUDIO = "veo-3.0-fast-generate-001"  # Google AI Studio
+    VEO_MODEL_VERTEX = "veo-3.0-fast-generate-001"  # Vertex AI (Fast model)
 
     def __init__(
         self,
@@ -182,11 +182,15 @@ class VeoVideoGenerator:
             }
 
             if previous_video is not None:
-                request_kwargs["video"] = previous_video
+                request_kwargs["video"] = self._normalize_video_reference(previous_video)
             else:
                 logger.info(f"Loading image from: {image_path}")
                 request_kwargs["image"] = types.Image.from_file(location=image_path)
                 logger.info("Image loaded successfully")
+
+            request_kwargs["config"] = types.GenerateVideosConfig(
+                aspect_ratio=aspect_ratio
+            )
 
             operation = self.client.models.generate_videos(**request_kwargs)
             logger.info(f"Video generation started. Operation name: {operation.name}")
@@ -487,6 +491,35 @@ class VeoVideoGenerator:
 
         return None
 
+    def _normalize_video_reference(self, video_source: Any) -> types.Video:
+        """
+        Convert a response video payload into a `types.Video` reference that can
+        be reused for scene extension requests.
+        """
+        if isinstance(video_source, types.Video):
+            return video_source
+
+        # Some responses wrap the actual video inside a `video` attribute
+        if hasattr(video_source, "video") and video_source.video:
+            return self._normalize_video_reference(video_source.video)
+
+        uri = None
+        mime_type = "video/mp4"
+
+        if isinstance(video_source, str):
+            uri = video_source
+        elif isinstance(video_source, dict):
+            uri = video_source.get("uri") or video_source.get("name")
+            mime_type = video_source.get("mime_type", mime_type)
+        else:
+            uri = getattr(video_source, "uri", None) or getattr(video_source, "name", None)
+            mime_type = getattr(video_source, "mime_type", mime_type)
+
+        if not uri:
+            raise ValueError("Unable to normalize video reference: missing URI")
+
+        return types.Video(uri=uri, mime_type=mime_type)
+
     def generate_from_image_file(
         self,
         image_path: str,
@@ -504,7 +537,7 @@ class VeoVideoGenerator:
             image_path: Path to input image
             prompt: Video generation prompt
             output_path: Path to save the generated video
-            duration: Target duration (e.g. "10s" or 10) - Veo 3.1 fast supports extension up to ~141s
+            duration: Target duration (e.g. "10s" or 10) - Veo 3.0 fast supports extension up to ~141s
             aspect_ratio: Video aspect ratio ("16:9" or "9:16")
             resolution: Video resolution ("720p" or "1080p")
             generate_audio: Whether to generate audio
@@ -536,7 +569,7 @@ class VeoVideoGenerator:
             return 8.0
 
         target_seconds = _parse_duration_seconds(duration)
-        max_supported = 141.0  # Veo 3.1 scene extension limit
+        max_supported = 141.0  # Veo 3.0 fast scene extension limit (empirical)
         if target_seconds > max_supported:
             logger.info(f"Requested duration {target_seconds}s exceeds model limit; clamping to {max_supported}s")
             target_seconds = max_supported
@@ -575,7 +608,7 @@ class VeoVideoGenerator:
                 segment_seconds = default_segment_len
 
             total_seconds += segment_seconds
-            previous_video = response_video
+            previous_video = self._normalize_video_reference(response_video)
 
             logger.info(
                 f"Segment {segment_index} finished: {segment_seconds:.2f}s "

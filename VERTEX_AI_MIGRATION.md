@@ -155,7 +155,7 @@ celery -A celery_app worker --loglevel=info
 
 ### Vertex AI Pricing (as of 2025)
 
-- **Veo 3.1 Fast**: ~$0.15 per 8-second video generation
+- **Veo 3.0 Fast**: ~$0.15 per 8-second video generation
 - **Your GCP Credits**: ¥45,602 ≈ $305 USD
 
 **Estimated Videos:**
@@ -199,7 +199,7 @@ generator = VeoVideoGenerator(
 | Mode | Model Used |
 |------|-----------|
 | Google AI Studio | `veo-3.0-fast-generate-001` |
-| Vertex AI | `veo-3.1-generate-preview` |
+| Vertex AI | `veo-3.0-fast-generate-001` |
 
 ---
 
@@ -242,7 +242,7 @@ The system logs will clearly indicate which mode is being used:
 
 ```
 ✓ Vertex AI Mode - Using GCP credits
-✓ Model: veo-3.1-generate-preview
+✓ Model: veo-3.0-fast-generate-001
 ✓ Project: your-gcp-project-id
 ✓ Location: us-central1
 ```
