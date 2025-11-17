@@ -254,10 +254,35 @@
             border-color: #34D399;
             background-color: rgba(52, 211, 153, 0.1);
         }
+
+        .global-drag-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px dashed #34D399;
+            border-radius: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        .global-drag-overlay .material-symbols-outlined {
+            font-size: 4rem;
+        }
     </style>
 </head>
 <body class="bg-background-dark font-display">
     <div class="relative flex h-screen min-h-screen w-full flex-col bg-background-dark overflow-hidden">
+        <div id="drag-overlay" class="global-drag-overlay hidden">
+            <span class="material-symbols-outlined">cloud_upload</span>
+            <p class="text-lg font-semibold">Drop your video anywhere to upload</p>
+        </div>
         <!-- Header -->
         <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
             <div class="flex items-center gap-4 text-white">
@@ -410,6 +435,7 @@
         const attachedImagePreview = document.getElementById('attached-image-preview');
         const previewImg = document.getElementById('preview-img');
         const removeImageBtn = document.getElementById('remove-image-btn');
+        const dragOverlay = document.getElementById('drag-overlay');
 
         // ==================== ビデオアップロード処理 ====================
         uploadZone.addEventListener('click', () => videoInput.click());
@@ -420,21 +446,57 @@
 
         uploadZone.addEventListener('dragover', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             uploadZone.classList.add('drag-over');
         });
 
-        uploadZone.addEventListener('dragleave', () => {
+        uploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
             uploadZone.classList.remove('drag-over');
         });
 
         uploadZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            uploadZone.classList.remove('drag-over');
+            e.stopPropagation();
+            hideGlobalDragOverlay();
 
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
                 handleVideoUpload(files[0]);
             }
+        });
+
+        let dragCounter = 0;
+
+        window.addEventListener('dragenter', (e) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+            dragCounter++;
+            showGlobalDragOverlay();
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            if (!hasFiles(e) && dragCounter === 0) return;
+            e.preventDefault();
+            dragCounter = Math.max(0, dragCounter - 1);
+            if (dragCounter === 0) {
+                hideGlobalDragOverlay();
+            }
+        });
+
+        window.addEventListener('dragover', (e) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+        });
+
+        window.addEventListener('drop', (e) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                handleVideoUpload(files[0]);
+            }
+            hideGlobalDragOverlay();
         });
 
         videoInput.addEventListener('change', (e) => {
@@ -442,6 +504,22 @@
                 handleVideoUpload(e.target.files[0]);
             }
         });
+
+        function hasFiles(event) {
+            const dt = event.dataTransfer;
+            return dt && Array.from(dt.types || []).includes('Files');
+        }
+
+        function showGlobalDragOverlay() {
+            dragOverlay.classList.remove('hidden');
+            uploadZone.classList.add('drag-over');
+        }
+
+        function hideGlobalDragOverlay() {
+            dragOverlay.classList.add('hidden');
+            uploadZone.classList.remove('drag-over');
+            dragCounter = 0;
+        }
 
         // ==================== 画像添付処理 ====================
         attachImageBtn.addEventListener('click', () => {
