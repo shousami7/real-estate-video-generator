@@ -198,7 +198,7 @@
                         AI Video Generation Start
                     </button>
 
-                    <button id="edit-now-btn" onclick="window.location.href='/video/editor'" class="w-full mt-3 bg-gray-600 dark:bg-[#374151] text-white font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:bg-gray-700 dark:hover:bg-[#4b5563] transition-colors duration-300 focus:outline-none focus:ring-4 focus:ring-gray-500/50">
+                    <button id="edit-now-btn" type="button" class="w-full mt-3 bg-gray-600 dark:bg-[#374151] text-white font-bold text-lg py-4 px-6 rounded-lg flex items-center justify-center gap-3 hover:bg-gray-700 dark:hover:bg-[#4b5563] transition-colors duration-300 focus:outline-none focus:ring-4 focus:ring-gray-500/50">
                         <span class="material-symbols-outlined">edit</span>
                         Edit Now
                     </button>
@@ -560,6 +560,13 @@
         // FIXED: Edit Frames button handler
         if (editFramesBtn) {
             editFramesBtn.addEventListener('click', () => {
+                window.location.href = '/video/editor';
+            });
+        }
+
+        // Ensure "Edit Now" button also navigates straight to the editor
+        if (editNowBtn) {
+            editNowBtn.addEventListener('click', () => {
                 window.location.href = '/video/editor';
             });
         }

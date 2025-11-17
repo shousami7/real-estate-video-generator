@@ -573,14 +573,18 @@ def upload_video():
         video_path = os.path.join(upload_dir, filename)
         video_file.save(video_path)
 
-        session['editor_video'] = video_path
+        normalized_video_path = video_path.replace('\\', '/')
+        public_url = f"/uploads/{session_id}/editor/{filename}"
+
+        session['editor_video'] = normalized_video_path
 
         logger.info(f"Video uploaded: {video_path}")
 
         return jsonify({
             "status": "success",
             "message": "Video uploaded successfully",
-            "video_path": video_path
+            "video_path": normalized_video_path,
+            "video_url": public_url
         })
 
     except Exception as e:
