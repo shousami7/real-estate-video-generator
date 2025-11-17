@@ -21,6 +21,7 @@ instance/
 # Uploads and outputs
 uploads/
 output/
+test_output/
 
 # IDE
 .vscode/
