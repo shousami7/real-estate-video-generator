@@ -316,17 +316,18 @@
                 <div class="w-full max-w-5xl mx-auto mb-8" id="video-player-area">
                     <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative" id="video-container">
                         <!-- Upload UI (shown when no video) -->
-                        <div id="upload-zone" class="absolute inset-0 border-2 border-dashed border-[#374151] flex items-center justify-center upload-zone">
-                            <div class="text-center p-8">
-                                <span class="material-symbols-outlined text-6xl text-gray-500 mb-4 block">upload_file</span>
-                                <h3 class="text-white text-xl font-bold mb-2">Upload Your Video</h3>
-                                <p class="text-gray-400 mb-6">Select a video file to start video editing with AI</p>
-                                <input type="file" id="video-input" accept="video/*" class="hidden">
-                                <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
-                                    <span class="material-symbols-outlined">video_file</span>
-                                    <span class="truncate">Select Video File</span>
-                                </button>
+                        <div id="upload-zone" class="absolute inset-0 border-2 border-dashed border-[#374151] flex flex-col items-center justify-center gap-4 text-center upload-zone bg-panel-dark/80 px-8">
+                            <span class="material-symbols-outlined text-6xl text-gray-500">upload_file</span>
+                            <div>
+                                <h3 class="text-white text-xl font-bold mb-1">Upload Your Video</h3>
+                                <p class="text-gray-400">Drop a video file or choose one to start editing</p>
                             </div>
+                            <input type="file" id="video-input" accept="video/*" class="hidden">
+                            <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
+                                <span class="material-symbols-outlined">video_file</span>
+                                <span class="truncate">Select Video File</span>
+                            </button>
+                            <p class="text-gray-500 text-sm">MP4, MOV or WEBM up to 200MB</p>
                         </div>
 
                         <!-- Video Player (shown when video is loaded) -->
@@ -405,6 +406,7 @@
         // ==================== グローバル変数 ====================
         const state = {
             videoPath: null,
+            videoUrl: null,
             frames: [],
             selectedFrame: null,
             editedFrames: {},
@@ -580,9 +582,13 @@
                 uploadPercent.textContent = '100%';
 
                 if (data.status === 'success') {
-                    state.videoPath = '/' + data.video_path;
+                    const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
+                    state.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
 
-                    videoSource.src = state.videoPath;
+                    const playbackUrl = data.video_url || `/${state.videoPath}`;
+                    state.videoUrl = playbackUrl;
+
+                    videoSource.src = playbackUrl;
                     videoPlayer.load();
 
                     setTimeout(() => {
@@ -610,7 +616,12 @@
 
         // ==================== フレーム抽出 ====================
         function extractFrames() {
-            const videoPathForBackend = state.videoPath.startsWith('/')
+            if (!state.videoPath) {
+                alert('Please upload a video first');
+                return;
+            }
+
+            const videoPathForBackend = state.videoPath?.startsWith('/')
                 ? state.videoPath.substring(1)
                 : state.videoPath;
 
@@ -826,8 +837,8 @@
             videoContainer.classList.add('bg-black');
             editPanel.classList.remove('hidden');
 
-            if (state.videoPath) {
-                videoSource.src = state.videoPath;
+            if (state.videoUrl || state.videoPath) {
+                videoSource.src = state.videoUrl || `/${state.videoPath}`;
                 videoPlayer.load();
             }
         }
