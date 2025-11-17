@@ -312,20 +312,30 @@
         <main class="flex flex-1 overflow-hidden">
             <!-- Left Section: Video Player and Frames -->
             <div class="flex-1 flex flex-col p-6 overflow-y-auto">
-                <!-- Video Upload Area (shown when no video) -->
-                <div class="w-full max-w-5xl mx-auto mb-8" id="upload-area">
-                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark border-2 border-dashed border-[#374151] flex items-center justify-center relative upload-zone" id="upload-zone">
-                        <div class="text-center p-8">
-                            <span class="material-symbols-outlined text-6xl text-gray-500 mb-4 block">upload_file</span>
-                            <h3 class="text-white text-xl font-bold mb-2">Upload Your Video</h3>
-                            <p class="text-gray-400 mb-6">Select a video file to start video editing with AI</p>
-                            <input type="file" id="video-input" accept="video/*" class="hidden">
-                            <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
-                                <span class="material-symbols-outlined">video_file</span>
-                                <span class="truncate">Select Video File</span>
-                            </button>
+                <!-- Video Player Area (with upload UI when no video) -->
+                <div class="w-full max-w-5xl mx-auto mb-8" id="video-player-area">
+                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative" id="video-container">
+                        <!-- Upload UI (shown when no video) -->
+                        <div id="upload-zone" class="absolute inset-0 border-2 border-dashed border-[#374151] flex items-center justify-center upload-zone">
+                            <div class="text-center p-8">
+                                <span class="material-symbols-outlined text-6xl text-gray-500 mb-4 block">upload_file</span>
+                                <h3 class="text-white text-xl font-bold mb-2">Upload Your Video</h3>
+                                <p class="text-gray-400 mb-6">Select a video file to start video editing with AI</p>
+                                <input type="file" id="video-input" accept="video/*" class="hidden">
+                                <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
+                                    <span class="material-symbols-outlined">video_file</span>
+                                    <span class="truncate">Select Video File</span>
+                                </button>
+                            </div>
                         </div>
+
+                        <!-- Video Player (shown when video is loaded) -->
+                        <video id="video-player" class="w-full h-full hidden" controls>
+                            <source id="video-source" type="video/mp4">
+                        </video>
                     </div>
+
+                    <!-- Upload Progress -->
                     <div id="upload-progress" class="mt-6 hidden">
                         <div class="flex justify-between items-center mb-2">
                             <p class="text-sm font-medium text-gray-300">Upload Progress</p>
@@ -334,15 +344,6 @@
                         <div class="w-full bg-gray-700 rounded-full h-2.5">
                             <div id="upload-progress-bar" class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Video Player (shown when video is loaded) -->
-                <div class="w-full max-w-5xl mx-auto mb-8 hidden" id="video-player-area">
-                    <div class="aspect-video rounded-xl overflow-hidden bg-black flex items-center justify-center relative" id="video-container">
-                        <video id="video-player" class="w-full h-full" controls>
-                            <source id="video-source" type="video/mp4">
-                        </video>
                     </div>
                 </div>
 
@@ -415,8 +416,7 @@
         // ==================== DOM要素 ====================
         const uploadZone = document.getElementById('upload-zone');
         const videoInput = document.getElementById('video-input');
-        const uploadSection = document.getElementById('upload-area');
-        const playerSection = document.getElementById('video-player-area');
+        const videoContainer = document.getElementById('video-container');
         const editPanel = document.getElementById('edit-panel');
         const framesContainer = document.getElementById('frames-container');
         const chatContainer = document.getElementById('chat-container');
@@ -819,8 +819,11 @@
 
         // ==================== UI表示切り替え ====================
         function showPlayerSection() {
-            uploadSection.classList.add('hidden');
-            playerSection.classList.remove('hidden');
+            // Hide upload zone and show video player
+            uploadZone.classList.add('hidden');
+            videoPlayer.classList.remove('hidden');
+            videoContainer.classList.remove('bg-panel-dark');
+            videoContainer.classList.add('bg-black');
             editPanel.classList.remove('hidden');
 
             if (state.videoPath) {
