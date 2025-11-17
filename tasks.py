@@ -12,6 +12,10 @@ from supabase_storage import (
     is_supabase_required,
     upload_file_to_supabase,
 )
+from veo_generator import VeoVideoGenerator
+from video_composer import VideoComposer
+from scene_manager import SceneManager
+from utils.video_duration import get_video_duration
 
 logger = get_task_logger(__name__)
 
@@ -370,3 +374,470 @@ def generate_property_video_task(
 
     logger.info("Completed background generation for session %s", session_id)
     return result
+
+
+# -----------------------------------------------------------------------------
+# Chat-Based Video Generation Tasks - チャット機能用タスク
+# -----------------------------------------------------------------------------
+
+@celery.task(bind=True, name="tasks.generate_video_from_chat_task")
+def generate_video_from_chat_task(
+    self,
+    session_id: str,
+    scene_id: str,
+    image_path: str,
+    prompt: str,
+    duration: str = "8s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p"
+) -> Dict[str, Any]:
+    """
+    ① 動画生成タスク（チャット用）
+
+    Args:
+        session_id: セッションID
+        scene_id: シーンID
+        image_path: 画像ファイルパス
+        prompt: 動画生成プロンプト
+        duration: 動画の長さ（例: "8s"）
+        aspect_ratio: アスペクト比（"16:9" or "9:16"）
+        resolution: 解像度（"720p" or "1080p"）
+
+    Returns:
+        {
+            "status": str,
+            "scene_id": str,
+            "video_path": str,
+            "video_url": str,
+            "duration": float
+        }
+    """
+    logger.info(
+        f"Starting video generation from chat: session_id={session_id}, "
+        f"scene_id={scene_id}, image={image_path}"
+    )
+
+    try:
+        # タスクステータス更新
+        self.update_state(
+            state="GENERATING",
+            meta={
+                "progress": 10,
+                "status": f"{scene_id}の動画を生成中...",
+                "scene_id": scene_id
+            }
+        )
+
+        # Veo Video Generator初期化
+        api_key = os.getenv("GOOGLE_API_KEY")
+        project_id = os.getenv("GCP_PROJECT_ID")
+        location = os.getenv("GCP_LOCATION", "us-central1")
+
+        veo = VeoVideoGenerator(
+            api_key=api_key,
+            project_id=project_id,
+            location=location
+        )
+
+        # 画像から動画生成
+        logger.info(f"Generating video with Veo API: {prompt[:100]}...")
+        self.update_state(
+            state="GENERATING",
+            meta={
+                "progress": 20,
+                "status": "Veo APIで動画生成中...",
+                "scene_id": scene_id
+            }
+        )
+
+        operation = veo.generate_video(
+            image_path=image_path,
+            prompt=prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            generate_audio=False
+        )
+
+        # 完了まで待機（ポーリング）
+        self.update_state(
+            state="GENERATING",
+            meta={
+                "progress": 50,
+                "status": "動画生成完了を待機中...",
+                "scene_id": scene_id
+            }
+        )
+
+        video_response = veo.wait_for_completion(operation)
+
+        # 動画をダウンロード
+        logger.info("Downloading generated video...")
+        self.update_state(
+            state="DOWNLOADING",
+            meta={
+                "progress": 80,
+                "status": "動画をダウンロード中...",
+                "scene_id": scene_id
+            }
+        )
+
+        # ローカルパスを生成
+        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
+        os.makedirs(output_dir, exist_ok=True)
+        local_video_path = os.path.join(output_dir, f"{scene_id}.mp4")
+
+        # ダウンロード
+        downloaded_path = veo.download_video(
+            video_response=video_response,
+            output_path=local_video_path
+        )
+
+        # 動画の長さを取得
+        video_duration = get_video_duration(downloaded_path)
+
+        # Supabaseにアップロード
+        video_url = _upload_final_video_to_supabase(session_id, downloaded_path)
+
+        # SceneManagerに追加
+        self.update_state(
+            state="SAVING",
+            meta={
+                "progress": 90,
+                "status": "シーンをタイムラインに追加中...",
+                "scene_id": scene_id
+            }
+        )
+
+        scene_manager = SceneManager(session_id)
+        scene_manager.add_scene(
+            scene_id=scene_id,
+            video_path=downloaded_path,
+            video_url=video_url,
+            duration=video_duration,
+            prompt=prompt,
+            metadata={
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "generation_method": "chat_create"
+            }
+        )
+
+        logger.info(f"Video generation completed: {scene_id}")
+
+        return {
+            "status": "success",
+            "scene_id": scene_id,
+            "video_path": downloaded_path,
+            "video_url": video_url,
+            "duration": video_duration,
+            "message": f"{scene_id}の生成が完了しました！"
+        }
+
+    except Exception as exc:
+        logger.exception(f"Video generation failed for {scene_id}")
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "progress": 0,
+                "status": f"エラー: {str(exc)}",
+                "scene_id": scene_id
+            }
+        )
+        raise exc
+
+
+@celery.task(bind=True, name="tasks.extend_scene_task")
+def extend_scene_task(
+    self,
+    session_id: str,
+    scene_id: str,
+    previous_scene_id: str,
+    new_image_path: str,
+    prompt: str,
+    duration: str = "8s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p"
+) -> Dict[str, Any]:
+    """
+    ② シーン拡張タスク（チャット用）
+
+    Args:
+        session_id: セッションID
+        scene_id: 新しいシーンID
+        previous_scene_id: 前のシーンID
+        new_image_path: 新しい画像ファイルパス
+        prompt: 動画生成プロンプト
+        duration: 動画の長さ
+        aspect_ratio: アスペクト比
+        resolution: 解像度
+
+    Returns:
+        {
+            "status": str,
+            "scene_id": str,
+            "video_path": str,
+            "video_url": str,
+            "duration": float
+        }
+    """
+    logger.info(
+        f"Starting scene extension: session_id={session_id}, "
+        f"new_scene={scene_id}, previous={previous_scene_id}"
+    )
+
+    try:
+        # タスクステータス更新
+        self.update_state(
+            state="EXTENDING",
+            meta={
+                "progress": 10,
+                "status": f"{previous_scene_id}を拡張中...",
+                "scene_id": scene_id
+            }
+        )
+
+        # SceneManagerから前のシーンを取得
+        scene_manager = SceneManager(session_id)
+        previous_scene = scene_manager.get_scene(previous_scene_id)
+
+        if not previous_scene:
+            raise ValueError(f"Previous scene not found: {previous_scene_id}")
+
+        # Veo Video Generator初期化
+        api_key = os.getenv("GOOGLE_API_KEY")
+        project_id = os.getenv("GCP_PROJECT_ID")
+        location = os.getenv("GCP_LOCATION", "us-central1")
+
+        veo = VeoVideoGenerator(
+            api_key=api_key,
+            project_id=project_id,
+            location=location
+        )
+
+        # 前の動画を読み込み（Veo APIのprevious_video機能を使用）
+        # TODO: VeoVideoGeneratorにload_video_objectメソッドを追加
+        # 暫定: 前の動画パスから再度ロード
+        logger.info(f"Loading previous video: {previous_scene.video_path}")
+
+        # シーン拡張（Veo APIのprevious_video機能）
+        self.update_state(
+            state="EXTENDING",
+            meta={
+                "progress": 20,
+                "status": "Veo APIでシーン拡張中...",
+                "scene_id": scene_id
+            }
+        )
+
+        # TODO: previous_videoの実装
+        # MVPでは、新しい画像から通常の動画生成を行う
+        # 将来的には、Veo APIのシーン拡張機能を活用
+        operation = veo.generate_video(
+            image_path=new_image_path,
+            prompt=f"{prompt} (続きのシーン)",
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            generate_audio=False
+            # previous_video=previous_video_object  # TODO: 実装
+        )
+
+        # 完了まで待機
+        self.update_state(
+            state="EXTENDING",
+            meta={
+                "progress": 50,
+                "status": "動画生成完了を待機中...",
+                "scene_id": scene_id
+            }
+        )
+
+        video_response = veo.wait_for_completion(operation)
+
+        # ダウンロード
+        self.update_state(
+            state="DOWNLOADING",
+            meta={
+                "progress": 80,
+                "status": "動画をダウンロード中...",
+                "scene_id": scene_id
+            }
+        )
+
+        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
+        os.makedirs(output_dir, exist_ok=True)
+        local_video_path = os.path.join(output_dir, f"{scene_id}.mp4")
+
+        downloaded_path = veo.download_video(
+            video_response=video_response,
+            output_path=local_video_path
+        )
+
+        # 動画の長さを取得
+        video_duration = get_video_duration(downloaded_path)
+
+        # Supabaseにアップロード
+        video_url = _upload_final_video_to_supabase(session_id, downloaded_path)
+
+        # SceneManagerに追加
+        self.update_state(
+            state="SAVING",
+            meta={
+                "progress": 90,
+                "status": "シーンをタイムラインに追加中...",
+                "scene_id": scene_id
+            }
+        )
+
+        scene_manager.add_scene(
+            scene_id=scene_id,
+            video_path=downloaded_path,
+            video_url=video_url,
+            duration=video_duration,
+            prompt=prompt,
+            previous_scene_id=previous_scene_id,
+            metadata={
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "generation_method": "chat_extend"
+            }
+        )
+
+        logger.info(f"Scene extension completed: {scene_id}")
+
+        return {
+            "status": "success",
+            "scene_id": scene_id,
+            "previous_scene_id": previous_scene_id,
+            "video_path": downloaded_path,
+            "video_url": video_url,
+            "duration": video_duration,
+            "message": f"{scene_id}の生成が完了しました！"
+        }
+
+    except Exception as exc:
+        logger.exception(f"Scene extension failed for {scene_id}")
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "progress": 0,
+                "status": f"エラー: {str(exc)}",
+                "scene_id": scene_id
+            }
+        )
+        raise exc
+
+
+@celery.task(bind=True, name="tasks.merge_scenes_task")
+def merge_scenes_task(
+    self,
+    session_id: str,
+    transition_type: str = "cut"
+) -> Dict[str, Any]:
+    """
+    ③ シーン連結タスク（チャット用）
+
+    Args:
+        session_id: セッションID
+        transition_type: トランジションタイプ（"cut", "fade", "wipeleft", etc.）
+
+    Returns:
+        {
+            "status": str,
+            "final_video_path": str,
+            "final_video_url": str,
+            "scene_count": int,
+            "total_duration": float
+        }
+    """
+    logger.info(
+        f"Starting scene merge: session_id={session_id}, "
+        f"transition={transition_type}"
+    )
+
+    try:
+        # タスクステータス更新
+        self.update_state(
+            state="MERGING",
+            meta={
+                "progress": 10,
+                "status": "シーンを連結中...",
+            }
+        )
+
+        # SceneManagerから全シーンを取得
+        scene_manager = SceneManager(session_id)
+        scenes = scene_manager.get_all_scenes()
+
+        if len(scenes) < 2:
+            raise ValueError("At least 2 scenes are required for merging")
+
+        # 動画パスのリストを取得
+        video_paths = scene_manager.get_video_paths()
+
+        logger.info(f"Merging {len(scenes)} scenes with {transition_type} transition")
+
+        # VideoComposerで連結
+        self.update_state(
+            state="MERGING",
+            meta={
+                "progress": 30,
+                "status": f"{len(scenes)}つのシーンをFFmpegで連結中...",
+            }
+        )
+
+        composer = VideoComposer()
+
+        # 出力パス
+        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "merged")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, "final_video.mp4")
+
+        # トランジション設定
+        transition_duration = 0.5 if transition_type != "cut" else 0.0
+
+        # 連結実行
+        composed_path = composer.compose_with_transitions(
+            video_paths=video_paths,
+            output_path=output_path,
+            transition_type=transition_type,
+            transition_duration=transition_duration
+        )
+
+        # 動画の長さを取得
+        self.update_state(
+            state="UPLOADING",
+            meta={
+                "progress": 80,
+                "status": "完成した動画をアップロード中...",
+            }
+        )
+
+        total_duration = get_video_duration(composed_path)
+
+        # Supabaseにアップロード
+        video_url = _upload_final_video_to_supabase(session_id, composed_path)
+
+        logger.info(f"Scene merge completed: {composed_path}")
+
+        return {
+            "status": "success",
+            "final_video_path": composed_path,
+            "final_video_url": video_url,
+            "scene_count": len(scenes),
+            "total_duration": total_duration,
+            "transition_type": transition_type,
+            "message": f"{len(scenes)}つのシーンを連結した動画が完成しました！"
+        }
+
+    except Exception as exc:
+        logger.exception(f"Scene merge failed for session {session_id}")
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "progress": 0,
+                "status": f"エラー: {str(exc)}",
+            }
+        )
+        raise exc

@@ -19,6 +19,9 @@ from supabase_storage import (
     is_supabase_required,
     upload_bytes_to_supabase,
 )
+from chat_command_handler import ChatCommandHandler, CommandIntent
+from scene_manager import SceneManager
+from datetime import datetime
 
 load_dotenv()
 
@@ -1003,3 +1006,525 @@ def download_editor_video():
     except Exception as e:
         logger.error(f"Download error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# Editor Chat Endpoints - 自然言語対話型動画制作
+# -----------------------------------------------------------------------------
+
+@web_ui_blueprint.route('/editor/chat', methods=['POST'])
+def editor_chat():
+    """
+    統合チャットエンドポイント
+    自然言語コマンドを解析して適切な機能にルーティング
+
+    Request Body:
+        {
+            "message": str,  # ユーザーのチャット入力
+            "session_id": str  # オプション: セッションID（省略時は自動生成）
+        }
+
+    Returns:
+        {
+            "status": str,  # "success", "processing", "error"
+            "message": str,  # ユーザーへのフィードバック
+            "intent": str,  # コマンドインテント
+            "data": dict,   # 追加データ（task_id, scene_id, etc.）
+            "chat_history": list  # チャット履歴
+        }
+    """
+    try:
+        data = request.get_json()
+        user_input = data.get('message', '').strip()
+        provided_session_id = data.get('session_id')
+
+        if not user_input:
+            return jsonify({
+                "status": "error",
+                "message": "メッセージが必要です"
+            }), 400
+
+        # セッションIDの管理
+        if provided_session_id:
+            session_id = provided_session_id
+            session['editor_session_id'] = session_id
+        elif 'editor_session_id' not in session:
+            session_id = str(uuid.uuid4())
+            session['editor_session_id'] = session_id
+        else:
+            session_id = session['editor_session_id']
+
+        # チャット履歴の初期化
+        if 'chat_history' not in session:
+            session['chat_history'] = []
+
+        # ユーザーメッセージを履歴に追加
+        session['chat_history'].append({
+            "role": "user",
+            "content": user_input,
+            "timestamp": datetime.now().isoformat()
+        })
+
+        logger.info(f"Editor chat: session_id={session_id}, input={user_input}")
+
+        # コマンド解釈
+        handler = ChatCommandHandler()
+        command = handler.parse_command(user_input)
+
+        # コマンドバリデーション
+        is_valid, error_message = handler.validate_command(command)
+        if not is_valid:
+            session['chat_history'].append({
+                "role": "assistant",
+                "content": error_message,
+                "timestamp": datetime.now().isoformat()
+            })
+            return jsonify({
+                "status": "error",
+                "message": error_message,
+                "intent": command['intent'].value,
+                "chat_history": session['chat_history']
+            }), 400
+
+        # SceneManager初期化
+        scene_manager = SceneManager(session_id)
+
+        # インテントに応じて処理分岐
+        intent = command['intent']
+        params = command['params']
+
+        if intent == CommandIntent.CREATE:
+            result = _handle_create_video(params, scene_manager, session_id)
+
+        elif intent == CommandIntent.EXTEND:
+            result = _handle_extend_scene(params, scene_manager, session_id)
+
+        elif intent == CommandIntent.TRANSITION:
+            result = _handle_merge_scenes(params, scene_manager, session_id)
+
+        elif intent == CommandIntent.FRAME_EDIT:
+            result = _handle_frame_edit(params, scene_manager, session_id)
+
+        else:
+            result = {
+                "status": "error",
+                "message": handler.get_intent_help_message(intent)
+            }
+
+        # アシスタントの応答を履歴に追加
+        session['chat_history'].append({
+            "role": "assistant",
+            "content": result.get('message', ''),
+            "timestamp": datetime.now().isoformat(),
+            "data": result
+        })
+
+        # チャット履歴を結果に含める
+        result['chat_history'] = session['chat_history']
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Editor chat error: {e}", exc_info=True)
+        error_message = f"エラーが発生しました: {str(e)}"
+
+        # エラーも履歴に追加
+        if 'chat_history' in session:
+            session['chat_history'].append({
+                "role": "assistant",
+                "content": error_message,
+                "timestamp": datetime.now().isoformat(),
+                "error": True
+            })
+
+        return jsonify({
+            "status": "error",
+            "message": error_message,
+            "chat_history": session.get('chat_history', [])
+        }), 500
+
+
+@web_ui_blueprint.route('/editor/chat/history', methods=['GET'])
+def get_chat_history():
+    """
+    チャット履歴を取得
+
+    Returns:
+        {
+            "chat_history": list,
+            "session_id": str
+        }
+    """
+    try:
+        return jsonify({
+            "chat_history": session.get('chat_history', []),
+            "session_id": session.get('editor_session_id')
+        })
+    except Exception as e:
+        logger.error(f"Get chat history error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@web_ui_blueprint.route('/editor/chat/clear', methods=['POST'])
+def clear_chat_history():
+    """
+    チャット履歴をクリア
+
+    Returns:
+        {
+            "status": str,
+            "message": str
+        }
+    """
+    try:
+        session['chat_history'] = []
+        return jsonify({
+            "status": "success",
+            "message": "チャット履歴をクリアしました"
+        })
+    except Exception as e:
+        logger.error(f"Clear chat history error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@web_ui_blueprint.route('/editor/timeline', methods=['GET'])
+def get_timeline():
+    """
+    タイムライン情報を取得
+
+    Returns:
+        {
+            "session_id": str,
+            "scene_count": int,
+            "total_duration": float,
+            "scenes": list
+        }
+    """
+    try:
+        session_id = session.get('editor_session_id')
+        if not session_id:
+            return jsonify({
+                "status": "error",
+                "message": "セッションが見つかりません"
+            }), 404
+
+        scene_manager = SceneManager(session_id)
+        timeline_data = scene_manager.export_timeline()
+
+        return jsonify(timeline_data)
+
+    except Exception as e:
+        logger.error(f"Get timeline error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# Chat Command Handlers - コマンドハンドラー（内部関数）
+# -----------------------------------------------------------------------------
+
+def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
+    """
+    ① 動画生成処理
+
+    Args:
+        params: コマンドパラメータ
+        scene_manager: SceneManagerインスタンス
+        session_id: セッションID
+
+    Returns:
+        結果辞書
+    """
+    logger.info(f"Handling CREATE command: {params}")
+
+    # 画像パスの検証
+    image_path = params.get('image_path')
+
+    # TODO: 画像パスが指定されていない場合、セッションのアップロードから取得
+    # または、プロンプトのみでテキストから動画生成（Veo API対応時）
+
+    if not image_path:
+        return {
+            "status": "error",
+            "message": "画像パスを指定してください（例: 「image1.jpgから動画を作って」）",
+            "intent": "create"
+        }
+
+    # 画像ファイルの存在確認（ローカルまたはアップロード済み）
+    # MVPでは簡易実装: セッションのuploadディレクトリを確認
+    upload_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id)
+    full_image_path = os.path.join(upload_dir, image_path)
+
+    if not os.path.exists(full_image_path):
+        # グローバルアップロードディレクトリも確認
+        full_image_path = os.path.join(LOCAL_UPLOAD_ROOT, image_path)
+        if not os.path.exists(full_image_path):
+            return {
+                "status": "error",
+                "message": f"画像が見つかりません: {image_path}。先にアップロードしてください。",
+                "intent": "create"
+            }
+
+    # 次のシーンIDを生成
+    scene_id = scene_manager.generate_next_scene_id()
+
+    # Celeryタスクとして非同期実行
+    # TODO: tasks.pyにgenerate_video_from_chat_taskを実装
+    try:
+        from tasks import generate_video_from_chat_task
+
+        task = generate_video_from_chat_task.delay(
+            session_id=session_id,
+            scene_id=scene_id,
+            image_path=full_image_path,
+            prompt=params.get('prompt'),
+            duration=params.get('duration', '8s'),
+            aspect_ratio=params.get('aspect_ratio', '16:9'),
+            resolution=params.get('resolution', '720p')
+        )
+
+        logger.info(f"Video generation task started: task_id={task.id}, scene_id={scene_id}")
+
+        return {
+            "status": "processing",
+            "task_id": task.id,
+            "scene_id": scene_id,
+            "message": f"動画を生成中です（約2-5分）...\nシーンID: {scene_id}",
+            "intent": "create"
+        }
+
+    except ImportError:
+        # タスクが未実装の場合の暫定対応
+        logger.warning("generate_video_from_chat_task not implemented yet")
+        return {
+            "status": "error",
+            "message": "動画生成機能は現在開発中です。tasks.pyにgenerate_video_from_chat_taskを実装してください。",
+            "intent": "create"
+        }
+
+
+def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
+    """
+    ② シーン拡張処理
+
+    Args:
+        params: コマンドパラメータ
+        scene_manager: SceneManagerインスタンス
+        session_id: セッションID
+
+    Returns:
+        結果辞書
+    """
+    logger.info(f"Handling EXTEND command: {params}")
+
+    # 最後のシーンを取得
+    last_scene = scene_manager.get_last_scene()
+
+    if not last_scene:
+        return {
+            "status": "error",
+            "message": "まず最初のシーンを作成してください（例: 「image1.jpgから動画を作って」）",
+            "intent": "extend"
+        }
+
+    # 新しい画像パス
+    new_image_path = params.get('image_path')
+
+    if not new_image_path:
+        return {
+            "status": "error",
+            "message": "新しいシーンの画像パスを指定してください（例: 「image2.jpgで続きを作って」）",
+            "intent": "extend"
+        }
+
+    # 画像ファイルの存在確認
+    upload_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id)
+    full_image_path = os.path.join(upload_dir, new_image_path)
+
+    if not os.path.exists(full_image_path):
+        full_image_path = os.path.join(LOCAL_UPLOAD_ROOT, new_image_path)
+        if not os.path.exists(full_image_path):
+            return {
+                "status": "error",
+                "message": f"画像が見つかりません: {new_image_path}",
+                "intent": "extend"
+            }
+
+    # 次のシーンIDを生成
+    scene_id = scene_manager.generate_next_scene_id()
+
+    # Celeryタスクとして非同期実行
+    try:
+        from tasks import extend_scene_task
+
+        task = extend_scene_task.delay(
+            session_id=session_id,
+            scene_id=scene_id,
+            previous_scene_id=last_scene.scene_id,
+            new_image_path=full_image_path,
+            prompt=params.get('prompt'),
+            duration=params.get('duration', '8s'),
+            aspect_ratio=params.get('aspect_ratio', '16:9'),
+            resolution=params.get('resolution', '720p')
+        )
+
+        logger.info(f"Scene extension task started: task_id={task.id}, scene_id={scene_id}")
+
+        return {
+            "status": "processing",
+            "task_id": task.id,
+            "scene_id": scene_id,
+            "previous_scene_id": last_scene.scene_id,
+            "message": f"{last_scene.scene_id}の次のシーンを生成中...\n新しいシーンID: {scene_id}",
+            "intent": "extend"
+        }
+
+    except ImportError:
+        logger.warning("extend_scene_task not implemented yet")
+        return {
+            "status": "error",
+            "message": "シーン拡張機能は現在開発中です。tasks.pyにextend_scene_taskを実装してください。",
+            "intent": "extend"
+        }
+
+
+def _handle_merge_scenes(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
+    """
+    ③ 動画連結処理
+
+    Args:
+        params: コマンドパラメータ
+        scene_manager: SceneManagerインスタンス
+        session_id: セッションID
+
+    Returns:
+        結果辞書
+    """
+    logger.info(f"Handling TRANSITION command: {params}")
+
+    scenes = scene_manager.get_all_scenes()
+
+    if len(scenes) < 2:
+        return {
+            "status": "error",
+            "message": "最低2つのシーンが必要です。先にシーンを追加してください。",
+            "intent": "transition"
+        }
+
+    # Celeryタスクとして非同期実行
+    try:
+        from tasks import merge_scenes_task
+
+        task = merge_scenes_task.delay(
+            session_id=session_id,
+            transition_type=params.get('transition_type', 'cut')
+        )
+
+        logger.info(f"Scene merge task started: task_id={task.id}")
+
+        return {
+            "status": "processing",
+            "task_id": task.id,
+            "scene_count": len(scenes),
+            "transition_type": params.get('transition_type', 'cut'),
+            "message": f"{len(scenes)}つのシーンを{params.get('transition_type', 'cut')}で連結中...",
+            "intent": "transition"
+        }
+
+    except ImportError:
+        logger.warning("merge_scenes_task not implemented yet")
+        return {
+            "status": "error",
+            "message": "シーン連結機能は現在開発中です。tasks.pyにmerge_scenes_taskを実装してください。",
+            "intent": "transition"
+        }
+
+
+def _handle_frame_edit(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
+    """
+    ④ フレーム編集処理
+
+    Args:
+        params: コマンドパラメータ
+        scene_manager: SceneManagerインスタンス
+        session_id: セッションID
+
+    Returns:
+        結果辞書
+    """
+    logger.info(f"Handling FRAME_EDIT command: {params}")
+
+    # シーンIDの取得
+    scene_id = params.get('scene_id')
+
+    if not scene_id:
+        # scene_idが指定されていない場合、最後のシーンを対象
+        last_scene = scene_manager.get_last_scene()
+        if not last_scene:
+            return {
+                "status": "error",
+                "message": "編集するシーンがありません。先にシーンを作成してください。",
+                "intent": "frame_edit"
+            }
+        scene_id = last_scene.scene_id
+
+    scene = scene_manager.get_scene(scene_id)
+    if not scene:
+        return {
+            "status": "error",
+            "message": f"シーンが見つかりません: {scene_id}",
+            "intent": "frame_edit"
+        }
+
+    # タイムスタンプからフレームを抽出
+    timestamp = params.get('timestamp', 0.0)
+
+    # 既存のフレーム編集機能を活用
+    # （MVPでは簡易実装: 最初のフレームを編集）
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "GOOGLE_API_KEYが設定されていません",
+                "intent": "frame_edit"
+            }
+
+        # フレーム抽出
+        frame_editor = FrameEditor(scene.video_path)
+        # タイムスタンプに最も近いフレームを抽出
+        # TODO: extract_frame_at_time メソッドを実装
+        # 暫定: 最初のフレームを使用
+        frames = frame_editor.extract_frames(num_frames=1)
+        if not frames:
+            return {
+                "status": "error",
+                "message": "フレームの抽出に失敗しました",
+                "intent": "frame_edit"
+            }
+
+        frame_path = frames[0]['path']
+
+        # AI編集
+        ai_editor = AIFrameEditor(api_key)
+        variations = ai_editor.generate_frame_variations(
+            base_image_path=frame_path,
+            prompt=params.get('prompt'),
+            variation_count=4
+        )
+
+        return {
+            "status": "success",
+            "scene_id": scene_id,
+            "timestamp": timestamp,
+            "variations": variations,
+            "message": f"{scene_id}のフレームを編集しました。4つのバリエーションから選択してください。",
+            "intent": "frame_edit"
+        }
+
+    except Exception as e:
+        logger.error(f"Frame edit error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"フレーム編集エラー: {str(e)}",
+            "intent": "frame_edit"
+        }
