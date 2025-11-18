@@ -669,6 +669,14 @@
 
         // ==================== 初期化 ====================
         function initializeVideoFrames() {
+            // 最初はアップロードゾーンのみ表示
+            // 動画フレーム枠は動画アップロード後に表示される
+        }
+
+        function activateMultiVideoMode() {
+            // 古いアップロードUIを非表示に
+            uploadZone.classList.add('hidden');
+
             // 6つの空の動画枠を生成
             for (let i = 0; i < 6; i++) {
                 state.videoFrames[i] = {
@@ -678,6 +686,11 @@
                     isProcessing: false
                 };
             }
+
+            // Video player area を非表示にして、video frames section を表示
+            document.getElementById('video-player-area').classList.add('hidden');
+            videoFramesSection.classList.remove('hidden');
+
             renderVideoFrames();
         }
 
@@ -1058,63 +1071,14 @@
                 return;
             }
 
+            // マルチビデオモードを有効化
+            activateMultiVideoMode();
+
             const formData = new FormData();
             formData.append('video', file);
 
-            state.isProcessing = true;
-            uploadZone.style.opacity = '0.5';
-            uploadProgress.classList.remove('hidden');
-
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress += 10;
-                if (progress <= 90) {
-                    uploadProgressBar.style.width = progress + '%';
-                    uploadPercent.textContent = progress + '%';
-                }
-            }, 200);
-
-            fetch('/video/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                clearInterval(progressInterval);
-                uploadProgressBar.style.width = '100%';
-                uploadPercent.textContent = '100%';
-
-                if (data.status === 'success') {
-                    const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
-                    state.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
-
-                    const playbackUrl = data.video_url || `/${state.videoPath}`;
-                    state.videoUrl = playbackUrl;
-
-                    videoSource.src = playbackUrl;
-                    videoPlayer.load();
-
-                    setTimeout(() => {
-                        showPlayerSection();
-                        extractFrames();
-                    }, 500);
-                } else {
-                    alert('Upload failed: ' + data.message);
-                }
-            })
-            .catch(err => {
-                clearInterval(progressInterval);
-                alert('Error: ' + err.message);
-            })
-            .finally(() => {
-                state.isProcessing = false;
-                uploadZone.style.opacity = '1';
-                setTimeout(() => {
-                    uploadProgress.classList.add('hidden');
-                    uploadProgressBar.style.width = '0%';
-                    uploadPercent.textContent = '0%';
-                }, 1000);
-            });
+            // 最初の動画フレーム枠にアップロード
+            uploadVideoToFrame(0, file);
         }
 
         // ==================== フレーム抽出 ====================
