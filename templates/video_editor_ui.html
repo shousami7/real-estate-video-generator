@@ -275,6 +275,71 @@
         .global-drag-overlay .material-symbols-outlined {
             font-size: 4rem;
         }
+
+        /* Video Mode Popup */
+        .video-mode-popup {
+            position: absolute;
+            bottom: 60px;
+            left: 0;
+            background: #2d3748;
+            border: 2px solid #374151;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            min-width: 160px;
+            display: none;
+        }
+
+        .video-mode-popup.show {
+            display: block;
+            animation: popupSlideIn 0.2s ease-out;
+        }
+
+        @keyframes popupSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .video-mode-option {
+            padding: 10px 14px;
+            color: #E2E8F0;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            border-bottom: 1px solid #374151;
+        }
+
+        .video-mode-option:last-child {
+            border-bottom: none;
+        }
+
+        .video-mode-option:hover {
+            background: #374151;
+            color: #34D399;
+        }
+
+        .video-mode-option.selected {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34D399;
+            font-weight: 600;
+        }
+
+        .mode-btn {
+            position: relative;
+        }
+
+        .mode-btn.active {
+            background: #34D399 !important;
+            color: black !important;
+            box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.3);
+        }
     </style>
 </head>
 <body class="bg-background-dark font-display">
@@ -392,9 +457,21 @@
 
                     <div class="relative flex gap-2">
                         <input type="file" id="attach-image-input" accept="image/*" class="hidden">
-                        <button id="attach-image-btn" class="flex items-center justify-center size-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
-                            <span class="material-symbols-outlined !text-xl">attach_file</span>
+                        <button id="attach-image-btn" class="flex items-center justify-center size-10 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
+                            <span class="material-symbols-outlined !text-base">attach_file</span>
                         </button>
+                        <div class="mode-btn relative">
+                            <button id="video-mode-btn" class="flex items-center justify-center size-10 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Video Mode">
+                                <span class="material-symbols-outlined !text-base">add</span>
+                            </button>
+                            <!-- Popup Menu -->
+                            <div id="video-mode-popup" class="video-mode-popup">
+                                <div class="video-mode-option" data-mode="generate">Generate</div>
+                                <div class="video-mode-option" data-mode="extend">Extend</div>
+                                <div class="video-mode-option" data-mode="stitch">Stitch</div>
+                                <div class="video-mode-option" data-mode="adjust">Adjust</div>
+                            </div>
+                        </div>
                         <input id="chat-input" class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors" placeholder="Describe the edit you want..." type="text" disabled/>
                         <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                             <span class="material-symbols-outlined !text-xl">arrow_upward</span>
@@ -448,7 +525,8 @@
             editedFrames: {},
             isProcessing: false,
             uploadedImage: null,
-            generatedVideo: null
+            generatedVideo: null,
+            selectedVideoMode: null
         };
 
         // ==================== DOM要素 ====================
@@ -481,6 +559,8 @@
         const previewImg = document.getElementById('preview-img');
         const removeImageBtn = document.getElementById('remove-image-btn');
         const dragOverlay = document.getElementById('drag-overlay');
+        const videoModeBtn = document.getElementById('video-mode-btn');
+        const videoModePopup = document.getElementById('video-mode-popup');
 
         // ==================== ビデオアップロード処理 ====================
         uploadZone.addEventListener('click', () => videoInput.click());
@@ -590,6 +670,45 @@
             state.uploadedImage = null;
             attachedImagePreview.classList.add('hidden');
             attachImageInput.value = '';
+        });
+
+        // ==================== ビデオモード選択処理 ====================
+        // ポップアップの表示/非表示を切り替え
+        videoModeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            videoModePopup.classList.toggle('show');
+        });
+
+        // 外部クリックでポップアップを閉じる
+        document.addEventListener('click', (e) => {
+            if (!videoModeBtn.contains(e.target) && !videoModePopup.contains(e.target)) {
+                videoModePopup.classList.remove('show');
+            }
+        });
+
+        // モード選択処理
+        const modeOptions = document.querySelectorAll('.video-mode-option');
+        modeOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                const mode = option.dataset.mode;
+
+                // すべてのオプションから選択状態を削除
+                modeOptions.forEach(opt => opt.classList.remove('selected'));
+
+                // クリックされたオプションを選択状態に
+                option.classList.add('selected');
+
+                // 状態を保存
+                state.selectedVideoMode = mode;
+
+                // ボタンにアクティブ状態を追加
+                videoModeBtn.classList.add('active');
+
+                // ポップアップを閉じる
+                videoModePopup.classList.remove('show');
+
+                console.log('Selected video mode:', mode);
+            });
         });
 
         function handleVideoUpload(file) {
