@@ -669,6 +669,9 @@
 
         // ==================== 初期化 ====================
         function initializeVideoFrames() {
+            // 古いアップロードUIを非表示にする
+            uploadZone.style.display = 'none';
+
             // 6つの空の動画枠を生成
             for (let i = 0; i < 6; i++) {
                 state.videoFrames[i] = {
