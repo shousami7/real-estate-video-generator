@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import logging
 from typing import Any, Dict, List, Optional
@@ -13,10 +14,13 @@ from celery.result import AsyncResult
 from frame_editor import FrameEditor, AIFrameEditor
 from celery_app import celery
 from tasks import generate_property_video_task, property_video_generation_task
+from utils.response_utils import build_task_response
 from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
     upload_bytes_to_supabase,
+    SUPABASE_CLIENT,
+    SUPABASE_BUCKET_NAME,
 )
 from chat_command_handler import ChatCommandHandler, CommandIntent
 from scene_manager import SceneManager
@@ -146,7 +150,11 @@ def upload_files():
 
             # ファイル保存
             filename = secure_filename(file.filename)
-            storage_path = os.path.join(session_id, filename).replace("\\", "/")
+
+            # Use standard Supabase structure for image uploads
+            # Store user-uploaded images in videos/{session_id}/input/
+            storage_path = f"videos/{session_id}/input/{filename}"
+
             file_bytes = file.read()
             if not file_bytes:
                 return jsonify({
@@ -1334,6 +1342,126 @@ def clear_chat_history():
     except Exception as e:
         logger.error(f"Clear chat history error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# MCP Task Status Endpoint
+# -----------------------------------------------------------------------------
+
+@web_ui_blueprint.route('/api/task/<task_id>/status', methods=['GET'])
+def get_task_status(task_id: str):
+    """
+    Get unified task status for MCP orchestration.
+
+    Returns:
+        {
+            "task_id": str,
+            "video_id": str,
+            "status": "pending" | "running" | "completed" | "error",
+            "stage": str,
+            "output_url": str | null,
+            "frames": list | null,
+            "error": str | null
+        }
+    """
+    try:
+        # Query Celery AsyncResult
+        task = AsyncResult(task_id, app=celery)
+
+        # Get video_id from session or task result
+        video_id = session.get('session_id') or session.get('editor_session_id')
+
+        if task.state == states.PENDING:
+            # Task not yet started
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id or "unknown",
+                stage="unknown",
+                status="pending",
+            ))
+
+        elif task.state in {states.STARTED, 'GENERATING_CLIPS', 'COMPOSING', 'GENERATING', 'EXTENDING', 'DOWNLOADING', 'SAVING', 'MERGING', 'UPLOADING'}:
+            # Task is running
+            meta = task.info if isinstance(task.info, dict) else {}
+            video_id = meta.get('video_id') or video_id or "unknown"
+
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id or "unknown",
+                stage=meta.get('stage', 'unknown'),
+                status="running",
+            ))
+
+        elif task.state == states.SUCCESS:
+            # Task completed - MUST load log file from Supabase
+            result = task.result if isinstance(task.result, dict) else {}
+            video_id = result.get('video_id') or video_id or "unknown"
+
+            # Load log from Supabase (required for unified response)
+            if is_supabase_configured():
+                try:
+                    log_path = f"videos/{video_id}/logs/{task_id}.json"
+                    log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
+                    if log_response:
+                        log_data = json.loads(log_response)
+                        # Ensure all required keys exist
+                        if all(k in log_data for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
+                            return jsonify(log_data)
+                        else:
+                            logger.warning(f"Log file missing required keys: {log_path}")
+                except Exception as log_error:
+                    logger.warning(f"Could not load task log from Supabase: {log_error}")
+
+            # Fallback: construct response from task result
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id,
+                stage=result.get('stage', 'unknown'),
+                status="completed",
+                output_url=result.get('output_url') or result.get('final_video'),
+                frames=result.get('frames'),
+                error=None,
+            ))
+
+        elif task.state in {states.FAILURE, states.REVOKED}:
+            # Task failed
+            error_msg = str(task.info) if task.info else "Task failed or was revoked"
+
+            # Try to load error log from Supabase
+            if is_supabase_configured() and video_id and video_id != "unknown":
+                try:
+                    log_path = f"videos/{video_id}/logs/{task_id}.json"
+                    log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
+                    if log_response:
+                        log_data = json.loads(log_response)
+                        if log_data.get('status') == 'error':
+                            return jsonify(log_data)
+                except Exception:
+                    pass
+
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id or "unknown",
+                stage="unknown",
+                status="error",
+                error=error_msg,
+            ))
+
+        else:
+            # Unknown state
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id or "unknown",
+                stage="unknown",
+                status="pending",
+            ))
+
+    except Exception as e:
+        logger.error(f"Error getting task status: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to get task status",
+            "detail": str(e)
+        }), 500
 
 
 @web_ui_blueprint.route('/editor/timeline', methods=['GET'])

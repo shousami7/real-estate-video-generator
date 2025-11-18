@@ -1,7 +1,9 @@
 import logging
 import os
+import json
 from typing import Optional, Tuple
 from urllib.parse import urlparse
+from datetime import datetime
 
 try:
     # The supabase package is optional at runtime (only required when uploads are enabled)
@@ -183,3 +185,229 @@ def upload_file_to_supabase(
         content_type=content_type,
         cache_control=cache_control,
     )
+
+
+# -----------------------------------------------------------------------------
+# Standard Supabase Folder Structure Helpers
+# -----------------------------------------------------------------------------
+# Required structure:
+#   videos/{video_id}/input/
+#   videos/{video_id}/frames_raw/
+#   videos/{video_id}/frames_edited/
+#   videos/{video_id}/output/
+#   videos/{video_id}/logs/
+# -----------------------------------------------------------------------------
+
+def build_storage_path(video_id: str, folder: str, filename: str) -> str:
+    """
+    Build a standardized Supabase storage path.
+
+    Args:
+        video_id: Video/session ID
+        folder: Folder name (input, output, frames_raw, frames_edited, logs)
+        filename: File name
+
+    Returns:
+        Standardized path: videos/{video_id}/{folder}/{filename}
+    """
+    if folder not in {"input", "output", "frames_raw", "frames_edited", "logs"}:
+        logger.warning(f"Non-standard folder '{folder}' used in storage path")
+
+    return f"videos/{video_id}/{folder}/{filename}"
+
+
+def upload_video_file(
+    local_path: str,
+    video_id: str,
+    filename: str,
+    folder: str = "output",
+    cache_control: Optional[str] = "3600",
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Upload a video file to Supabase using standard folder structure.
+
+    Args:
+        local_path: Local file path
+        video_id: Video/session ID
+        filename: Target filename (e.g., "generate_123.mp4")
+        folder: Target folder (default: "output")
+        cache_control: Cache control header
+
+    Returns:
+        Tuple of (public_url, error_message)
+    """
+    storage_path = build_storage_path(video_id, folder, filename)
+
+    return upload_file_to_supabase(
+        storage_path=storage_path,
+        local_file_path=local_path,
+        content_type="video/mp4",
+        cache_control=cache_control,
+    )
+
+
+def upload_frame_file(
+    local_path: str,
+    video_id: str,
+    filename: str,
+    folder: str = "frames_raw",
+    cache_control: Optional[str] = "3600",
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Upload a frame image to Supabase using standard folder structure.
+
+    Args:
+        local_path: Local file path
+        video_id: Video/session ID
+        filename: Target filename (e.g., "frame_00001.png")
+        folder: Target folder (frames_raw or frames_edited)
+        cache_control: Cache control header
+
+    Returns:
+        Tuple of (public_url, error_message)
+    """
+    if folder not in {"frames_raw", "frames_edited"}:
+        logger.warning(f"Unexpected folder for frames: {folder}")
+
+    storage_path = build_storage_path(video_id, folder, filename)
+
+    return upload_file_to_supabase(
+        storage_path=storage_path,
+        local_file_path=local_path,
+        content_type="image/png",
+        cache_control=cache_control,
+    )
+
+
+def upload_log_file(
+    log_data: dict,
+    video_id: str,
+    task_id: str,
+    cache_control: Optional[str] = "3600",
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Upload a task log file to Supabase.
+
+    Args:
+        log_data: Dictionary to serialize as JSON
+        video_id: Video/session ID
+        task_id: Task ID for the log filename
+        cache_control: Cache control header
+
+    Returns:
+        Tuple of (public_url, error_message)
+    """
+    filename = f"{task_id}.json"
+    storage_path = build_storage_path(video_id, "logs", filename)
+
+    log_bytes = json.dumps(log_data, indent=2).encode("utf-8")
+
+    return upload_bytes_to_supabase(
+        storage_path=storage_path,
+        file_bytes=log_bytes,
+        content_type="application/json",
+        cache_control=cache_control,
+    )
+
+
+def get_public_url(video_id: str, folder: str, filename: str) -> Optional[str]:
+    """
+    Build a public URL for a file in Supabase storage.
+
+    Args:
+        video_id: Video/session ID
+        folder: Folder name
+        filename: File name
+
+    Returns:
+        Public URL or None if Supabase is not configured
+    """
+    if not is_supabase_configured():
+        return None
+
+    storage_path = build_storage_path(video_id, folder, filename)
+
+    try:
+        client = SUPABASE_CLIENT
+        public_url_response = client.storage.from_(SUPABASE_BUCKET_NAME).get_public_url(storage_path)
+
+        if isinstance(public_url_response, dict):
+            data = public_url_response.get("data") or {}
+            return data.get("publicUrl") or data.get("publicURL")
+        elif isinstance(public_url_response, str):
+            return public_url_response
+
+        return None
+    except Exception as exc:
+        logger.error(f"Failed to get public URL for {storage_path}: {exc}")
+        return None
+
+
+def download_log_file(video_id: str, task_id: str) -> Optional[dict]:
+    """
+    Download and parse a task log file from Supabase.
+
+    Args:
+        video_id: Video/session ID
+        task_id: Task ID
+
+    Returns:
+        Parsed JSON dict or None if not found
+    """
+    if not is_supabase_configured():
+        return None
+
+    client = SUPABASE_CLIENT
+    log_path = f"videos/{video_id}/logs/{task_id}.json"
+
+    try:
+        log_bytes = client.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
+        if log_bytes:
+            return json.loads(log_bytes)
+        return None
+    except Exception as exc:
+        logger.debug(f"Could not download log file {log_path}: {exc}")
+        return None
+
+
+def get_latest_input_video(video_id: str) -> Optional[str]:
+    """
+    Get the most recent input video for a video_id.
+
+    Priority:
+        1. Most recent file in videos/{video_id}/output/
+        2. videos/{video_id}/input/initial.mp4
+
+    Args:
+        video_id: Video/session ID
+
+    Returns:
+        Public URL of the input video, or None if not found
+    """
+    if not is_supabase_configured():
+        logger.warning("Supabase not configured; cannot retrieve input video")
+        return None
+
+    client = SUPABASE_CLIENT
+
+    # Try output folder first (most recent)
+    try:
+        output_files = client.storage.from_(SUPABASE_BUCKET_NAME).list(f"videos/{video_id}/output/")
+        if output_files and len(output_files) > 0:
+            # Sort by created_at descending and get the first file
+            sorted_files = sorted(output_files, key=lambda x: x.get("created_at", ""), reverse=True)
+            latest_file = sorted_files[0]["name"]
+            return get_public_url(video_id, "output", latest_file)
+    except Exception as exc:
+        logger.debug(f"No output files found for {video_id}: {exc}")
+
+    # Fallback to input/initial.mp4
+    try:
+        input_url = get_public_url(video_id, "input", "initial.mp4")
+        if input_url:
+            return input_url
+    except Exception as exc:
+        logger.debug(f"No initial input file found for {video_id}: {exc}")
+
+    logger.warning(f"No input video found for video_id={video_id}")
+    return None

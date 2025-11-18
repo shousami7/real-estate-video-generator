@@ -1,7 +1,9 @@
 import os
 import shutil
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
 
+from utils.response_utils import build_task_response
 from celery.utils.log import get_task_logger
 
 from celery_app import celery
@@ -10,6 +12,10 @@ from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
     upload_file_to_supabase,
+    upload_video_file,
+    upload_log_file,
+    build_storage_path,
+    get_public_url,
 )
 from veo_generator import VeoVideoGenerator
 from video_composer import VideoComposer
@@ -50,23 +56,27 @@ def _local_generated_video_path(session_id: str, file_name: str) -> Tuple[str, s
 
 def _upload_final_video_to_supabase(session_id: str, local_video_path: str) -> str:
     """
-    Upload the final generated video to Supabase Storage and return its public URL.
+    Upload the final generated video to Supabase Storage using standard folder structure.
+    Path: videos/{session_id}/output/{filename}
     """
     if not os.path.exists(local_video_path):
         raise FileNotFoundError(f"Generated video not found at: {local_video_path}")
 
     file_name = os.path.basename(local_video_path)
-    storage_path = f"{session_id}/generated/{file_name}"
+
+    # Use timestamp-based filename for generated videos
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_filename = f"generate_{timestamp}.mp4"
 
     public_url: Optional[str] = None
 
     if is_supabase_configured():
-        logger.info(f"Uploading final video to Supabase: {local_video_path} -> {storage_path}")
-        public_url, upload_error = upload_file_to_supabase(
-            storage_path=storage_path,
-            local_file_path=local_video_path,
-            content_type="video/mp4",
-            cache_control="3600",
+        logger.info(f"Uploading final video to Supabase: videos/{session_id}/output/{output_filename}")
+        public_url, upload_error = upload_video_file(
+            local_path=local_video_path,
+            video_id=session_id,
+            filename=output_filename,
+            folder="output",
         )
         if upload_error:
             public_url = None
@@ -253,15 +263,27 @@ def property_video_generation_task(
         final_video_url = _upload_final_video_to_supabase(session_id, final_video_path)
 
         # Success - 100%
-        result = {
-            "final_video": final_video_url,
-            "session_id": session_id,
-            "session_dir": str(generator.session_dir),
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="completed",
+            output_url=final_video_url,
+        )
+
+        # Add extra metadata for compatibility
+        result.update({
+            "final_video": final_video_url,  # backward compat
             "clips_generated": len(video_clips),
             "api_calls_used": len(image_paths),
-            "db_task_id": db_task_id,
-            "user_id": user_id,
-        }
+        })
+
+        # Write task log
+        if is_supabase_configured():
+            # Log MUST match unified format exactly (no extra fields)
+            unified_log = {k: result[k] for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]}
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
 
         logger.info(f"Completed property video generation for task {db_task_id}")
         logger.info(f"API calls made: {len(image_paths)}")
@@ -270,6 +292,22 @@ def property_video_generation_task(
 
     except Exception as exc:
         logger.exception(f"Video generation failed for task {db_task_id}")
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="error",
+            error=str(exc),
+        )
+
+        # Write error log
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass  # Don't fail if log upload fails
+
         raise exc
 
 
@@ -357,20 +395,48 @@ def generate_property_video_task(
             transition_duration=transition_duration,
         )
 
+        final_video_url = _upload_final_video_to_supabase(session_id, final_video_path)
+
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="completed",
+            output_url=final_video_url,
+        )
+
+        # Add backward compat fields
+        result.update({
+            "final_video": final_video_url,
+            "session_dir": str(generator.session_dir),
+        })
+
+        # Write task log
+        if is_supabase_configured():
+            # Log MUST match unified format exactly
+            unified_log = {k: result[k] for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]}
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+
+        logger.info("Completed background generation for session %s", session_id)
+        return result
+
     except Exception as exc:
         logger.exception("Video generation failed for session %s", session_id)
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="error",
+            error=str(exc),
+        )
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
         raise exc
-
-    final_video_url = _upload_final_video_to_supabase(session_id, final_video_path)
-
-    result = {
-        "final_video": final_video_url,
-        "session_id": session_id,
-        "session_dir": str(generator.session_dir),
-    }
-
-    logger.info("Completed background generation for session %s", session_id)
-    return result
 
 
 # -----------------------------------------------------------------------------
@@ -493,8 +559,35 @@ def generate_video_from_chat_task(
         # 動画の長さを取得
         video_duration = get_video_duration(downloaded_path)
 
-        # Supabaseにアップロード
-        video_url = _upload_final_video_to_supabase(session_id, downloaded_path)
+        # Supabaseにアップロード (standard structure: videos/{video_id}/output/)
+        timestamp = int(video_duration * 1000)  # Use duration as unique identifier
+        output_filename = f"{scene_id}_{timestamp}.mp4"
+
+        if is_supabase_configured():
+            video_url_result, upload_error = upload_video_file(
+                local_path=downloaded_path,
+                video_id=session_id,
+                filename=output_filename,
+                folder="output",
+            )
+            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
+        else:
+            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
+
+        # Upload task log
+        if is_supabase_configured():
+            # Log MUST match unified format exactly
+            unified_log = {
+                "task_id": result["task_id"],
+                "video_id": result["video_id"],
+                "stage": result["stage"],
+                "status": result["status"],
+                "output_url": result["output_url"],
+                "frames": result["frames"],
+                "error": result["error"],
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
 
         # SceneManagerに追加
         self.update_state(
@@ -522,14 +615,22 @@ def generate_video_from_chat_task(
 
         logger.info(f"Video generation completed: {scene_id}")
 
-        return {
-            "status": "success",
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="completed",
+            output_url=video_url,
+        )
+
+        # Add extra fields for compatibility
+        result.update({
             "scene_id": scene_id,
-            "video_path": downloaded_path,
-            "video_url": video_url,
             "duration": video_duration,
-            "message": f"{scene_id}の生成が完了しました！"
-        }
+            "message": f"{scene_id}の生成が完了しました！",
+        })
+
+        return result
 
     except Exception as exc:
         logger.exception(f"Video generation failed for {scene_id}")
@@ -541,6 +642,20 @@ def generate_video_from_chat_task(
                 "scene_id": scene_id
             }
         )
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="generate",
+            status="error",
+            error=str(exc),
+        )
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
+
         raise exc
 
 
@@ -674,8 +789,34 @@ def extend_scene_task(
         # 動画の長さを取得
         video_duration = get_video_duration(downloaded_path)
 
-        # Supabaseにアップロード
-        video_url = _upload_final_video_to_supabase(session_id, downloaded_path)
+        # Supabaseにアップロード (standard structure)
+        timestamp = int(video_duration * 1000)
+        output_filename = f"extended_{scene_id}_{timestamp}.mp4"
+
+        if is_supabase_configured():
+            video_url_result, upload_error = upload_video_file(
+                local_path=downloaded_path,
+                video_id=session_id,
+                filename=output_filename,
+                folder="output",
+            )
+            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
+
+            # Upload task log
+            # Log MUST match unified format exactly
+            unified_log = {
+                "task_id": self.request.id,
+                "video_id": session_id,
+                "stage": "extend",
+                "status": "completed",
+                "output_url": video_url,
+                "frames": None,
+                "error": None,
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+        else:
+            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
 
         # SceneManagerに追加
         self.update_state(
@@ -703,15 +844,23 @@ def extend_scene_task(
 
         logger.info(f"Scene extension completed: {scene_id}")
 
-        return {
-            "status": "success",
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="extend",
+            status="completed",
+            output_url=video_url,
+        )
+
+        # Add extra fields
+        result.update({
             "scene_id": scene_id,
             "previous_scene_id": previous_scene_id,
-            "video_path": downloaded_path,
-            "video_url": video_url,
             "duration": video_duration,
-            "message": f"{scene_id}の生成が完了しました！"
-        }
+            "message": f"{scene_id}の生成が完了しました！",
+        })
+
+        return result
 
     except Exception as exc:
         logger.exception(f"Scene extension failed for {scene_id}")
@@ -723,6 +872,20 @@ def extend_scene_task(
                 "scene_id": scene_id
             }
         )
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="extend",
+            status="error",
+            error=str(exc),
+        )
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
+
         raise exc
 
 
@@ -813,20 +976,54 @@ def merge_scenes_task(
 
         total_duration = get_video_duration(composed_path)
 
-        # Supabaseにアップロード
-        video_url = _upload_final_video_to_supabase(session_id, composed_path)
+        # Supabaseにアップロード (standard structure: stitched)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"stitched_{timestamp}.mp4"
+
+        if is_supabase_configured():
+            video_url_result, upload_error = upload_video_file(
+                local_path=composed_path,
+                video_id=session_id,
+                filename=output_filename,
+                folder="output",
+            )
+            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
+
+            # Upload task log
+            # Log MUST match unified format exactly
+            unified_log = {
+                "task_id": self.request.id,
+                "video_id": session_id,
+                "stage": "stitch",
+                "status": "completed",
+                "output_url": video_url,
+                "frames": None,
+                "error": None,
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+        else:
+            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
 
         logger.info(f"Scene merge completed: {composed_path}")
 
-        return {
-            "status": "success",
-            "final_video_path": composed_path,
-            "final_video_url": video_url,
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="stitch",
+            status="completed",
+            output_url=video_url,
+        )
+
+        # Add extra fields
+        result.update({
             "scene_count": len(scenes),
             "total_duration": total_duration,
             "transition_type": transition_type,
-            "message": f"{len(scenes)}つのシーンを連結した動画が完成しました！"
-        }
+            "message": f"{len(scenes)}つのシーンを連結した動画が完成しました！",
+        })
+
+        return result
 
     except Exception as exc:
         logger.exception(f"Scene merge failed for session {session_id}")
@@ -837,4 +1034,18 @@ def merge_scenes_task(
                 "status": f"エラー: {str(exc)}",
             }
         )
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="stitch",
+            status="error",
+            error=str(exc),
+        )
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
+
         raise exc
