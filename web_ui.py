@@ -634,6 +634,24 @@ def serve_frame_file(filename):
         }), 404
 
 
+@web_ui_blueprint.route('/output/<path:filename>')
+def serve_output_file(filename):
+    """
+    Serve output files (generated videos, etc.)
+    """
+    try:
+        # output ディレクトリからファイルを提供（絶対パス使用）
+        output_dir = os.path.abspath('output')
+        logger.info(f"Serving output file: {filename} from {output_dir}")
+        return send_from_directory(output_dir, filename)
+    except Exception as e:
+        logger.error(f"Error serving output file {filename}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": "File not found"
+        }), 404
+
+
 @web_ui_blueprint.route('/frames/extract', methods=['POST'])
 def extract_frames():
     """
@@ -1015,6 +1033,136 @@ def download_editor_video():
 # -----------------------------------------------------------------------------
 # Editor Chat Endpoints - 自然言語対話型動画制作
 # -----------------------------------------------------------------------------
+
+@web_ui_blueprint.route('/editor/chat/generate', methods=['POST'])
+def editor_chat_generate():
+    """
+    Generate mode endpoint - handles image-to-video generation with duration
+
+    Request Form Data:
+        - image: Image file
+        - duration: Video duration in seconds
+        - mode: "generate"
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "message": str,
+            "video_path": str,
+            "video_url": str
+        }
+    """
+    try:
+        # Check if image file is provided
+        if 'image' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No image file provided"
+            }), 400
+
+        image_file = request.files['image']
+        duration = request.form.get('duration', '8')
+
+        if not image_file.filename:
+            return jsonify({
+                "status": "error",
+                "message": "No file selected"
+            }), 400
+
+        # Parse duration
+        try:
+            duration_seconds = int(duration)
+            if duration_seconds < 4 or duration_seconds > 20:
+                duration_seconds = 8  # Default to 8 seconds if out of range
+        except (ValueError, TypeError):
+            duration_seconds = 8
+
+        # Save uploaded image
+        session_id = session.get('session_id', str(uuid.uuid4()))
+        session['session_id'] = session_id
+
+        upload_dir = os.path.join('uploads', session_id, 'editor', 'generate')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        filename = secure_filename(image_file.filename)
+        image_path = os.path.join(upload_dir, filename)
+        image_file.save(image_path)
+
+        logger.info(f"Image uploaded for generate mode: {image_path}")
+        logger.info(f"Requested duration: {duration_seconds} seconds")
+
+        # Get API configuration
+        api_key = os.getenv("GOOGLE_API_KEY")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        use_vertex_ai = bool(project_id)
+
+        if not api_key and not use_vertex_ai:
+            return jsonify({
+                "status": "error",
+                "message": "GOOGLE_API_KEY or GOOGLE_CLOUD_PROJECT must be configured"
+            }), 500
+
+        # Import veo_generator
+        from veo_generator import VeoVideoGenerator
+
+        # Generate video using VeoVideoGenerator
+        logger.info(f"[GENERATE MODE] Starting video generation with {duration_seconds}s duration")
+
+        veo = VeoVideoGenerator(
+            api_key=api_key,
+            project_id=project_id,
+            location=location,
+            use_vertex_ai=use_vertex_ai
+        )
+
+        output_dir = os.path.join('output', session_id, 'generated')
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_filename = f"generated_{int(datetime.now().timestamp())}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+
+        # Generate video (this may take 2-5 minutes)
+        prompt = f"Smooth camera movement showcasing the property"
+        video_path = veo.generate_from_image_file(
+            image_path=image_path,
+            prompt=prompt,
+            output_path=output_path,
+            duration=f"{duration_seconds}s"  # Format as "6s", "8s", etc.
+        )
+
+        if not video_path or not os.path.exists(video_path):
+            return jsonify({
+                "status": "error",
+                "message": "Video generation failed - no output file created"
+            }), 500
+
+        # Store in session
+        if 'generated_videos' not in session:
+            session['generated_videos'] = []
+        session['generated_videos'].append(video_path)
+
+        logger.info(f"[GENERATE MODE] Video ready: {video_path}")
+
+        # Return video URL
+        normalized_path = video_path.replace('\\', '/')
+        video_url = f"/{normalized_path}"
+
+        return jsonify({
+            "status": "success",
+            "message": f"{duration_seconds}-second video generated successfully",
+            "video_path": video_path,
+            "video_url": video_url,
+            "duration": duration_seconds
+        })
+
+    except Exception as e:
+        logger.error(f"Error in generate mode: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 @web_ui_blueprint.route('/editor/chat', methods=['POST'])
 def editor_chat():

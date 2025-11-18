@@ -492,7 +492,9 @@
             isProcessing: false,
             uploadedImage: null,
             generatedVideo: null,
-            selectedVideoMode: null
+            selectedVideoMode: null,
+            conversationState: null, // Track conversation state for Generate mode
+            pendingDuration: null // Store duration when AI asks for it
         };
 
         // ==================== DOM要素 ====================
@@ -832,7 +834,13 @@
             const text = chatInput.value.trim();
             if (!text || state.isProcessing) return;
 
-            // Check if user uploaded an image for video generation
+            // Handle Generate mode conversation flow
+            if (state.selectedVideoMode === 'generate') {
+                handleGenerateMode(text);
+                return;
+            }
+
+            // Original behavior for other modes
             if (!state.uploadedImage) {
                 alert('Please attach an image first');
                 return;
@@ -897,6 +905,112 @@
             });
         }
 
+        // Handle Generate mode conversation flow
+        function handleGenerateMode(userInput) {
+            addChatMessage('user', userInput);
+            chatInput.value = '';
+
+            // Step 1: Check if image is attached
+            if (state.conversationState === null) {
+                if (!state.uploadedImage) {
+                    addChatMessage('ai', 'I see you want to generate a video! Please attach an image first using the attachment button 📎');
+                    return;
+                }
+
+                // Image is attached, ask for duration
+                state.conversationState = 'awaiting_duration';
+                addChatMessage('ai', 'Great! I can see your image. How long should the video be? (e.g., 5 seconds, 8 seconds)');
+                return;
+            }
+
+            // Step 2: Parse duration from user response
+            if (state.conversationState === 'awaiting_duration') {
+                const duration = parseDuration(userInput);
+
+                if (duration === null) {
+                    addChatMessage('ai', 'I didn\'t quite catch that. Please specify the duration in seconds (e.g., "5 seconds" or "8s")');
+                    return;
+                }
+
+                // Start video generation
+                state.conversationState = 'generating';
+                state.pendingDuration = duration;
+                generateVideoWithDuration(duration);
+            }
+        }
+
+        // Parse duration from user input
+        function parseDuration(text) {
+            // Match patterns like "5 seconds", "8s", "10 sec"
+            const match = text.match(/(\d+)\s*(second|sec|s|秒)/i);
+            if (match) {
+                return parseInt(match[1]);
+            }
+            return null;
+        }
+
+        // Generate video with specified duration
+        function generateVideoWithDuration(duration) {
+            state.isProcessing = true;
+            sendBtn.disabled = true;
+
+            // Add loading message
+            const loadingId = addChatMessage('ai', `Generating ${duration}-second video<span id="loading-dots"></span>`);
+
+            // Animate dots
+            let dotCount = 0;
+            const dotInterval = setInterval(() => {
+                const dotsEl = document.getElementById('loading-dots');
+                if (dotsEl) {
+                    dotCount = (dotCount + 1) % 4;
+                    dotsEl.textContent = '.'.repeat(dotCount);
+                }
+            }, 500);
+
+            // Generate video from image
+            const formData = new FormData();
+            formData.append('image', state.uploadedImage);
+            formData.append('duration', duration);
+            formData.append('mode', 'generate');
+
+            fetch('/editor/chat/generate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                clearInterval(dotInterval);
+                const loadingMsg = document.getElementById(loadingId);
+                if (loadingMsg) loadingMsg.remove();
+
+                if (data.status === 'success') {
+                    state.generatedVideo = data.video_path;
+
+                    // Show success message with video preview and apply button
+                    addChatMessage('ai', `✅ ${duration}-second video generated successfully! Click "Apply" to add it to the timeline.`, true, data.video_url);
+
+                    // Reset conversation state
+                    state.conversationState = null;
+                    state.uploadedImage = null;
+                    attachedImagePreview.classList.add('hidden');
+                } else {
+                    addChatMessage('ai', '❌ Error: ' + (data.message || 'Video generation failed'));
+                    state.conversationState = null;
+                }
+            })
+            .catch(err => {
+                clearInterval(dotInterval);
+                const loadingMsg = document.getElementById(loadingId);
+                if (loadingMsg) loadingMsg.remove();
+                addChatMessage('ai', '❌ Error: ' + err.message);
+                state.conversationState = null;
+            })
+            .finally(() => {
+                state.isProcessing = false;
+                sendBtn.disabled = false;
+            });
+        }
+
         function addChatMessage(role, content, isResponse = false, videoUrl = null) {
             const messageId = 'msg-' + Date.now();
             const messageDiv = document.createElement('div');
@@ -937,15 +1051,10 @@
                         const applyVideoBtn = messageDiv.querySelector('#apply-video-btn');
                         if (applyVideoBtn) {
                             applyVideoBtn.addEventListener('click', () => {
-                                addChatMessage('ai', '✓ Video will be applied to frame on export!');
-                                // Store video path for export
-                                if (state.selectedFrame === null) {
-                                    alert('Please select a frame to apply the generated video.');
-                                    return;
-                                }
-                                if (!state.editedFrames[state.selectedFrame]) {
-                                    state.editedFrames[state.selectedFrame] = state.generatedVideo;
-                                }
+                                applyGeneratedVideoToPlayer(videoUrl);
+                                applyVideoBtn.disabled = true;
+                                applyVideoBtn.textContent = '✓ Applied to Player';
+                                applyVideoBtn.style.background = '#10B981';
                             });
                         }
                     }, 100);
@@ -955,6 +1064,31 @@
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
             return messageId;
+        }
+
+        // ==================== Apply Generated Video to Player ====================
+        function applyGeneratedVideoToPlayer(videoUrl) {
+            // Update state
+            state.videoUrl = videoUrl;
+            state.videoPath = state.generatedVideo;
+
+            // Load video into main player
+            videoSource.src = videoUrl;
+            videoPlayer.load();
+
+            // Show player section if hidden
+            if (uploadZone && !uploadZone.classList.contains('hidden')) {
+                showPlayerSection();
+            }
+
+            // Extract frames from the new video
+            if (state.generatedVideo) {
+                // Wait a bit for video to load
+                setTimeout(() => {
+                    extractFrames();
+                    addChatMessage('ai', '✓ Video loaded into player! Frames are being extracted...');
+                }, 500);
+            }
         }
 
         // ==================== UI表示切り替え ====================
