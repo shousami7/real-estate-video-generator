@@ -124,7 +124,7 @@ def _normalize_image_paths(image_paths: List[str]) -> List[str]:
     return normalized
 
 
-def _task_meta(progress: int, message: str, stage: str) -> Dict[str, Any]:
+def _task_meta(progress: int, message: str, stage: str, video_id: str) -> Dict[str, Any]:
     """
     Helper for consistent progress metadata.
     """
@@ -132,6 +132,7 @@ def _task_meta(progress: int, message: str, stage: str) -> Dict[str, Any]:
         "progress": progress,
         "message": message,
         "stage": stage,
+        "video_id": video_id,
     }
 
 
@@ -208,7 +209,7 @@ def property_video_generation_task(
     # Update progress: Starting
     self.update_state(
         state="PROGRESS",
-        meta=_task_meta(10, "Starting video generation", "STARTING"),
+        meta=_task_meta(10, "Starting video generation", "STARTING", session_id),
     )
 
     generator = PropertyVideoGenerator(
@@ -224,7 +225,7 @@ def property_video_generation_task(
         # Update progress: Generating clips (20%)
         self.update_state(
             state="PROGRESS",
-            meta=_task_meta(20, f"Starting generation of {len(image_paths)} AI video clips", "GENERATING_CLIPS"),
+            meta=_task_meta(20, f"Starting generation of {len(image_paths)} AI video clips", "GENERATING_CLIPS", session_id),
         )
 
         # Define progress callback for detailed updates
@@ -236,7 +237,7 @@ def property_video_generation_task(
 
             self.update_state(
                 state="GENERATING_CLIPS",
-                meta=_task_meta(progress, message, "GENERATING_CLIPS"),
+                meta=_task_meta(progress, message, "GENERATING_CLIPS", session_id),
             )
             logger.info(f"Progress update: {progress}% - {message}")
 
@@ -250,7 +251,7 @@ def property_video_generation_task(
         # Update progress: Composing (80%)
         self.update_state(
             state="PROGRESS",
-            meta=_task_meta(80, "Composing final video with transitions", "COMPOSING"),
+            meta=_task_meta(80, "Composing final video with transitions", "COMPOSING", session_id),
         )
 
         final_video_path = generator.compose_final_video(
@@ -346,7 +347,7 @@ def generate_property_video_task(
     logger.info("Starting background generation for session %s (task %s)", session_id, self.request.id)
     self.update_state(
         state="STARTED",
-        meta=_task_meta(5, "Queued background task", "QUEUED"),
+        meta=_task_meta(5, "Queued background task", "QUEUED", session_id),
     )
 
     generator = PropertyVideoGenerator(
@@ -361,7 +362,7 @@ def generate_property_video_task(
     try:
         self.update_state(
             state="GENERATING_CLIPS",
-            meta=_task_meta(20, "Starting generation of AI video clips", "GENERATING_CLIPS"),
+            meta=_task_meta(20, "Starting generation of AI video clips", "GENERATING_CLIPS", session_id),
         )
 
         # Define progress callback for detailed updates
@@ -373,7 +374,7 @@ def generate_property_video_task(
 
             self.update_state(
                 state="GENERATING_CLIPS",
-                meta=_task_meta(progress, message, "GENERATING_CLIPS"),
+                meta=_task_meta(progress, message, "GENERATING_CLIPS", session_id),
             )
             logger.info(f"Progress update: {progress}% - {message}")
 
@@ -386,7 +387,7 @@ def generate_property_video_task(
 
         self.update_state(
             state="COMPOSING",
-            meta=_task_meta(70, "Composing final video", "COMPOSING"),
+            meta=_task_meta(70, "Composing final video", "COMPOSING", session_id),
         )
         final_video_path = generator.compose_final_video(
             video_clips=video_clips,
@@ -487,7 +488,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 10,
                 "status": f"{scene_id}の動画を生成中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -509,7 +511,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 20,
                 "status": "Veo APIで動画生成中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -528,7 +531,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 50,
                 "status": "動画生成完了を待機中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -541,7 +545,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 80,
                 "status": "動画をダウンロード中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -595,7 +600,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 90,
                 "status": "シーンをタイムラインに追加中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -639,7 +645,8 @@ def generate_video_from_chat_task(
             meta={
                 "progress": 0,
                 "status": f"エラー: {str(exc)}",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -705,7 +712,8 @@ def extend_scene_task(
             meta={
                 "progress": 10,
                 "status": f"{previous_scene_id}を拡張中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -738,7 +746,8 @@ def extend_scene_task(
             meta={
                 "progress": 20,
                 "status": "Veo APIでシーン拡張中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -761,7 +770,8 @@ def extend_scene_task(
             meta={
                 "progress": 50,
                 "status": "動画生成完了を待機中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -773,7 +783,8 @@ def extend_scene_task(
             meta={
                 "progress": 80,
                 "status": "動画をダウンロード中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -824,7 +835,8 @@ def extend_scene_task(
             meta={
                 "progress": 90,
                 "status": "シーンをタイムラインに追加中...",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -869,7 +881,8 @@ def extend_scene_task(
             meta={
                 "progress": 0,
                 "status": f"エラー: {str(exc)}",
-                "scene_id": scene_id
+                "scene_id": scene_id,
+                "video_id": session_id,
             }
         )
 
@@ -923,6 +936,7 @@ def merge_scenes_task(
             meta={
                 "progress": 10,
                 "status": "シーンを連結中...",
+                "video_id": session_id,
             }
         )
 
@@ -944,6 +958,7 @@ def merge_scenes_task(
             meta={
                 "progress": 30,
                 "status": f"{len(scenes)}つのシーンをFFmpegで連結中...",
+                "video_id": session_id,
             }
         )
 
@@ -971,6 +986,7 @@ def merge_scenes_task(
             meta={
                 "progress": 80,
                 "status": "完成した動画をアップロード中...",
+                "video_id": session_id,
             }
         )
 
@@ -1032,6 +1048,7 @@ def merge_scenes_task(
             meta={
                 "progress": 0,
                 "status": f"エラー: {str(exc)}",
+                "video_id": session_id,
             }
         )
 

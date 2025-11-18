@@ -19,6 +19,7 @@ from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
     upload_bytes_to_supabase,
+    build_storage_path,
     SUPABASE_CLIENT,
     SUPABASE_BUCKET_NAME,
 )
@@ -153,7 +154,7 @@ def upload_files():
 
             # Use standard Supabase structure for image uploads
             # Store user-uploaded images in videos/{session_id}/input/
-            storage_path = f"videos/{session_id}/input/{filename}"
+            storage_path = build_storage_path(session_id, "input", filename)
 
             file_bytes = file.read()
             if not file_bytes:
@@ -1383,7 +1384,8 @@ def get_task_status(task_id: str):
         elif task.state in {states.STARTED, 'GENERATING_CLIPS', 'COMPOSING', 'GENERATING', 'EXTENDING', 'DOWNLOADING', 'SAVING', 'MERGING', 'UPLOADING'}:
             # Task is running
             meta = task.info if isinstance(task.info, dict) else {}
-            video_id = meta.get('video_id') or video_id or "unknown"
+            meta_video_id = meta.get('video_id')
+            video_id = meta_video_id or video_id or "unknown"
 
             return jsonify(build_task_response(
                 task_id=task_id,
@@ -1397,8 +1399,12 @@ def get_task_status(task_id: str):
             result = task.result if isinstance(task.result, dict) else {}
             video_id = result.get('video_id') or video_id or "unknown"
 
-            # Load log from Supabase (required for unified response)
-            if is_supabase_configured():
+            # If Celery result already contains the unified payload, return it without downloading logs
+            if result and all(k in result for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
+                return jsonify(result)
+
+            # Load log from Supabase (required for unified response) only if result is missing
+            if not result and is_supabase_configured():
                 try:
                     log_path = f"videos/{video_id}/logs/{task_id}.json"
                     log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
@@ -1412,7 +1418,7 @@ def get_task_status(task_id: str):
                 except Exception as log_error:
                     logger.warning(f"Could not load task log from Supabase: {log_error}")
 
-            # Fallback: construct response from task result
+            # Fallback: construct response from task result or defaults
             return jsonify(build_task_response(
                 task_id=task_id,
                 video_id=video_id,
@@ -1420,14 +1426,19 @@ def get_task_status(task_id: str):
                 status="completed",
                 output_url=result.get('output_url') or result.get('final_video'),
                 frames=result.get('frames'),
-                error=None,
+                error=result.get('error'),
             ))
 
         elif task.state in {states.FAILURE, states.REVOKED}:
             # Task failed
             error_msg = str(task.info) if task.info else "Task failed or was revoked"
+            # If Celery result already contains a unified error payload, return it directly
+            if isinstance(task.result, dict):
+                result = task.result
+                if all(k in result for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
+                    return jsonify(result)
 
-            # Try to load error log from Supabase
+            # Try to load error log from Supabase only if needed
             if is_supabase_configured() and video_id and video_id != "unknown":
                 try:
                     log_path = f"videos/{video_id}/logs/{task_id}.json"
@@ -1493,6 +1504,710 @@ def get_timeline():
     except Exception as e:
         logger.error(f"Get timeline error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# MCP Pipeline API Endpoints
+# -----------------------------------------------------------------------------
+
+@web_ui_blueprint.route('/api/generate', methods=['POST'])
+def api_generate_video():
+    """
+    MCP Pipeline API: Generate video from prompt and optional image.
+
+    Request (multipart/form-data or JSON):
+        - prompt: str (required) - Video generation prompt
+        - video_id: str (optional) - Session/video ID for context
+        - image: file (optional) - Image file for image-to-video
+        - duration: int (optional) - Video duration in seconds (4-20, default: 8)
+
+    Returns (202 Accepted):
+        {
+            "task_id": str,
+            "video_id": str,
+            "stage": "generate",
+            "status": "running",
+            "output_url": null,
+            "frames": null,
+            "error": null
+        }
+    """
+    try:
+        # Parse request data (support both JSON and form data)
+        if request.is_json:
+            data = request.get_json()
+            prompt = data.get('prompt')
+            video_id = data.get('video_id')
+            duration = data.get('duration', 8)
+            image_file = None
+        else:
+            prompt = request.form.get('prompt')
+            video_id = request.form.get('video_id')
+            duration = request.form.get('duration', 8)
+            image_file = request.files.get('image')
+
+        # Validate prompt
+        if not prompt:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id or "unknown",
+                stage="generate",
+                status="error",
+                error="Prompt is required"
+            )), 400
+
+        # Parse duration
+        try:
+            duration_seconds = int(duration)
+            if duration_seconds < 4 or duration_seconds > 20:
+                duration_seconds = 8
+        except (ValueError, TypeError):
+            duration_seconds = 8
+
+        # Get or create video_id (session_id)
+        if not video_id:
+            video_id = str(uuid.uuid4())
+        session['api_session_id'] = video_id
+
+        # Handle image upload if provided
+        image_path = None
+        if image_file and image_file.filename:
+            filename = secure_filename(image_file.filename)
+            storage_path = build_storage_path(video_id, "input", filename)
+            file_bytes = image_file.read()
+
+            if not file_bytes:
+                return jsonify(build_task_response(
+                    task_id="",
+                    video_id=video_id,
+                    stage="generate",
+                    status="error",
+                    error="Empty image file"
+                )), 400
+
+            # Save locally
+            local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
+            image_path = local_path
+
+            # Upload to Supabase if configured
+            if is_supabase_configured():
+                public_url, upload_error = upload_bytes_to_supabase(
+                    storage_path=storage_path,
+                    file_bytes=file_bytes,
+                    content_type=image_file.content_type or "image/jpeg"
+                )
+                if upload_error:
+                    logger.warning(f"Supabase upload failed: {upload_error}")
+
+        # Check if we have an image (required for now)
+        if not image_path:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="generate",
+                status="error",
+                error="Image file is required. Please upload an image."
+            )), 400
+
+        # Generate scene_id
+        scene_manager = SceneManager(video_id)
+        scene_id = scene_manager.generate_next_scene_id()
+
+        # Launch Celery task
+        from tasks import generate_video_from_chat_task
+
+        task = generate_video_from_chat_task.apply_async(
+            args=[video_id, scene_id, image_path, prompt],
+            kwargs={
+                "duration": f"{duration_seconds}s",
+                "aspect_ratio": "16:9",
+                "resolution": "720p"
+            }
+        )
+
+        logger.info(f"[MCP API] Video generation started: task_id={task.id}, video_id={video_id}, scene_id={scene_id}")
+
+        # Return unified response
+        return jsonify(build_task_response(
+            task_id=task.id,
+            video_id=video_id,
+            stage="generate",
+            status="running",
+        )), 202
+
+    except Exception as e:
+        logger.error(f"[MCP API] Generate error: {e}", exc_info=True)
+        return jsonify(build_task_response(
+            task_id="",
+            video_id=video_id if 'video_id' in locals() else "unknown",
+            stage="generate",
+            status="error",
+            error=str(e)
+        )), 500
+
+
+@web_ui_blueprint.route('/api/extend', methods=['POST'])
+def api_extend_video():
+    """
+    MCP Pipeline API: Extend existing video with additional content.
+
+    Request (multipart/form-data or JSON):
+        - video_id: str (required) - Existing video/session ID
+        - extra_duration: int (optional) - Duration for extended segment (4-20, default: 8)
+        - image: file (optional) - New image for extension
+        - prompt: str (optional) - Extension prompt
+
+    Returns (202 Accepted):
+        {
+            "task_id": str,
+            "video_id": str,
+            "stage": "extend",
+            "status": "running",
+            "output_url": null,
+            "frames": null,
+            "error": null
+        }
+    """
+    try:
+        # Parse request data
+        if request.is_json:
+            data = request.get_json()
+            video_id = data.get('video_id')
+            extra_duration = data.get('extra_duration', 8)
+            prompt = data.get('prompt', 'Continue the smooth camera movement')
+            image_file = None
+        else:
+            video_id = request.form.get('video_id')
+            extra_duration = request.form.get('extra_duration', 8)
+            prompt = request.form.get('prompt', 'Continue the smooth camera movement')
+            image_file = request.files.get('image')
+
+        # Validate video_id
+        if not video_id:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id="unknown",
+                stage="extend",
+                status="error",
+                error="video_id is required"
+            )), 400
+
+        # Parse duration
+        try:
+            duration_seconds = int(extra_duration)
+            if duration_seconds < 4 or duration_seconds > 20:
+                duration_seconds = 8
+        except (ValueError, TypeError):
+            duration_seconds = 8
+
+        # Get scene manager and last scene
+        scene_manager = SceneManager(video_id)
+        last_scene = scene_manager.get_last_scene()
+
+        if not last_scene:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="extend",
+                status="error",
+                error=f"No existing scenes found for video_id: {video_id}. Generate a video first."
+            )), 404
+
+        # Handle image upload if provided
+        image_path = None
+        if image_file and image_file.filename:
+            filename = secure_filename(image_file.filename)
+            storage_path = build_storage_path(video_id, "input", filename)
+            file_bytes = image_file.read()
+
+            if not file_bytes:
+                return jsonify(build_task_response(
+                    task_id="",
+                    video_id=video_id,
+                    stage="extend",
+                    status="error",
+                    error="Empty image file"
+                )), 400
+
+            # Save locally
+            local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
+            image_path = local_path
+
+            # Upload to Supabase if configured
+            if is_supabase_configured():
+                public_url, upload_error = upload_bytes_to_supabase(
+                    storage_path=storage_path,
+                    file_bytes=file_bytes,
+                    content_type=image_file.content_type or "image/jpeg"
+                )
+                if upload_error:
+                    logger.warning(f"Supabase upload failed: {upload_error}")
+
+        # Check if we have an image (required for now)
+        if not image_path:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="extend",
+                status="error",
+                error="Image file is required for video extension. Please upload an image."
+            )), 400
+
+        # Generate new scene_id
+        scene_id = scene_manager.generate_next_scene_id()
+
+        # Launch Celery task
+        from tasks import extend_scene_task
+
+        task = extend_scene_task.apply_async(
+            args=[video_id, scene_id, last_scene.scene_id, image_path, prompt],
+            kwargs={
+                "duration": f"{duration_seconds}s",
+                "aspect_ratio": "16:9",
+                "resolution": "720p"
+            }
+        )
+
+        logger.info(f"[MCP API] Video extension started: task_id={task.id}, video_id={video_id}, scene_id={scene_id}")
+
+        # Return unified response
+        return jsonify(build_task_response(
+            task_id=task.id,
+            video_id=video_id,
+            stage="extend",
+            status="running",
+        )), 202
+
+    except Exception as e:
+        logger.error(f"[MCP API] Extend error: {e}", exc_info=True)
+        return jsonify(build_task_response(
+            task_id="",
+            video_id=video_id if 'video_id' in locals() else "unknown",
+            stage="extend",
+            status="error",
+            error=str(e)
+        )), 500
+
+
+@web_ui_blueprint.route('/api/extract', methods=['POST'])
+def api_extract_frames():
+    """
+    MCP Pipeline API: Extract frames from a video.
+
+    Request (JSON):
+        - video_id: str (required) - Video/session ID
+        - fps: int (optional) - Frames per second to extract (1-30, default: 2)
+
+    Returns (200 OK):
+        {
+            "task_id": str,
+            "video_id": str,
+            "stage": "extract",
+            "status": "completed",
+            "output_url": null,
+            "frames": [
+                {
+                    "index": int,
+                    "timestamp": float,
+                    "url": str
+                },
+                ...
+            ],
+            "error": null
+        }
+    """
+    try:
+        # Parse request data
+        data = request.get_json() or {}
+        video_id = data.get('video_id')
+        fps = data.get('fps', 2)
+
+        # Validate video_id
+        if not video_id:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id="unknown",
+                stage="extract",
+                status="error",
+                error="video_id is required"
+            )), 400
+
+        # Parse fps
+        try:
+            fps_value = int(fps)
+            if fps_value < 1 or fps_value > 30:
+                fps_value = 2
+        except (ValueError, TypeError):
+            fps_value = 2
+
+        # Get scene manager and last scene
+        scene_manager = SceneManager(video_id)
+        last_scene = scene_manager.get_last_scene()
+
+        if not last_scene:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="extract",
+                status="error",
+                error=f"No video found for video_id: {video_id}. Generate a video first."
+            )), 404
+
+        video_path = last_scene.video_path
+        if not os.path.exists(video_path):
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="extract",
+                status="error",
+                error=f"Video file not found: {video_path}"
+            )), 404
+
+        # Extract frames using FrameEditor
+        frames_dir = os.path.join('frames', video_id, 'extracted')
+        os.makedirs(frames_dir, exist_ok=True)
+
+        frame_editor = FrameEditor(video_path, frames_dir)
+
+        # Calculate number of frames based on fps
+        video_duration = get_video_duration(video_path)
+        frame_count = min(int(video_duration * fps_value), 100)  # Cap at 100 frames
+
+        extracted_frames = frame_editor.extract_frames(frame_count=frame_count)
+
+        # Build frames response (without base64 data, just URLs)
+        frames_response = []
+        for frame in extracted_frames:
+            frame_url = f"/frames/{video_id}/extracted/{os.path.basename(frame['path'])}"
+            frames_response.append({
+                "index": frame['frame_id'],
+                "timestamp": frame['seconds'],
+                "url": frame_url
+            })
+
+        # Generate task_id for tracking
+        task_id = str(uuid.uuid4())
+
+        logger.info(f"[MCP API] Extracted {len(frames_response)} frames from video_id={video_id}")
+
+        # Return unified response
+        return jsonify(build_task_response(
+            task_id=task_id,
+            video_id=video_id,
+            stage="extract",
+            status="completed",
+            frames=frames_response,
+        )), 200
+
+    except Exception as e:
+        logger.error(f"[MCP API] Extract error: {e}", exc_info=True)
+        return jsonify(build_task_response(
+            task_id="",
+            video_id=video_id if 'video_id' in locals() else "unknown",
+            stage="extract",
+            status="error",
+            error=str(e)
+        )), 500
+
+
+@web_ui_blueprint.route('/api/edit', methods=['POST'])
+def api_edit_frame():
+    """
+    MCP Pipeline API: Edit a specific frame using AI.
+
+    Request (JSON):
+        - video_id: str (required) - Video/session ID
+        - frame_index: int (required) - Frame index to edit
+        - instruction: str (required) - Editing instruction
+
+    Returns (200 OK):
+        {
+            "task_id": str,
+            "video_id": str,
+            "stage": "edit",
+            "status": "completed",
+            "output_url": null,
+            "frames": [
+                {
+                    "index": int,
+                    "original_url": str,
+                    "edited_url": str,
+                    "instruction": str
+                }
+            ],
+            "error": null
+        }
+    """
+    try:
+        # Parse request data
+        data = request.get_json() or {}
+        video_id = data.get('video_id')
+        frame_index = data.get('frame_index')
+        instruction = data.get('instruction')
+
+        # Validate inputs
+        if not video_id:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id="unknown",
+                stage="edit",
+                status="error",
+                error="video_id is required"
+            )), 400
+
+        if frame_index is None:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error="frame_index is required"
+            )), 400
+
+        if not instruction:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error="instruction is required"
+            )), 400
+
+        # Get scene manager and last scene
+        scene_manager = SceneManager(video_id)
+        last_scene = scene_manager.get_last_scene()
+
+        if not last_scene:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error=f"No video found for video_id: {video_id}. Generate a video first."
+            )), 404
+
+        video_path = last_scene.video_path
+        if not os.path.exists(video_path):
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error=f"Video file not found: {video_path}"
+            )), 404
+
+        # Extract frames using FrameEditor
+        frames_dir = os.path.join('frames', video_id, 'for_edit')
+        os.makedirs(frames_dir, exist_ok=True)
+
+        frame_editor = FrameEditor(video_path, frames_dir)
+
+        # Extract enough frames to get the desired index
+        frame_count = frame_index + 10  # Extract a few extra frames
+        extracted_frames = frame_editor.extract_frames(frame_count=frame_count)
+
+        # Find the frame at the specified index
+        if frame_index >= len(extracted_frames):
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error=f"frame_index {frame_index} out of range. Video has {len(extracted_frames)} frames."
+            )), 400
+
+        target_frame = extracted_frames[frame_index]
+        frame_path = target_frame['path']
+
+        # Get API key for AI editing
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error="GOOGLE_API_KEY not configured. Cannot perform AI editing."
+            )), 500
+
+        # Use AIFrameEditor to generate edited version
+        ai_editor = AIFrameEditor(api_key)
+
+        edited_frames_dir = os.path.join('frames', video_id, 'edited')
+        os.makedirs(edited_frames_dir, exist_ok=True)
+
+        # Generate variations (we'll use the first one as the edited result)
+        variations = ai_editor.generate_frame_variations(
+            base_image_path=frame_path,
+            prompt=instruction,
+            variation_count=1
+        )
+
+        if not variations:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="edit",
+                status="error",
+                error="Failed to generate edited frame"
+            )), 500
+
+        # Save the edited frame
+        edited_frame_path = os.path.join(edited_frames_dir, f'frame_{frame_index}_edited.png')
+
+        # Extract base64 data and save
+        import base64
+        variation = variations[0]
+        if 'image_url' in variation and variation['image_url'].startswith('data:image'):
+            base64_str = variation['image_url'].split(',')[1]
+            image_data = base64.b64decode(base64_str)
+            with open(edited_frame_path, 'wb') as f:
+                f.write(image_data)
+
+        # Build frames response
+        original_url = f"/frames/{video_id}/for_edit/{os.path.basename(frame_path)}"
+        edited_url = f"/frames/{video_id}/edited/{os.path.basename(edited_frame_path)}"
+
+        frames_response = [{
+            "index": frame_index,
+            "original_url": original_url,
+            "edited_url": edited_url,
+            "instruction": instruction
+        }]
+
+        # Generate task_id for tracking
+        task_id = str(uuid.uuid4())
+
+        logger.info(f"[MCP API] Edited frame {frame_index} for video_id={video_id}")
+
+        # Return unified response
+        return jsonify(build_task_response(
+            task_id=task_id,
+            video_id=video_id,
+            stage="edit",
+            status="completed",
+            frames=frames_response,
+        )), 200
+
+    except Exception as e:
+        logger.error(f"[MCP API] Edit error: {e}", exc_info=True)
+        return jsonify(build_task_response(
+            task_id="",
+            video_id=video_id if 'video_id' in locals() else "unknown",
+            stage="edit",
+            status="error",
+            error=str(e)
+        )), 500
+
+
+@web_ui_blueprint.route('/api/stitch', methods=['POST'])
+def api_stitch_videos():
+    """
+    MCP Pipeline API: Stitch all scenes for a video into a single output.
+
+    Request (JSON or form-data):
+        - video_ids: list[str] (required) - Video/session IDs. Currently a single
+          video_id is supported; multiple IDs are not yet merged together.
+        - transition_type: str (optional) - "cut" or "fade" (default: "fade")
+
+    Returns (202 Accepted):
+        {
+            "task_id": str,
+            "video_id": str,
+            "stage": "stitch",
+            "status": "running",
+            "output_url": null,
+            "frames": null,
+            "error": null
+        }
+    """
+    try:
+        # Parse request data
+        if request.is_json:
+            data = request.get_json() or {}
+            video_ids = data.get('video_ids') or []
+            single_video_id = data.get('video_id')
+            transition_type = data.get('transition_type', 'fade')
+        else:
+            data = request.form
+            video_ids = data.getlist('video_ids')
+            single_video_id = data.get('video_id')
+            transition_type = data.get('transition_type', 'fade')
+
+        if single_video_id:
+            video_ids.append(single_video_id)
+
+        # Normalize and deduplicate video_ids while preserving order
+        normalized_ids = []
+        for vid in video_ids:
+            if vid and vid not in normalized_ids:
+                normalized_ids.append(vid)
+        video_ids = normalized_ids
+
+        if not video_ids:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id="unknown",
+                stage="stitch",
+                status="error",
+                error="video_ids is required"
+            )), 400
+
+        # Current implementation stitches scenes within a single video_id.
+        if len(video_ids) > 1:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=",".join(video_ids),
+                stage="stitch",
+                status="error",
+                error="Stitching across multiple video_ids is not supported yet. Use a single video_id."
+            )), 400
+
+        video_id = video_ids[0]
+        session['api_session_id'] = video_id
+
+        if transition_type not in {"cut", "fade"}:
+            transition_type = "fade"
+
+        # Ensure there are enough scenes to stitch
+        scene_manager = SceneManager(video_id)
+        scenes = scene_manager.get_all_scenes()
+
+        if len(scenes) < 2:
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id,
+                stage="stitch",
+                status="error",
+                error="At least two scenes are required to stitch a final video. Generate or extend first."
+            )), 400
+
+        # Launch Celery task
+        from tasks import merge_scenes_task
+
+        task = merge_scenes_task.apply_async(
+            args=[video_id],
+            kwargs={"transition_type": transition_type}
+        )
+
+        logger.info(f"[MCP API] Stitching scenes: task_id={task.id}, video_id={video_id}, transition={transition_type}")
+
+        return jsonify(build_task_response(
+            task_id=task.id,
+            video_id=video_id,
+            stage="stitch",
+            status="running",
+        )), 202
+
+    except Exception as e:
+        logger.error(f"[MCP API] Stitch error: {e}", exc_info=True)
+        return jsonify(build_task_response(
+            task_id="",
+            video_id=video_id if 'video_id' in locals() else "unknown",
+            stage="stitch",
+            status="error",
+            error=str(e)
+        )), 500
 
 
 # -----------------------------------------------------------------------------
