@@ -738,9 +738,15 @@
                 });
                 frameSlot.appendChild(fileInput);
 
-                // フレーム枠をクリックすると、ファイルダイアログを開く
+                // フレーム枠をクリックすると、空なら動画アップロード、既に動画があればフレーム抽出
                 frameSlot.addEventListener('click', () => {
-                    fileInput.click();
+                    if (frameData.videoPath) {
+                        // 既に動画が入っている場合は、フレーム抽出ビューを表示
+                        extractFramesForVideo(frameId);
+                    } else {
+                        // 空の場合は、ファイルダイアログを開く
+                        fileInput.click();
+                    }
                 });
 
                 // ホバー時に削除ボタンを表示
@@ -782,11 +788,6 @@
                     frameData.thumbnail = data.frames[0].base64;
                     frameData.isProcessing = false;
                     renderVideoFrames();
-
-                    // 自動的にフレーム分解を開始
-                    setTimeout(() => {
-                        extractFramesForVideo(frameId);
-                    }, 300);
                 } else {
                     alert('Failed to generate thumbnail');
                     frameData.isProcessing = false;
@@ -1432,10 +1433,15 @@
                         const applyVideoBtn = messageDiv.querySelector('#apply-video-btn');
                         if (applyVideoBtn) {
                             applyVideoBtn.addEventListener('click', () => {
-                                applyGeneratedVideoToPlayer(videoUrl);
-                                applyVideoBtn.disabled = true;
-                                applyVideoBtn.textContent = '✓ Applied to Player';
-                                applyVideoBtn.style.background = '#10B981';
+                                const frameId = applyGeneratedVideoToFrame(videoUrl);
+                                if (frameId !== -1) {
+                                    applyVideoBtn.disabled = true;
+                                    applyVideoBtn.textContent = `✓ Applied to Frame ${frameId + 1}`;
+                                    applyVideoBtn.style.background = '#10B981';
+                                } else {
+                                    applyVideoBtn.textContent = '✗ All frames full';
+                                    applyVideoBtn.style.background = '#EF4444';
+                                }
                             });
                         }
                     }, 100);
@@ -1447,29 +1453,35 @@
             return messageId;
         }
 
-        // ==================== Apply Generated Video to Player ====================
-        function applyGeneratedVideoToPlayer(videoUrl) {
-            // Update state
-            state.videoUrl = videoUrl;
-            state.videoPath = state.generatedVideo;
-
-            // Load video into main player
-            videoSource.src = videoUrl;
-            videoPlayer.load();
-
-            // Show player section if hidden
-            if (uploadZone && !uploadZone.classList.contains('hidden')) {
-                showPlayerSection();
+        // ==================== Apply Generated Video to Frame ====================
+        function applyGeneratedVideoToFrame(videoUrl) {
+            // Find first empty frame slot
+            let emptyFrameId = -1;
+            for (let i = 0; i < 6; i++) {
+                if (!state.videoFrames[i].videoPath) {
+                    emptyFrameId = i;
+                    break;
+                }
             }
 
-            // Extract frames from the new video
-            if (state.generatedVideo) {
-                // Wait a bit for video to load
-                setTimeout(() => {
-                    extractFrames();
-                    addChatMessage('ai', '✓ Video loaded into player! Frames are being extracted...');
-                }, 500);
+            // If no empty slots available
+            if (emptyFrameId === -1) {
+                addChatMessage('ai', '⚠️ All 6 video frame slots are full. Please delete a frame first.');
+                return -1;
             }
+
+            // Add video to the empty frame slot
+            const frameData = state.videoFrames[emptyFrameId];
+            frameData.videoPath = state.generatedVideo;
+            frameData.videoUrl = videoUrl;
+            frameData.isProcessing = false;
+
+            // Generate thumbnail for the frame
+            generateThumbnail(emptyFrameId, state.generatedVideo);
+
+            addChatMessage('ai', `✅ Video added to Frame ${emptyFrameId + 1}! Click on it to extract frames for editing.`);
+
+            return emptyFrameId;
         }
 
         // ==================== UI表示切り替え ====================
