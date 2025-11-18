@@ -492,7 +492,8 @@
             isProcessing: false,
             uploadedImage: null,
             generatedVideo: null,
-            selectedVideoMode: null
+            selectedVideoMode: null,
+            isWaitingForDuration: false  // Generate mode: waiting for user's duration response
         };
 
         // ==================== DOM要素 ====================
@@ -670,6 +671,14 @@
                 // ポップアップを閉じる
                 videoModePopup.classList.remove('show');
 
+                // Enable chat input when a mode is selected
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+
+                // Clear chat container and show mode selection message
+                chatContainer.innerHTML = '';
+                addChatMessage('ai', `${mode.charAt(0).toUpperCase() + mode.slice(1)} mode selected. How can I help you?`);
+
                 console.log('Selected video mode:', mode);
             });
         });
@@ -832,9 +841,9 @@
             const text = chatInput.value.trim();
             if (!text || state.isProcessing) return;
 
-            // Check if user uploaded an image for video generation
-            if (!state.uploadedImage) {
-                alert('Please attach an image first');
+            // Check if Generate mode is selected and image is required
+            if (state.selectedVideoMode === 'generate' && !state.uploadedImage && !state.isWaitingForDuration) {
+                alert('Please attach an image first for Generate mode');
                 return;
             }
 
@@ -843,57 +852,111 @@
             state.isProcessing = true;
             sendBtn.disabled = true;
 
-            // Add loading message with progress dots
-            const loadingId = addChatMessage('ai', 'Got it, generating video<span id="loading-dots"></span>');
-
-            // Animate dots during 7 second wait
-            let dotCount = 0;
-            const dotInterval = setInterval(() => {
-                const dotsEl = document.getElementById('loading-dots');
-                if (dotsEl) {
-                    dotCount = (dotCount + 1) % 4;
-                    dotsEl.textContent = '.'.repeat(dotCount);
-                }
-            }, 500);
-
-            // Generate video from image
+            // Prepare FormData
             const formData = new FormData();
-            formData.append('image', state.uploadedImage);
-            formData.append('prompt', text);
+            formData.append('message', text);
 
-            fetch('/frames/generate-video', {
+            // Add mode if selected
+            if (state.selectedVideoMode) {
+                formData.append('mode', state.selectedVideoMode);
+            }
+
+            // Add image if uploaded
+            if (state.uploadedImage) {
+                formData.append('image', state.uploadedImage);
+            }
+
+            // Add loading message with progress dots (only if in video generation step)
+            let loadingId = null;
+            let dotInterval = null;
+            if (state.isWaitingForDuration) {
+                // User is providing duration - expecting video generation
+                loadingId = addChatMessage('ai', 'Processing<span id="loading-dots"></span>');
+                let dotCount = 0;
+                dotInterval = setInterval(() => {
+                    const dotsEl = document.getElementById('loading-dots');
+                    if (dotsEl) {
+                        dotCount = (dotCount + 1) % 4;
+                        dotsEl.textContent = '.'.repeat(dotCount);
+                    }
+                }, 500);
+            }
+
+            // Send to editor chat endpoint
+            fetch('/editor/chat', {
                 method: 'POST',
                 body: formData
             })
             .then(res => res.json())
             .then(data => {
                 // Stop dot animation
-                clearInterval(dotInterval);
+                if (dotInterval) {
+                    clearInterval(dotInterval);
+                }
 
                 // Remove loading message
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
+                if (loadingId) {
+                    const loadingMsg = document.getElementById(loadingId);
+                    if (loadingMsg) loadingMsg.remove();
+                }
 
+                // Handle different response types
                 if (data.status === 'success') {
-                    state.generatedVideo = data.video_path;
+                    // Success - video generated or other action completed
+                    const videoUrl = data.data?.video_url;
 
-                    // Show generated video with video player
-                    addChatMessage('ai', 'Video generated successfully! Please review the preview.', true, data.video_url);
+                    if (videoUrl) {
+                        // Store generated video
+                        state.generatedVideo = data.data.video_path;
+
+                        // Show generated video with Apply to Main Player button
+                        addChatMessage('ai', data.message, true, videoUrl);
+
+                        // Reset state
+                        state.isWaitingForDuration = false;
+                        state.selectedVideoMode = null;
+                        videoModeBtn.classList.remove('active');
+                    } else {
+                        addChatMessage('ai', data.message);
+                    }
+                } else if (data.status === 'clarification') {
+                    // AI is asking for clarification (e.g., duration)
+                    addChatMessage('ai', data.message);
+
+                    // Set state to indicate we're waiting for duration
+                    if (data.data?.step === 'waiting_for_duration') {
+                        state.isWaitingForDuration = true;
+                    }
+                } else if (data.status === 'error') {
+                    // Error occurred
+                    addChatMessage('ai', data.message);
+
+                    // Reset state on error
+                    state.isWaitingForDuration = false;
                 } else {
-                    addChatMessage('ai', 'Error: ' + data.message);
+                    addChatMessage('ai', 'Unexpected response: ' + JSON.stringify(data));
                 }
             })
             .catch(err => {
-                clearInterval(dotInterval);
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
+                if (dotInterval) {
+                    clearInterval(dotInterval);
+                }
+                if (loadingId) {
+                    const loadingMsg = document.getElementById(loadingId);
+                    if (loadingMsg) loadingMsg.remove();
+                }
                 addChatMessage('ai', 'Error: ' + err.message);
+                state.isWaitingForDuration = false;
             })
             .finally(() => {
                 state.isProcessing = false;
                 sendBtn.disabled = false;
-                state.uploadedImage = null; // Reset
-                attachedImagePreview.classList.add('hidden');
+
+                // Clear uploaded image only after first message in Generate mode
+                if (state.uploadedImage && !state.isWaitingForDuration) {
+                    state.uploadedImage = null;
+                    attachedImagePreview.classList.add('hidden');
+                }
             });
         }
 
@@ -909,12 +972,14 @@
                     <div class="user-message-content">${content}</div>
                 `;
             } else {
+                // Convert newlines to <br> tags for proper display
+                const formattedContent = content.replace(/\n/g, '<br>');
                 let html = `
                     <div class="ai-avatar">
                         <span class="material-symbols-outlined !text-xl text-black">auto_awesome</span>
                     </div>
                     <div class="ai-message-content">
-                        <p style="margin-bottom: 12px;">${content}</p>
+                        <p style="margin-bottom: 12px;">${formattedContent}</p>
                 `;
 
                 // Video preview
@@ -924,7 +989,7 @@
                             <source src="${videoUrl}" type="video/mp4">
                             Your browser does not support the video tag.
                         </video>
-                        <button class="apply-btn" id="apply-video-btn" style="margin-top: 12px;">Apply to Frame</button>
+                        <button class="apply-btn" id="apply-video-btn-${messageId}" style="margin-top: 12px;">Apply to Main Player</button>
                     `;
                 }
 
@@ -934,18 +999,30 @@
                 // Video apply button handler
                 if (videoUrl) {
                     setTimeout(() => {
-                        const applyVideoBtn = messageDiv.querySelector('#apply-video-btn');
+                        const applyVideoBtn = messageDiv.querySelector('#apply-video-btn-' + messageId);
                         if (applyVideoBtn) {
                             applyVideoBtn.addEventListener('click', () => {
-                                addChatMessage('ai', '✓ Video will be applied to frame on export!');
-                                // Store video path for export
-                                if (state.selectedFrame === null) {
-                                    alert('Please select a frame to apply the generated video.');
+                                // Apply video to main player
+                                if (!state.generatedVideo) {
+                                    alert('No video to apply');
                                     return;
                                 }
-                                if (!state.editedFrames[state.selectedFrame]) {
-                                    state.editedFrames[state.selectedFrame] = state.generatedVideo;
-                                }
+
+                                // Update main video player
+                                state.videoPath = state.generatedVideo;
+                                state.videoUrl = videoUrl;
+
+                                // Show player section
+                                showPlayerSection();
+
+                                // Add confirmation message
+                                addChatMessage('ai', '✅ Video has been applied to the main player!');
+
+                                // Disable the button after applying
+                                applyVideoBtn.disabled = true;
+                                applyVideoBtn.textContent = '✓ Applied';
+                                applyVideoBtn.style.opacity = '0.6';
+                                applyVideoBtn.style.cursor = 'not-allowed';
                             });
                         }
                     }, 100);

@@ -1022,25 +1022,42 @@ def editor_chat():
     統合チャットエンドポイント
     自然言語コマンドを解析して適切な機能にルーティング
 
-    Request Body:
+    Supports both JSON and FormData (for image uploads with Generate mode)
+
+    Request Body (JSON):
         {
             "message": str,  # ユーザーのチャット入力
-            "session_id": str  # オプション: セッションID（省略時は自動生成）
+            "session_id": str,  # オプション: セッションID（省略時は自動生成）
+            "mode": str  # オプション: 選択されたモード（generate, extend, stitch, adjust）
         }
+
+    Request Body (FormData):
+        message: str  # ユーザーのチャット入力
+        mode: str  # 選択されたモード
+        image: File  # オプション: アップロードされた画像（Generateモード用）
 
     Returns:
         {
-            "status": str,  # "success", "processing", "error"
+            "status": str,  # "success", "processing", "error", "clarification"
             "message": str,  # ユーザーへのフィードバック
             "intent": str,  # コマンドインテント
-            "data": dict,   # 追加データ（task_id, scene_id, etc.）
+            "data": dict,   # 追加データ（task_id, scene_id, video_url, etc.）
             "chat_history": list  # チャット履歴
         }
     """
     try:
-        data = request.get_json()
-        user_input = data.get('message', '').strip()
-        provided_session_id = data.get('session_id')
+        # Handle both JSON and FormData
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            user_input = request.form.get('message', '').strip()
+            provided_session_id = request.form.get('session_id')
+            selected_mode = request.form.get('mode')  # generate, extend, stitch, adjust
+            uploaded_image = request.files.get('image')
+        else:
+            data = request.get_json()
+            user_input = data.get('message', '').strip()
+            provided_session_id = data.get('session_id')
+            selected_mode = data.get('mode')
+            uploaded_image = None
 
         if not user_input:
             return jsonify({
@@ -1062,6 +1079,10 @@ def editor_chat():
         if 'chat_history' not in session:
             session['chat_history'] = []
 
+        # 会話コンテキストの初期化
+        if 'conversation_context' not in session:
+            session['conversation_context'] = {}
+
         # ユーザーメッセージを履歴に追加
         session['chat_history'].append({
             "role": "user",
@@ -1069,51 +1090,72 @@ def editor_chat():
             "timestamp": datetime.now().isoformat()
         })
 
-        logger.info(f"Editor chat: session_id={session_id}, input={user_input}")
+        logger.info(f"Editor chat: session_id={session_id}, input={user_input}, mode={selected_mode}")
 
-        # コマンド解釈
-        handler = ChatCommandHandler()
-        command = handler.parse_command(user_input)
+        # Handle Generate mode with conversation flow
+        if selected_mode == 'generate':
+            result = _handle_generate_mode(user_input, uploaded_image, session_id)
 
-        # コマンドバリデーション
-        is_valid, error_message = handler.validate_command(command)
-        if not is_valid:
-            session['chat_history'].append({
-                "role": "assistant",
-                "content": error_message,
-                "timestamp": datetime.now().isoformat()
-            })
-            return jsonify({
-                "status": "error",
-                "message": error_message,
-                "intent": command['intent'].value,
-                "chat_history": session['chat_history']
-            }), 400
-
-        # SceneManager初期化
-        scene_manager = SceneManager(session_id)
-
-        # インテントに応じて処理分岐
-        intent = command['intent']
-        params = command['params']
-
-        if intent == CommandIntent.CREATE:
-            result = _handle_create_video(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.EXTEND:
-            result = _handle_extend_scene(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.TRANSITION:
-            result = _handle_merge_scenes(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.FRAME_EDIT:
-            result = _handle_frame_edit(params, scene_manager, session_id)
-
-        else:
+        # Handle other modes (Extend, Stitch, Adjust) - to be implemented
+        elif selected_mode == 'extend':
             result = {
                 "status": "error",
-                "message": handler.get_intent_help_message(intent)
+                "message": "Extendモードは現在開発中です"
             }
+        elif selected_mode == 'stitch':
+            result = {
+                "status": "error",
+                "message": "Stitchモードは現在開発中です"
+            }
+        elif selected_mode == 'adjust':
+            result = {
+                "status": "error",
+                "message": "Adjustモードは現在開発中です"
+            }
+        else:
+            # Fallback to legacy command parsing
+            handler = ChatCommandHandler()
+            command = handler.parse_command(user_input)
+
+            # コマンドバリデーション
+            is_valid, error_message = handler.validate_command(command)
+            if not is_valid:
+                session['chat_history'].append({
+                    "role": "assistant",
+                    "content": error_message,
+                    "timestamp": datetime.now().isoformat()
+                })
+                return jsonify({
+                    "status": "error",
+                    "message": error_message,
+                    "intent": command['intent'].value,
+                    "chat_history": session['chat_history']
+                }), 400
+
+            # SceneManager初期化
+            scene_manager = SceneManager(session_id)
+
+            # インテントに応じて処理分岐
+            intent = command['intent']
+            params = command['params']
+
+            if intent == CommandIntent.CREATE:
+                result = _handle_create_video(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.EXTEND:
+                result = _handle_extend_scene(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.TRANSITION:
+                result = _handle_merge_scenes(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.FRAME_EDIT:
+                result = _handle_frame_edit(params, scene_manager, session_id)
+
+            else:
+                result = {
+                    "status": "error",
+                    "message": handler.get_intent_help_message(intent)
+                }
 
         # アシスタントの応答を履歴に追加
         session['chat_history'].append({
@@ -1225,6 +1267,184 @@ def get_timeline():
 # -----------------------------------------------------------------------------
 # Chat Command Handlers - コマンドハンドラー（内部関数）
 # -----------------------------------------------------------------------------
+
+def _handle_generate_mode(user_input: str, uploaded_image, session_id: str) -> Dict[str, Any]:
+    """
+    Generateモードの会話フロー管理
+
+    フロー:
+    1. 初回: 画像確認 → duration timeを聞く
+    2. 返答: durationを抽出 → 動画生成 → 動画URLを返す
+
+    Args:
+        user_input: ユーザーの入力メッセージ
+        uploaded_image: アップロードされた画像（FileStorage）
+        session_id: セッションID
+
+    Returns:
+        {
+            "status": "success" | "clarification" | "error",
+            "message": str,
+            "data": {
+                "video_url": str,  # 生成された動画URL（生成完了時）
+                "step": str  # 現在のステップ
+            }
+        }
+    """
+    import re
+    import os
+    from werkzeug.utils import secure_filename
+    from frame_editor import AIFrameEditor
+
+    # 会話コンテキストの取得
+    context = session.get('conversation_context', {})
+    current_step = context.get('step', 'initial')
+
+    logger.info(f"Generate mode: step={current_step}, user_input={user_input}, has_image={uploaded_image is not None}")
+
+    # Step 1: 初回メッセージ - 画像確認とduration確認
+    if current_step == 'initial' or current_step == '':
+        # 画像が添付されているかチェック
+        if not uploaded_image:
+            return {
+                "status": "error",
+                "message": "画像を添付してください。画像から動画を生成します。",
+                "data": {"step": "waiting_for_image"}
+            }
+
+        # 画像を保存
+        try:
+            # セッション用のディレクトリを作成
+            upload_dir = os.path.join('uploads', session_id, 'editor')
+            os.makedirs(upload_dir, exist_ok=True)
+
+            # ファイル名をセキュアに処理
+            filename = secure_filename(uploaded_image.filename)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            image_filename = f"generate_{timestamp}_{filename}"
+            image_path = os.path.join(upload_dir, image_filename)
+
+            # 画像を保存
+            uploaded_image.save(image_path)
+            logger.info(f"Image saved: {image_path}")
+
+            # コンテキストに画像パスとプロンプトを保存
+            session['conversation_context'] = {
+                'mode': 'generate',
+                'step': 'waiting_for_duration',
+                'image_path': image_path,
+                'prompt': user_input
+            }
+            session.modified = True
+
+            # duration timeを聞く
+            return {
+                "status": "clarification",
+                "message": f"画像を受け取りました！\n\n何秒の動画を生成しますか？（例: 5秒、10秒など）",
+                "data": {"step": "waiting_for_duration"}
+            }
+
+        except Exception as e:
+            logger.error(f"Image upload error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"画像のアップロードに失敗しました: {str(e)}",
+                "data": {"step": "error"}
+            }
+
+    # Step 2: Duration確認 → 動画生成
+    elif current_step == 'waiting_for_duration':
+        # Durationを抽出
+        duration_match = re.search(r'(\d+)\s*[秒s]', user_input)
+        if duration_match:
+            duration = int(duration_match.group(1))
+        else:
+            # 数字だけの場合も対応
+            number_match = re.search(r'(\d+)', user_input)
+            if number_match:
+                duration = int(number_match.group(1))
+            else:
+                # Durationが見つからない場合
+                return {
+                    "status": "clarification",
+                    "message": "すみません、何秒の動画を生成するか数字で教えてください。（例: 5、10など）",
+                    "data": {"step": "waiting_for_duration"}
+                }
+
+        # Durationの範囲チェック（1-30秒）
+        if duration < 1 or duration > 30:
+            return {
+                "status": "clarification",
+                "message": "動画の長さは1秒から30秒の間で指定してください。",
+                "data": {"step": "waiting_for_duration"}
+            }
+
+        # 保存された画像パスとプロンプトを取得
+        image_path = context.get('image_path')
+        prompt = context.get('prompt', '')
+
+        if not image_path or not os.path.exists(image_path):
+            # 画像が見つからない場合、最初からやり直し
+            session['conversation_context'] = {}
+            session.modified = True
+            return {
+                "status": "error",
+                "message": "画像が見つかりません。もう一度画像を添付してください。",
+                "data": {"step": "initial"}
+            }
+
+        try:
+            # 動画生成
+            logger.info(f"Generating video: image={image_path}, duration={duration}s, prompt={prompt}")
+
+            ai_editor = AIFrameEditor(api_key=os.getenv('GOOGLE_API_KEY'))
+            video_path = ai_editor.generate_video_from_image(
+                image_path=image_path,
+                prompt=prompt,
+                duration=duration
+            )
+
+            # 動画URLを生成（相対パス）
+            video_url = f"/{video_path}"
+
+            # コンテキストをクリア（会話終了）
+            session['conversation_context'] = {}
+            session.modified = True
+
+            logger.info(f"Video generated successfully: {video_path}")
+
+            return {
+                "status": "success",
+                "message": f"✅ {duration}秒の動画を生成しました！プレビューを確認してください。\n\n満足したら「Apply to Main Player」ボタンを押してください。",
+                "data": {
+                    "step": "completed",
+                    "video_url": video_url,
+                    "video_path": video_path,
+                    "duration": duration
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Video generation error: {e}", exc_info=True)
+            # エラー時もコンテキストをクリア
+            session['conversation_context'] = {}
+            session.modified = True
+            return {
+                "status": "error",
+                "message": f"動画の生成に失敗しました: {str(e)}",
+                "data": {"step": "error"}
+            }
+
+    else:
+        # 不明なステップ - リセット
+        session['conversation_context'] = {}
+        session.modified = True
+        return {
+            "status": "error",
+            "message": "会話の状態が不明です。もう一度最初から始めてください。",
+            "data": {"step": "initial"}
+        }
+
 
 def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
     """
