@@ -26,7 +26,8 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "uploads")
 SUPABASE_REQUIRED = _env_truthy("SUPABASE_REQUIRED", "false")
 _SUPABASE_DISABLED_REASON: Optional[str] = None
-_PUBLIC_URL_CACHE: Dict[str, str] = {}
+_PUBLIC_URL_CACHE: Dict[str, Tuple[str, datetime]] = {}
+_CACHE_TTL_SECONDS = 3600
 
 
 def _disable_supabase(reason: str) -> None:
@@ -327,8 +328,16 @@ def get_public_url(video_id: str, folder: str, filename: str) -> Optional[str]:
         return None
 
     storage_path = build_storage_path(video_id, folder, filename)
+    now = datetime.now()
+
+    # Check cache with TTL
     if storage_path in _PUBLIC_URL_CACHE:
-        return _PUBLIC_URL_CACHE[storage_path]
+        cached_url, cached_time = _PUBLIC_URL_CACHE[storage_path]
+        if (now - cached_time).total_seconds() < _CACHE_TTL_SECONDS:
+            return cached_url
+        else:
+            # Expired
+            del _PUBLIC_URL_CACHE[storage_path]
 
     try:
         client = SUPABASE_CLIENT
@@ -343,7 +352,7 @@ def get_public_url(video_id: str, folder: str, filename: str) -> Optional[str]:
             public_url = None
 
         if public_url:
-            _PUBLIC_URL_CACHE[storage_path] = public_url
+            _PUBLIC_URL_CACHE[storage_path] = (public_url, now)
         return public_url
     except Exception as exc:
         logger.error(f"Failed to get public URL for {storage_path}: {exc}")
@@ -365,7 +374,7 @@ def download_log_file(video_id: str, task_id: str) -> Optional[dict]:
         return None
 
     client = SUPABASE_CLIENT
-    log_path = f"videos/{video_id}/logs/{task_id}.json"
+    log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
 
     try:
         log_bytes = client.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
@@ -399,7 +408,8 @@ def get_latest_input_video(video_id: str) -> Optional[str]:
 
     # Try output folder first (most recent)
     try:
-        output_files = client.storage.from_(SUPABASE_BUCKET_NAME).list(f"videos/{video_id}/output/")
+        prefix = build_storage_path(video_id, "output", "").rstrip("/")
+        output_files = client.storage.from_(SUPABASE_BUCKET_NAME).list(prefix)
         if output_files and len(output_files) > 0:
             # Sort by created_at descending and get the first file
             sorted_files = sorted(output_files, key=lambda x: x.get("created_at", ""), reverse=True)

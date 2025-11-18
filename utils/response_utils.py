@@ -10,6 +10,7 @@ def build_task_response(
     video_id: str,
     stage: str,
     status: str,
+    progress: Optional[int] = None,
     output_url: Optional[str] = None,
     frames: Optional[list] = None,
     error: Optional[str] = None,
@@ -22,6 +23,7 @@ def build_task_response(
         video_id: Video/session ID
         stage: Stage name (generate, extend, extract, edit, stitch)
         status: pending, running, completed, error
+        progress: Progress percentage (0-100) (optional)
         output_url: Final media URL (optional)
         frames: List of frames for extract/edit (optional)
         error: Error message if status=error (optional)
@@ -34,6 +36,7 @@ def build_task_response(
         "video_id": video_id,
         "stage": stage,
         "status": status,
+        "progress": progress,
         "output_url": output_url,
         "frames": frames,
         "error": error,

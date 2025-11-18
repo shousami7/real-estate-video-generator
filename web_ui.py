@@ -1373,6 +1373,7 @@ def get_task_status(task_id: str):
             "video_id": str,
             "status": "pending" | "running" | "completed" | "error",
             "stage": str,
+            "progress": int | null,
             "output_url": str | null,
             "frames": list | null,
             "error": str | null
@@ -1399,12 +1400,14 @@ def get_task_status(task_id: str):
             meta = task.info if isinstance(task.info, dict) else {}
             meta_video_id = meta.get('video_id')
             video_id = meta_video_id or get_task_video_mapping(task_id) or video_id or "unknown"
+            progress = meta.get("progress", 0)
 
             return jsonify(build_task_response(
                 task_id=task_id,
                 video_id=video_id or "unknown",
                 stage=meta.get('stage') or 'unknown',
                 status="running",
+                progress=progress,
             ))
 
         elif task.state == states.SUCCESS:
@@ -1419,7 +1422,7 @@ def get_task_status(task_id: str):
             # Load log from Supabase (required for unified response) only if result is missing
             if not result and is_supabase_configured():
                 try:
-                    log_path = f"videos/{video_id}/logs/{task_id}.json"
+                    log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
                     log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
                     if log_response:
                         log_data = json.loads(log_response)
@@ -1454,7 +1457,7 @@ def get_task_status(task_id: str):
             # Try to load error log from Supabase only if needed
             if is_supabase_configured() and video_id and video_id != "unknown":
                 try:
-                    log_path = f"videos/{video_id}/logs/{task_id}.json"
+                    log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
                     log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
                     if log_response:
                         log_data = json.loads(log_response)
@@ -1544,6 +1547,7 @@ def api_generate_video():
             "video_id": str,
             "stage": "generate",
             "status": "running",
+            "progress": int | null,
             "output_url": null,
             "frames": null,
             "error": null
@@ -1681,6 +1685,7 @@ def api_extend_video():
             "video_id": str,
             "stage": "extend",
             "status": "running",
+            "progress": int | null,
             "output_url": null,
             "frames": null,
             "error": null
@@ -1823,6 +1828,7 @@ def api_extract_frames():
             "video_id": str,
             "stage": "extract",
             "status": "completed",
+            "progress": int | null,
             "output_url": null,
             "frames": [
                 {
@@ -1945,6 +1951,7 @@ def api_edit_frame():
             "video_id": str,
             "stage": "edit",
             "status": "completed",
+            "progress": int | null,
             "output_url": null,
             "frames": [
                 {
@@ -2135,6 +2142,7 @@ def api_stitch_videos():
             "video_id": str,
             "stage": "stitch",
             "status": "running",
+            "progress": int | null,
             "output_url": null,
             "frames": null,
             "error": null

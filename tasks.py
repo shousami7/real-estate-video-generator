@@ -293,7 +293,8 @@ def property_video_generation_task(
             # Log MUST match unified format exactly (no extra fields)
             unified_log = {k: result[k] for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]}
             upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
 
         logger.info(f"Completed property video generation for task {db_task_id}")
         logger.info(f"API calls made: {len(image_paths)}")
@@ -426,7 +427,8 @@ def generate_property_video_task(
             # Log MUST match unified format exactly
             unified_log = {k: result[k] for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]}
             upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
 
         logger.info("Completed background generation for session %s", session_id)
         return result
@@ -496,7 +498,7 @@ def generate_video_from_chat_task(
             state="GENERATING",
             meta={
                 "progress": 10,
-                "status": f"{scene_id}の動画を生成中...",
+                "message": f"{scene_id}の動画を生成中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -521,7 +523,7 @@ def generate_video_from_chat_task(
             state="GENERATING",
             meta={
                 "progress": 20,
-                "status": "Veo APIで動画生成中...",
+                "message": "Veo APIで動画生成中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -543,7 +545,7 @@ def generate_video_from_chat_task(
             state="GENERATING",
             meta={
                 "progress": 50,
-                "status": "動画生成完了を待機中...",
+                "message": "動画生成完了を待機中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -559,7 +561,7 @@ def generate_video_from_chat_task(
             state="DOWNLOADING",
             meta={
                 "progress": 80,
-                "status": "動画をダウンロード中...",
+                "message": "動画をダウンロード中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -609,7 +611,7 @@ def generate_video_from_chat_task(
             state="SAVING",
             meta={
                 "progress": 90,
-                "status": "シーンをタイムラインに追加中...",
+                "message": "シーンをタイムラインに追加中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -659,7 +661,8 @@ def generate_video_from_chat_task(
                 "error": result["error"],
             }
             upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
 
         return result
 
@@ -669,7 +672,7 @@ def generate_video_from_chat_task(
             state="FAILURE",
             meta={
                 "progress": 0,
-                "status": f"エラー: {str(exc)}",
+                "message": f"エラー: {str(exc)}",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "generate",
@@ -690,7 +693,7 @@ def generate_video_from_chat_task(
             except Exception:
                 pass
 
-        raise exc
+        return error_result
 
 
 @celery.task(bind=True, name="tasks.extend_scene_task")
@@ -738,7 +741,7 @@ def extend_scene_task(
             state="EXTENDING",
             meta={
                 "progress": 10,
-                "status": f"{previous_scene_id}を拡張中...",
+                "message": f"{previous_scene_id}を拡張中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -774,7 +777,7 @@ def extend_scene_task(
             state="EXTENDING",
             meta={
                 "progress": 20,
-                "status": "Veo APIでシーン拡張中...",
+                "message": "Veo APIでシーン拡張中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -800,7 +803,7 @@ def extend_scene_task(
             state="EXTENDING",
             meta={
                 "progress": 50,
-                "status": "動画生成完了を待機中...",
+                "message": "動画生成完了を待機中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -815,7 +818,7 @@ def extend_scene_task(
             state="DOWNLOADING",
             meta={
                 "progress": 80,
-                "status": "動画をダウンロード中...",
+                "message": "動画をダウンロード中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -863,7 +866,7 @@ def extend_scene_task(
             state="SAVING",
             meta={
                 "progress": 90,
-                "status": "シーンをタイムラインに追加中...",
+                "message": "シーンをタイムラインに追加中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -914,7 +917,8 @@ def extend_scene_task(
                 "error": result["error"],
             }
             upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
 
         return result
 
@@ -924,7 +928,7 @@ def extend_scene_task(
             state="FAILURE",
             meta={
                 "progress": 0,
-                "status": f"エラー: {str(exc)}",
+                "message": f"エラー: {str(exc)}",
                 "scene_id": scene_id,
                 "video_id": session_id,
                 "stage": "extend",
@@ -945,7 +949,7 @@ def extend_scene_task(
             except Exception:
                 pass
 
-        raise exc
+        return error_result
 
 
 @celery.task(bind=True, name="tasks.merge_scenes_task")
@@ -981,7 +985,7 @@ def merge_scenes_task(
             state="MERGING",
             meta={
                 "progress": 10,
-                "status": "シーンを連結中...",
+                "message": "シーンを連結中...",
                 "video_id": session_id,
                 "stage": "stitch",
                 "step": "QUEUED",
@@ -1005,7 +1009,7 @@ def merge_scenes_task(
             state="MERGING",
             meta={
                 "progress": 30,
-                "status": f"{len(scenes)}つのシーンをFFmpegで連結中...",
+                "message": f"{len(scenes)}つのシーンをFFmpegで連結中...",
                 "video_id": session_id,
                 "stage": "stitch",
                 "step": "MERGING",
@@ -1038,7 +1042,7 @@ def merge_scenes_task(
             state="UPLOADING",
             meta={
                 "progress": 80,
-                "status": "完成した動画をアップロード中...",
+                "message": "完成した動画をアップロード中...",
                 "video_id": session_id,
                 "stage": "stitch",
                 "step": "UPLOADING",
@@ -1087,7 +1091,8 @@ def merge_scenes_task(
                 "error": result["error"],
             }
             upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
 
         return result
 
@@ -1097,7 +1102,7 @@ def merge_scenes_task(
             state="FAILURE",
             meta={
                 "progress": 0,
-                "status": f"エラー: {str(exc)}",
+                "message": f"エラー: {str(exc)}",
                 "video_id": session_id,
                 "stage": "stitch",
                 "step": "ERROR",
@@ -1117,4 +1122,4 @@ def merge_scenes_task(
             except Exception:
                 pass
 
-        raise exc
+        return error_result
