@@ -335,7 +335,9 @@
             position: relative;
         }
 
-        .mode-btn.active {
+        /* Reflect selected mode on the plus button itself */
+        .mode-btn.active button,
+        #video-mode-btn.active {
             background: #34D399 !important;
             color: black !important;
             box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.3);
@@ -366,9 +368,6 @@
             <div class="flex items-center gap-2">
                 <button id="export-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
                     <span class="truncate">Export</span>
-                </button>
-                <button id="api-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#6366F1] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
-                    <span class="truncate">API</span>
                 </button>
                 <button id="back-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors">
                     <span class="truncate">Back</span>
@@ -457,11 +456,11 @@
 
                     <div class="relative flex gap-2">
                         <input type="file" id="attach-image-input" accept="image/*" class="hidden">
-                        <button id="attach-image-btn" class="flex items-center justify-center size-10 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
+                        <button id="attach-image-btn" class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
                             <span class="material-symbols-outlined !text-base">attach_file</span>
                         </button>
                         <div class="mode-btn relative">
-                            <button id="video-mode-btn" class="flex items-center justify-center size-10 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Video Mode">
+                            <button id="video-mode-btn" class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Video Mode">
                                 <span class="material-symbols-outlined !text-base">add</span>
                             </button>
                             <!-- Popup Menu -->
@@ -480,39 +479,6 @@
                 </div>
             </aside>
         </main>
-    </div>
-
-    <!-- API Key Modal -->
-    <div id="api-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center z-50">
-        <div class="bg-panel-dark rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl border border-gray-700">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-white text-xl font-bold">API Settings</h3>
-                <button id="close-modal-btn" class="text-gray-400 hover:text-white transition-colors">
-                    <span class="material-symbols-outlined">close</span>
-                </button>
-            </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-gray-300 text-sm font-medium mb-2">OpenAI API Key</label>
-                    <input type="password" id="openai-api-key" placeholder="sk-..." class="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors">
-                </div>
-
-                <div>
-                    <label class="block text-gray-300 text-sm font-medium mb-2">Replicate API Key</label>
-                    <input type="password" id="replicate-api-key" placeholder="r8_..." class="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors">
-                </div>
-
-                <div class="flex gap-3 mt-6">
-                    <button id="save-api-keys-btn" class="flex-1 bg-primary text-black font-bold py-3 px-4 rounded-lg hover:opacity-90 transition-opacity">
-                        Save
-                    </button>
-                    <button id="cancel-modal-btn" class="flex-1 bg-[#374151] text-white font-bold py-3 px-4 rounded-lg hover:bg-[#4B5563] transition-colors">
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
     </div>
 
     <script>
@@ -539,14 +505,7 @@
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
         const exportBtn = document.getElementById('export-btn');
-        const apiBtn = document.getElementById('api-btn');
         const backBtn = document.getElementById('back-btn');
-        const apiModal = document.getElementById('api-modal');
-        const closeModalBtn = document.getElementById('close-modal-btn');
-        const cancelModalBtn = document.getElementById('cancel-modal-btn');
-        const saveApiKeysBtn = document.getElementById('save-api-keys-btn');
-        const openaiApiKeyInput = document.getElementById('openai-api-key');
-        const replicateApiKeyInput = document.getElementById('replicate-api-key');
         const videoPlayer = document.getElementById('video-player');
         const videoSource = document.getElementById('video-source');
         const uploadProgress = document.getElementById('upload-progress');
@@ -561,6 +520,10 @@
         const dragOverlay = document.getElementById('drag-overlay');
         const videoModeBtn = document.getElementById('video-mode-btn');
         const videoModePopup = document.getElementById('video-mode-popup');
+
+        // Allow chat input from the start (no frame selection required)
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
 
         // ==================== ビデオアップロード処理 ====================
         uploadZone.addEventListener('click', () => videoInput.click());
@@ -867,7 +830,7 @@
 
         function sendMessage() {
             const text = chatInput.value.trim();
-            if (!text || state.isProcessing || state.selectedFrame === null) return;
+            if (!text || state.isProcessing) return;
 
             // Check if user uploaded an image for video generation
             if (!state.uploadedImage) {
@@ -976,6 +939,10 @@
                             applyVideoBtn.addEventListener('click', () => {
                                 addChatMessage('ai', '✓ Video will be applied to frame on export!');
                                 // Store video path for export
+                                if (state.selectedFrame === null) {
+                                    alert('Please select a frame to apply the generated video.');
+                                    return;
+                                }
                                 if (!state.editedFrames[state.selectedFrame]) {
                                     state.editedFrames[state.selectedFrame] = state.generatedVideo;
                                 }
@@ -1041,54 +1008,6 @@
         // ==================== バックボタン ====================
         backBtn.addEventListener('click', () => {
             window.location.href = '/';
-        });
-
-        // ==================== APIモーダル ====================
-        // モーダルを開く
-        apiBtn.addEventListener('click', () => {
-            // 保存されているAPIキーをロードして表示
-            const savedOpenAIKey = localStorage.getItem('openai_api_key') || '';
-            const savedReplicateKey = localStorage.getItem('replicate_api_key') || '';
-            openaiApiKeyInput.value = savedOpenAIKey;
-            replicateApiKeyInput.value = savedReplicateKey;
-
-            // モーダルを表示
-            apiModal.classList.remove('hidden');
-            apiModal.classList.add('flex');
-        });
-
-        // モーダルを閉じる
-        const closeModal = () => {
-            apiModal.classList.remove('flex');
-            apiModal.classList.add('hidden');
-        };
-
-        closeModalBtn.addEventListener('click', closeModal);
-        cancelModalBtn.addEventListener('click', closeModal);
-
-        // モーダルの背景をクリックして閉じる
-        apiModal.addEventListener('click', (e) => {
-            if (e.target === apiModal) {
-                closeModal();
-            }
-        });
-
-        // APIキーを保存
-        saveApiKeysBtn.addEventListener('click', () => {
-            const openaiKey = openaiApiKeyInput.value.trim();
-            const replicateKey = replicateApiKeyInput.value.trim();
-
-            // localStorageに保存
-            if (openaiKey) {
-                localStorage.setItem('openai_api_key', openaiKey);
-            }
-            if (replicateKey) {
-                localStorage.setItem('replicate_api_key', replicateKey);
-            }
-
-            // 成功メッセージを表示
-            alert('API keys saved successfully!');
-            closeModal();
         });
     </script>
 </body>

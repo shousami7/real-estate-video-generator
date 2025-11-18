@@ -15,7 +15,7 @@ from supabase_storage import (
 from veo_generator import VeoVideoGenerator
 from video_composer import VideoComposer
 from scene_manager import SceneManager
-from utils.video_duration import get_video_duration
+from utils.video_duration import probe_video_duration as get_video_duration
 
 logger = get_task_logger(__name__)
 
