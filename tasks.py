@@ -124,14 +124,17 @@ def _normalize_image_paths(image_paths: List[str]) -> List[str]:
     return normalized
 
 
-def _task_meta(progress: int, message: str, stage: str, video_id: str) -> Dict[str, Any]:
+def _task_meta(progress: int, message: str, stage: str, video_id: str, step: Optional[str] = None) -> Dict[str, Any]:
     """
     Helper for consistent progress metadata.
+    stage: pipeline stage (generate, extend, stitch, etc.)
+    step: optional granular step (queued, composing, downloading, etc.)
     """
     return {
         "progress": progress,
         "message": message,
         "stage": stage,
+        "step": step or stage,
         "video_id": video_id,
     }
 
@@ -209,7 +212,7 @@ def property_video_generation_task(
     # Update progress: Starting
     self.update_state(
         state="PROGRESS",
-        meta=_task_meta(10, "Starting video generation", "STARTING", session_id),
+        meta=_task_meta(10, "Starting video generation", "generate", session_id, step="STARTING"),
     )
 
     generator = PropertyVideoGenerator(
@@ -225,7 +228,13 @@ def property_video_generation_task(
         # Update progress: Generating clips (20%)
         self.update_state(
             state="PROGRESS",
-            meta=_task_meta(20, f"Starting generation of {len(image_paths)} AI video clips", "GENERATING_CLIPS", session_id),
+            meta=_task_meta(
+                20,
+                f"Starting generation of {len(image_paths)} AI video clips",
+                "generate",
+                session_id,
+                step="GENERATING_CLIPS",
+            ),
         )
 
         # Define progress callback for detailed updates
@@ -237,7 +246,7 @@ def property_video_generation_task(
 
             self.update_state(
                 state="GENERATING_CLIPS",
-                meta=_task_meta(progress, message, "GENERATING_CLIPS", session_id),
+                meta=_task_meta(progress, message, "generate", session_id, step="GENERATING_CLIPS"),
             )
             logger.info(f"Progress update: {progress}% - {message}")
 
@@ -251,7 +260,7 @@ def property_video_generation_task(
         # Update progress: Composing (80%)
         self.update_state(
             state="PROGRESS",
-            meta=_task_meta(80, "Composing final video with transitions", "COMPOSING", session_id),
+            meta=_task_meta(80, "Composing final video with transitions", "generate", session_id, step="COMPOSING"),
         )
 
         final_video_path = generator.compose_final_video(
@@ -347,7 +356,7 @@ def generate_property_video_task(
     logger.info("Starting background generation for session %s (task %s)", session_id, self.request.id)
     self.update_state(
         state="STARTED",
-        meta=_task_meta(5, "Queued background task", "QUEUED", session_id),
+        meta=_task_meta(5, "Queued background task", "generate", session_id, step="QUEUED"),
     )
 
     generator = PropertyVideoGenerator(
@@ -362,7 +371,7 @@ def generate_property_video_task(
     try:
         self.update_state(
             state="GENERATING_CLIPS",
-            meta=_task_meta(20, "Starting generation of AI video clips", "GENERATING_CLIPS", session_id),
+            meta=_task_meta(20, "Starting generation of AI video clips", "generate", session_id, step="GENERATING_CLIPS"),
         )
 
         # Define progress callback for detailed updates
@@ -374,7 +383,7 @@ def generate_property_video_task(
 
             self.update_state(
                 state="GENERATING_CLIPS",
-                meta=_task_meta(progress, message, "GENERATING_CLIPS", session_id),
+                meta=_task_meta(progress, message, "generate", session_id, step="GENERATING_CLIPS"),
             )
             logger.info(f"Progress update: {progress}% - {message}")
 
@@ -387,7 +396,7 @@ def generate_property_video_task(
 
         self.update_state(
             state="COMPOSING",
-            meta=_task_meta(70, "Composing final video", "COMPOSING", session_id),
+            meta=_task_meta(70, "Composing final video", "generate", session_id, step="COMPOSING"),
         )
         final_video_path = generator.compose_final_video(
             video_clips=video_clips,
@@ -490,6 +499,8 @@ def generate_video_from_chat_task(
                 "status": f"{scene_id}の動画を生成中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "QUEUED",
             }
         )
 
@@ -513,6 +524,8 @@ def generate_video_from_chat_task(
                 "status": "Veo APIで動画生成中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "GENERATING",
             }
         )
 
@@ -533,6 +546,8 @@ def generate_video_from_chat_task(
                 "status": "動画生成完了を待機中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "WAITING",
             }
         )
 
@@ -547,18 +562,20 @@ def generate_video_from_chat_task(
                 "status": "動画をダウンロード中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "DOWNLOADING",
             }
         )
 
-        # ローカルパスを生成
-        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
-        os.makedirs(output_dir, exist_ok=True)
-        local_video_path = os.path.join(output_dir, f"{scene_id}.mp4")
+        # ローカルパスを生成 (temporary path; standardized path is set after duration is known)
+        temp_output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
+        os.makedirs(temp_output_dir, exist_ok=True)
+        temp_local_path = os.path.join(temp_output_dir, f"{scene_id}.mp4")
 
         # ダウンロード
         downloaded_path = veo.download_video(
             video_response=video_response,
-            output_path=local_video_path
+            output_path=temp_local_path
         )
 
         # 動画の長さを取得
@@ -568,6 +585,14 @@ def generate_video_from_chat_task(
         timestamp = int(video_duration * 1000)  # Use duration as unique identifier
         output_filename = f"{scene_id}_{timestamp}.mp4"
 
+        storage_path = build_storage_path(session_id, "output", output_filename)
+        standardized_local_path = os.path.join(LOCAL_UPLOAD_ROOT, storage_path)
+        os.makedirs(os.path.dirname(standardized_local_path), exist_ok=True)
+
+        if os.path.abspath(downloaded_path) != os.path.abspath(standardized_local_path):
+            shutil.move(downloaded_path, standardized_local_path)
+            downloaded_path = standardized_local_path
+
         if is_supabase_configured():
             video_url_result, upload_error = upload_video_file(
                 local_path=downloaded_path,
@@ -575,24 +600,9 @@ def generate_video_from_chat_task(
                 filename=output_filename,
                 folder="output",
             )
-            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
+            video_url = video_url_result if video_url_result else f"/uploads/local/{storage_path}"
         else:
-            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
-
-        # Upload task log
-        if is_supabase_configured():
-            # Log MUST match unified format exactly
-            unified_log = {
-                "task_id": result["task_id"],
-                "video_id": result["video_id"],
-                "stage": result["stage"],
-                "status": result["status"],
-                "output_url": result["output_url"],
-                "frames": result["frames"],
-                "error": result["error"],
-            }
-            upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            video_url = f"/uploads/local/{storage_path}"
 
         # SceneManagerに追加
         self.update_state(
@@ -602,6 +612,8 @@ def generate_video_from_chat_task(
                 "status": "シーンをタイムラインに追加中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "SAVING",
             }
         )
 
@@ -636,6 +648,19 @@ def generate_video_from_chat_task(
             "message": f"{scene_id}の生成が完了しました！",
         })
 
+        if is_supabase_configured():
+            unified_log = {
+                "task_id": result["task_id"],
+                "video_id": result["video_id"],
+                "stage": result["stage"],
+                "status": result["status"],
+                "output_url": result["output_url"],
+                "frames": result["frames"],
+                "error": result["error"],
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+
         return result
 
     except Exception as exc:
@@ -647,6 +672,8 @@ def generate_video_from_chat_task(
                 "status": f"エラー: {str(exc)}",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "generate",
+                "step": "ERROR",
             }
         )
 
@@ -714,6 +741,8 @@ def extend_scene_task(
                 "status": f"{previous_scene_id}を拡張中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "QUEUED",
             }
         )
 
@@ -748,6 +777,8 @@ def extend_scene_task(
                 "status": "Veo APIでシーン拡張中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "GENERATING",
             }
         )
 
@@ -772,6 +803,8 @@ def extend_scene_task(
                 "status": "動画生成完了を待機中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "WAITING",
             }
         )
 
@@ -785,16 +818,18 @@ def extend_scene_task(
                 "status": "動画をダウンロード中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "DOWNLOADING",
             }
         )
 
         output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
         os.makedirs(output_dir, exist_ok=True)
-        local_video_path = os.path.join(output_dir, f"{scene_id}.mp4")
+        temp_local_path = os.path.join(output_dir, f"{scene_id}.mp4")
 
         downloaded_path = veo.download_video(
             video_response=video_response,
-            output_path=local_video_path
+            output_path=temp_local_path
         )
 
         # 動画の長さを取得
@@ -804,6 +839,14 @@ def extend_scene_task(
         timestamp = int(video_duration * 1000)
         output_filename = f"extended_{scene_id}_{timestamp}.mp4"
 
+        storage_path = build_storage_path(session_id, "output", output_filename)
+        standardized_local_path = os.path.join(LOCAL_UPLOAD_ROOT, storage_path)
+        os.makedirs(os.path.dirname(standardized_local_path), exist_ok=True)
+
+        if os.path.abspath(downloaded_path) != os.path.abspath(standardized_local_path):
+            shutil.move(downloaded_path, standardized_local_path)
+            downloaded_path = standardized_local_path
+
         if is_supabase_configured():
             video_url_result, upload_error = upload_video_file(
                 local_path=downloaded_path,
@@ -811,23 +854,9 @@ def extend_scene_task(
                 filename=output_filename,
                 folder="output",
             )
-            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
-
-            # Upload task log
-            # Log MUST match unified format exactly
-            unified_log = {
-                "task_id": self.request.id,
-                "video_id": session_id,
-                "stage": "extend",
-                "status": "completed",
-                "output_url": video_url,
-                "frames": None,
-                "error": None,
-            }
-            upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            video_url = video_url_result if video_url_result else f"/uploads/local/{storage_path}"
         else:
-            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
+            video_url = f"/uploads/local/{storage_path}"
 
         # SceneManagerに追加
         self.update_state(
@@ -837,6 +866,8 @@ def extend_scene_task(
                 "status": "シーンをタイムラインに追加中...",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "SAVING",
             }
         )
 
@@ -872,6 +903,19 @@ def extend_scene_task(
             "message": f"{scene_id}の生成が完了しました！",
         })
 
+        if is_supabase_configured():
+            unified_log = {
+                "task_id": result["task_id"],
+                "video_id": result["video_id"],
+                "stage": result["stage"],
+                "status": result["status"],
+                "output_url": result["output_url"],
+                "frames": result["frames"],
+                "error": result["error"],
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+
         return result
 
     except Exception as exc:
@@ -883,6 +927,8 @@ def extend_scene_task(
                 "status": f"エラー: {str(exc)}",
                 "scene_id": scene_id,
                 "video_id": session_id,
+                "stage": "extend",
+                "step": "ERROR",
             }
         )
 
@@ -937,6 +983,8 @@ def merge_scenes_task(
                 "progress": 10,
                 "status": "シーンを連結中...",
                 "video_id": session_id,
+                "stage": "stitch",
+                "step": "QUEUED",
             }
         )
 
@@ -959,15 +1007,20 @@ def merge_scenes_task(
                 "progress": 30,
                 "status": f"{len(scenes)}つのシーンをFFmpegで連結中...",
                 "video_id": session_id,
+                "stage": "stitch",
+                "step": "MERGING",
             }
         )
 
         composer = VideoComposer()
 
-        # 出力パス
-        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "merged")
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, "final_video.mp4")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"stitched_{timestamp}.mp4"
+
+        # 出力パス (standard structure)
+        storage_path = build_storage_path(session_id, "output", output_filename)
+        output_path = os.path.join(LOCAL_UPLOAD_ROOT, storage_path)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # トランジション設定
         transition_duration = 0.5 if transition_type != "cut" else 0.0
@@ -987,14 +1040,12 @@ def merge_scenes_task(
                 "progress": 80,
                 "status": "完成した動画をアップロード中...",
                 "video_id": session_id,
+                "stage": "stitch",
+                "step": "UPLOADING",
             }
         )
 
         total_duration = get_video_duration(composed_path)
-
-        # Supabaseにアップロード (standard structure: stitched)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"stitched_{timestamp}.mp4"
 
         if is_supabase_configured():
             video_url_result, upload_error = upload_video_file(
@@ -1003,23 +1054,9 @@ def merge_scenes_task(
                 filename=output_filename,
                 folder="output",
             )
-            video_url = video_url_result if video_url_result else f"/uploads/local/videos/{session_id}/output/{output_filename}"
-
-            # Upload task log
-            # Log MUST match unified format exactly
-            unified_log = {
-                "task_id": self.request.id,
-                "video_id": session_id,
-                "stage": "stitch",
-                "status": "completed",
-                "output_url": video_url,
-                "frames": None,
-                "error": None,
-            }
-            upload_log_file(unified_log, session_id, self.request.id)
-            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+            video_url = video_url_result if video_url_result else f"/uploads/local/{storage_path}"
         else:
-            video_url = f"/uploads/local/videos/{session_id}/output/{output_filename}"
+            video_url = f"/uploads/local/{storage_path}"
 
         logger.info(f"Scene merge completed: {composed_path}")
 
@@ -1039,6 +1076,19 @@ def merge_scenes_task(
             "message": f"{len(scenes)}つのシーンを連結した動画が完成しました！",
         })
 
+        if is_supabase_configured():
+            unified_log = {
+                "task_id": result["task_id"],
+                "video_id": result["video_id"],
+                "stage": result["stage"],
+                "status": result["status"],
+                "output_url": result["output_url"],
+                "frames": result["frames"],
+                "error": result["error"],
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            logger.info(f"Task log written: videos/{session_id}/logs/{self.request.id}.json")
+
         return result
 
     except Exception as exc:
@@ -1049,6 +1099,8 @@ def merge_scenes_task(
                 "progress": 0,
                 "status": f"エラー: {str(exc)}",
                 "video_id": session_id,
+                "stage": "stitch",
+                "step": "ERROR",
             }
         )
 

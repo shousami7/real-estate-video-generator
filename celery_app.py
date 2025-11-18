@@ -4,9 +4,12 @@ import os
 # 絶対パスで .env を読み込む（Flask reloader による cwd 変更に対応）
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 import logging
+from typing import Dict, Optional
 from celery import Celery
 
 logger = logging.getLogger(__name__)
+_TASK_VIDEO_TTL_SECONDS = int(os.getenv("TASK_VIDEO_TTL_SECONDS", "86400"))
+_TASK_VIDEO_MEMORY_CACHE: Dict[str, str] = {}
 
 
 def check_redis_available(broker_url: str) -> bool:
@@ -107,3 +110,55 @@ def make_celery() -> Celery:
 
 
 celery = make_celery()
+
+
+def _get_backend_client():
+    """
+    Return the Redis client from the Celery result backend when available.
+    Falls back to None if the backend is not Redis or cannot be accessed.
+    """
+    try:
+        backend = celery.backend
+        return getattr(backend, "client", None)
+    except Exception:
+        return None
+
+
+def store_task_video_mapping(task_id: str, video_id: str) -> None:
+    """
+    Persist a mapping from Celery task ID to video ID so status checks can
+    remain consistent even if the Flask session is lost.
+    """
+    client = _get_backend_client()
+    cache_key = f"task_video:{task_id}"
+
+    if client:
+        try:
+            client.setex(cache_key, _TASK_VIDEO_TTL_SECONDS, video_id)
+            return
+        except Exception as exc:  # pragma: no cover - best-effort cache
+            logger.debug("Failed to persist task/video mapping to backend: %s", exc)
+
+    # In environments without Redis, keep a short-lived in-process cache
+    _TASK_VIDEO_MEMORY_CACHE[task_id] = video_id
+
+
+def get_task_video_mapping(task_id: str) -> Optional[str]:
+    """
+    Retrieve the video ID associated with a Celery task ID.
+    """
+    client = _get_backend_client()
+    cache_key = f"task_video:{task_id}"
+
+    if client:
+        try:
+            value = client.get(cache_key)
+            if value is None:
+                return None
+            if isinstance(value, bytes):
+                return value.decode("utf-8")
+            return str(value)
+        except Exception as exc:  # pragma: no cover - best-effort cache
+            logger.debug("Failed to read task/video mapping from backend: %s", exc)
+
+    return _TASK_VIDEO_MEMORY_CACHE.get(task_id)

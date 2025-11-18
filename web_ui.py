@@ -12,7 +12,7 @@ from celery import states
 from celery.result import AsyncResult
 
 from frame_editor import FrameEditor, AIFrameEditor
-from celery_app import celery
+from celery_app import celery, store_task_video_mapping, get_task_video_mapping
 from tasks import generate_property_video_task, property_video_generation_task
 from utils.response_utils import build_task_response
 from supabase_storage import (
@@ -346,6 +346,7 @@ def generate_video():
 
     session['generation_task_id'] = task.id
     session['db_task_id'] = db_task_id
+    store_task_video_mapping(task.id, session_id)
 
     num_api_calls = len(image_paths)
     logger.warning(f"⚠️  Starting video generation: {num_api_calls} images = {num_api_calls} Veo API calls")
@@ -419,7 +420,7 @@ def get_status():
     """
     Check the progress of the async video generation task.
     """
-    task_id = session.get('generation_task_id')
+    task_id = request.args.get('task_id') or session.get('generation_task_id')
 
     if not task_id:
         return jsonify({
@@ -430,9 +431,11 @@ def get_status():
 
     task = AsyncResult(task_id, app=celery)
     meta = task.info if isinstance(task.info, dict) else {}
+    video_id = get_task_video_mapping(task_id) or meta.get('video_id') or session.get('session_id')
     progress = meta.get('progress', session.get('generation_progress', 0))
     message = meta.get('message', "Processing video request...")
     stage = meta.get('stage', task.state)
+    step = meta.get('step') or stage
 
     if task.state == states.PENDING:
         session['generation_status'] = 'QUEUED'
@@ -440,17 +443,21 @@ def get_status():
         return jsonify({
             "status": "QUEUED",
             "message": "Waiting for an available worker...",
-            "progress_percent": progress
+            "progress_percent": progress,
+            "video_id": video_id,
+            "stage": stage,
         })
 
     if task.state in {'STARTED', 'GENERATING_CLIPS', 'COMPOSING'}:
-        session['generation_status'] = stage
+        session['generation_status'] = step
         session['generation_progress'] = progress
         session.modified = True
         return jsonify({
-            "status": stage or "GENERATING_CLIPS",
+            "status": step or "GENERATING_CLIPS",
             "message": message,
-            "progress_percent": progress
+            "progress_percent": progress,
+            "video_id": video_id,
+            "stage": stage,
         })
 
     if task.state == states.SUCCESS:
@@ -465,7 +472,9 @@ def get_status():
             "message": "Video generation completed successfully!",
             "progress_percent": 100,
             "final_video_url": "/download",
-            "editor_url": "/video/editor"
+            "editor_url": "/video/editor",
+            "video_id": video_id,
+            "stage": result.get('stage') or stage,
         })
 
     if task.state in {states.FAILURE, states.REVOKED}:
@@ -483,14 +492,18 @@ def get_status():
         return jsonify({
             "status": status_label,
             "message": f"{status_label}: {error_msg}",
-            "progress_percent": progress
+            "progress_percent": progress,
+            "video_id": video_id,
+            "stage": meta.get('stage') or stage,
         })
 
     # Fallback (should not normally reach here)
     return jsonify({
         "status": task.state or "IDLE",
         "message": message,
-        "progress_percent": progress
+        "progress_percent": progress,
+        "video_id": video_id,
+        "stage": stage,
     })
 
 @web_ui_blueprint.route('/download')
@@ -1369,8 +1382,8 @@ def get_task_status(task_id: str):
         # Query Celery AsyncResult
         task = AsyncResult(task_id, app=celery)
 
-        # Get video_id from session or task result
-        video_id = session.get('session_id') or session.get('editor_session_id')
+        # Get video_id from backend mapping first (fallback to task metadata/session)
+        video_id = get_task_video_mapping(task_id) or session.get('editor_session_id') or session.get('session_id')
 
         if task.state == states.PENDING:
             # Task not yet started
@@ -1385,19 +1398,19 @@ def get_task_status(task_id: str):
             # Task is running
             meta = task.info if isinstance(task.info, dict) else {}
             meta_video_id = meta.get('video_id')
-            video_id = meta_video_id or video_id or "unknown"
+            video_id = meta_video_id or get_task_video_mapping(task_id) or video_id or "unknown"
 
             return jsonify(build_task_response(
                 task_id=task_id,
                 video_id=video_id or "unknown",
-                stage=meta.get('stage', 'unknown'),
+                stage=meta.get('stage') or 'unknown',
                 status="running",
             ))
 
         elif task.state == states.SUCCESS:
             # Task completed - MUST load log file from Supabase
             result = task.result if isinstance(task.result, dict) else {}
-            video_id = result.get('video_id') or video_id or "unknown"
+            video_id = result.get('video_id') or get_task_video_mapping(task_id) or video_id or "unknown"
 
             # If Celery result already contains the unified payload, return it without downloading logs
             if result and all(k in result for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
@@ -1469,10 +1482,14 @@ def get_task_status(task_id: str):
 
     except Exception as e:
         logger.error(f"Error getting task status: {e}", exc_info=True)
-        return jsonify({
-            "error": "Failed to get task status",
-            "detail": str(e)
-        }), 500
+        mapped_video_id = get_task_video_mapping(task_id)
+        return jsonify(build_task_response(
+            task_id=task_id,
+            video_id=mapped_video_id or video_id or "unknown",
+            stage="unknown",
+            status="error",
+            error=str(e),
+        )), 500
 
 
 @web_ui_blueprint.route('/editor/timeline', methods=['GET'])
@@ -1626,6 +1643,7 @@ def api_generate_video():
         )
 
         logger.info(f"[MCP API] Video generation started: task_id={task.id}, video_id={video_id}, scene_id={scene_id}")
+        store_task_video_mapping(task.id, video_id)
 
         # Return unified response
         return jsonify(build_task_response(
@@ -1769,6 +1787,7 @@ def api_extend_video():
         )
 
         logger.info(f"[MCP API] Video extension started: task_id={task.id}, video_id={video_id}, scene_id={scene_id}")
+        store_task_video_mapping(task.id, video_id)
 
         # Return unified response
         return jsonify(build_task_response(
@@ -2191,6 +2210,7 @@ def api_stitch_videos():
         )
 
         logger.info(f"[MCP API] Stitching scenes: task_id={task.id}, video_id={video_id}, transition={transition_type}")
+        store_task_video_mapping(task.id, video_id)
 
         return jsonify(build_task_response(
             task_id=task.id,

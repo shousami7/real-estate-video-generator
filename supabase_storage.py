@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
 from datetime import datetime
 
@@ -26,6 +26,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "uploads")
 SUPABASE_REQUIRED = _env_truthy("SUPABASE_REQUIRED", "false")
 _SUPABASE_DISABLED_REASON: Optional[str] = None
+_PUBLIC_URL_CACHE: Dict[str, str] = {}
 
 
 def _disable_supabase(reason: str) -> None:
@@ -326,6 +327,8 @@ def get_public_url(video_id: str, folder: str, filename: str) -> Optional[str]:
         return None
 
     storage_path = build_storage_path(video_id, folder, filename)
+    if storage_path in _PUBLIC_URL_CACHE:
+        return _PUBLIC_URL_CACHE[storage_path]
 
     try:
         client = SUPABASE_CLIENT
@@ -333,11 +336,15 @@ def get_public_url(video_id: str, folder: str, filename: str) -> Optional[str]:
 
         if isinstance(public_url_response, dict):
             data = public_url_response.get("data") or {}
-            return data.get("publicUrl") or data.get("publicURL")
+            public_url = data.get("publicUrl") or data.get("publicURL")
         elif isinstance(public_url_response, str):
-            return public_url_response
+            public_url = public_url_response
+        else:
+            public_url = None
 
-        return None
+        if public_url:
+            _PUBLIC_URL_CACHE[storage_path] = public_url
+        return public_url
     except Exception as exc:
         logger.error(f"Failed to get public URL for {storage_path}: {exc}")
         return None
