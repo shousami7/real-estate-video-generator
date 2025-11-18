@@ -3,16 +3,12 @@ import os
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
-
 try:
     # The supabase package is optional at runtime (only required when uploads are enabled)
     from supabase import Client, create_client  # type: ignore
 except Exception:  # pragma: no cover - fall back if the package is missing
     Client = None  # type: ignore
     create_client = None  # type: ignore
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

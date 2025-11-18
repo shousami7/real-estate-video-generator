@@ -1,10 +1,10 @@
+from dotenv import load_dotenv
 import os
+
+# 絶対パスで .env を読み込む（Flask reloader による cwd 変更に対応）
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 import logging
 from celery import Celery
-from dotenv import load_dotenv
-
-# Ensure .env variables are available when Celery worker starts
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -107,4 +107,3 @@ def make_celery() -> Celery:
 
 
 celery = make_celery()
-

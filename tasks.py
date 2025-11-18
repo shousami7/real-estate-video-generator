@@ -3,7 +3,6 @@ import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
 from celery.utils.log import get_task_logger
-from dotenv import load_dotenv
 
 from celery_app import celery
 from generate_property_video import PropertyVideoGenerator
@@ -18,8 +17,6 @@ from scene_manager import SceneManager
 from utils.video_duration import probe_video_duration as get_video_duration
 
 logger = get_task_logger(__name__)
-
-load_dotenv()
 
 SUPABASE_REQUIRED = is_supabase_required()
 

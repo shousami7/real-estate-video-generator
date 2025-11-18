@@ -5,15 +5,17 @@
 echo "Starting Real Estate Video Generator..."
 echo "Detecting system architecture..."
 
+# Activate virtual environment if present
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+    echo "✓ Using virtual environment at venv/"
+    echo ""
+fi
+
 # Get the current architecture
 ARCH=$(uname -m)
 echo "System architecture: $ARCH"
 
-# Run the app
-if [ "$ARCH" = "arm64" ]; then
-    echo "Running in native ARM64 mode..."
-    python3 app.py
-else
-    echo "Running in x86_64 mode..."
-    arch -x86_64 python3 app.py
-fi
+# Run the app in ARM64 mode (required for venv dependencies)
+echo "Running in ARM64 mode (required for venv)..."
+arch -arm64 python3 app.py

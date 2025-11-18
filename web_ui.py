@@ -3,7 +3,6 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
 from flask import (
     Blueprint, render_template, request, jsonify, session, send_from_directory
 )
@@ -22,8 +21,6 @@ from supabase_storage import (
 from chat_command_handler import ChatCommandHandler, CommandIntent
 from scene_manager import SceneManager
 from datetime import datetime
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
