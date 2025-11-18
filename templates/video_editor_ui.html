@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html class="dark" lang="en">
+
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>AI Video Gen - Editor</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com" rel="preconnect"/>
-    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
     <script>
         tailwind.config = {
             darkMode: "class",
@@ -23,7 +25,7 @@
                     fontFamily: {
                         "display": ["Space Grotesk", "sans-serif"]
                     },
-                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
                 },
             },
         }
@@ -96,6 +98,7 @@
                 opacity: 0;
                 transform: translateX(-10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateX(0);
@@ -300,6 +303,7 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -447,7 +451,9 @@
 
         /* Loading Spinner */
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .loading-spinner {
@@ -461,6 +467,7 @@
         }
     </style>
 </head>
+
 <body class="bg-background-dark font-display">
     <div class="relative flex h-screen min-h-screen w-full flex-col bg-background-dark overflow-hidden">
         <div id="drag-overlay" class="global-drag-overlay hidden">
@@ -468,11 +475,14 @@
             <p class="text-lg font-semibold">Drop your video anywhere to upload</p>
         </div>
         <!-- Header -->
-        <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
+        <header
+            class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[#374151] px-6 py-3">
             <div class="flex items-center gap-4 text-white">
                 <div class="size-6 text-primary">
                     <svg fill="currentColor" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12.003 3.001a9 9 0 0 0-8.25 5.25H2v1.5h3.005a9 9 0 0 0-1.255 3.75H2v1.5h1.75a9 9 0 0 0 16.5 0H22v-1.5h-1.75a9 9 0 0 0-1.255-3.75H22v-1.5h-1.753A9 9 0 0 0 12.003 3.001Zm0 1.5a7.5 7.5 0 0 1 6.848 4.5H5.155a7.5 7.5 0 0 1 6.848-4.5ZM3.753 10.5a7.502 7.502 0 0 1 1.222-3.665l4.316 4.316-2.583.923a.75.75 0 0 0-.583 1.09l.001.002.75 2.1a7.5 7.5 0 0 1-3.123-4.766Zm15.272 3.664a7.502 7.502 0 0 1-1.222 3.666L13.5 13.513l2.583-.923a.75.75 0 0 0 .583-1.09l-.001-.002-.75-2.1a7.5 7.5 0 0 1 3.123 4.766Zm-5.34-1.127-3.75-1.34-1.34 3.75 3.75 1.34 1.34-3.75Z"></path>
+                        <path
+                            d="M12.003 3.001a9 9 0 0 0-8.25 5.25H2v1.5h3.005a9 9 0 0 0-1.255 3.75H2v1.5h1.75a9 9 0 0 0 16.5 0H22v-1.5h-1.75a9 9 0 0 0-1.255-3.75H22v-1.5h-1.753A9 9 0 0 0 12.003 3.001Zm0 1.5a7.5 7.5 0 0 1 6.848 4.5H5.155a7.5 7.5 0 0 1 6.848-4.5ZM3.753 10.5a7.502 7.502 0 0 1 1.222-3.665l4.316 4.316-2.583.923a.75.75 0 0 0-.583 1.09l.001.002.75 2.1a7.5 7.5 0 0 1-3.123-4.766Zm15.272 3.664a7.502 7.502 0 0 1-1.222 3.666L13.5 13.513l2.583-.923a.75.75 0 0 0 .583-1.09l-.001-.002-.75-2.1a7.5 7.5 0 0 1 3.123 4.766Zm-5.34-1.127-3.75-1.34-1.34 3.75 3.75 1.34 1.34-3.75Z">
+                        </path>
                     </svg>
                 </div>
                 <h2 class="text-white text-lg font-bold leading-tight tracking-[-0.015em]">AI Video Gen - Editor</h2>
@@ -483,10 +493,12 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                <button id="export-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
+                <button id="export-btn"
+                    class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
                     <span class="truncate">Export</span>
                 </button>
-                <button id="back-btn" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors">
+                <button id="back-btn"
+                    class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors">
                     <span class="truncate">Back</span>
                 </button>
             </div>
@@ -498,16 +510,19 @@
             <div class="flex-1 flex flex-col p-6 overflow-y-auto">
                 <!-- Video Player Area (with upload UI when no video) -->
                 <div class="w-full max-w-5xl mx-auto mb-8" id="video-player-area">
-                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative" id="video-container">
+                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative"
+                        id="video-container">
                         <!-- Upload UI (shown when no video) -->
-                        <div id="upload-zone" class="absolute inset-0 border-2 border-dashed border-[#374151] flex flex-col items-center justify-center gap-4 text-center upload-zone bg-panel-dark/80 px-8">
+                        <div id="upload-zone"
+                            class="absolute inset-0 border-2 border-dashed border-[#374151] flex flex-col items-center justify-center gap-4 text-center upload-zone bg-panel-dark/80 px-8">
                             <span class="material-symbols-outlined text-6xl text-gray-500">upload_file</span>
                             <div>
                                 <h3 class="text-white text-xl font-bold mb-1">Upload Your Video</h3>
                                 <p class="text-gray-400">Drop a video file or choose one to start editing</p>
                             </div>
                             <input type="file" id="video-input" accept="video/*" class="hidden">
-                            <button id="upload-btn" class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
+                            <button id="upload-btn"
+                                class="flex min-w-[200px] mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary text-black text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity gap-2">
                                 <span class="material-symbols-outlined">video_file</span>
                                 <span class="truncate">Select Video File</span>
                             </button>
@@ -533,7 +548,9 @@
                             <p id="upload-percent" class="text-sm font-medium text-gray-300">0%</p>
                         </div>
                         <div class="w-full bg-gray-700 rounded-full h-2.5">
-                            <div id="upload-progress-bar" class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            <div id="upload-progress-bar"
+                                class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -556,10 +573,13 @@
             </div>
 
             <!-- Right Section: AI Chat Panel (420px fixed width) -->
-            <aside id="edit-panel" class="w-[420px] flex-shrink-0 bg-panel-dark border-l border-[#374151] flex flex-col">
+            <aside id="edit-panel"
+                class="w-[420px] flex-shrink-0 bg-panel-dark border-l border-[#374151] flex flex-col">
                 <!-- Edit Frame Button -->
                 <div class="p-4 border-b border-[#374151]">
-                    <button id="pick-frame-btn" class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-primary text-black gap-2 text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <button id="pick-frame-btn"
+                        class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-primary text-black gap-2 text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled>
                         <span class="material-symbols-outlined !text-2xl">add_photo_alternate</span>
                         <span class="truncate">Edit Frame</span>
                     </button>
@@ -578,8 +598,10 @@
                     <!-- Attached Image Preview -->
                     <div id="attached-image-preview" class="mb-3 hidden">
                         <div class="relative inline-block">
-                            <img id="preview-img" class="rounded-lg" style="max-height: 80px; max-width: 120px; object-fit: cover;">
-                            <button id="remove-image-btn" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600">
+                            <img id="preview-img" class="rounded-lg"
+                                style="max-height: 80px; max-width: 120px; object-fit: cover;">
+                            <button id="remove-image-btn"
+                                class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600">
                                 <span class="material-symbols-outlined !text-sm">close</span>
                             </button>
                         </div>
@@ -587,11 +609,15 @@
 
                     <div class="relative flex gap-2">
                         <input type="file" id="attach-image-input" accept="image/*" class="hidden">
-                        <button id="attach-image-btn" class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Attach Image">
+                        <button id="attach-image-btn"
+                            class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors"
+                            title="Attach Image">
                             <span class="material-symbols-outlined !text-base">attach_file</span>
                         </button>
                         <div class="mode-btn relative">
-                            <button id="video-mode-btn" class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors" title="Video Mode">
+                            <button id="video-mode-btn"
+                                class="flex items-center justify-center h-12 w-12 bg-[#374151] rounded-lg text-gray-300 hover:bg-[#4B5563] transition-colors"
+                                title="Video Mode">
                                 <span class="material-symbols-outlined !text-base">add</span>
                             </button>
                             <!-- Popup Menu -->
@@ -602,8 +628,12 @@
                                 <div class="video-mode-option" data-mode="adjust">Adjust</div>
                             </div>
                         </div>
-                        <input id="chat-input" class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors" placeholder="Describe the edit you want..." type="text" disabled/>
-                        <button id="send-btn" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <input id="chat-input"
+                            class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors"
+                            placeholder="Describe the edit you want..." type="text" disabled />
+                        <button id="send-btn"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
                             <span class="material-symbols-outlined !text-xl">arrow_upward</span>
                         </button>
                     </div>
@@ -781,24 +811,24 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ video_path: videoPathForBackend })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success' && data.frames && data.frames.length > 0) {
-                    // フレーム0のBase64画像をサムネイルとして使用
-                    frameData.thumbnail = data.frames[0].base64;
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success' && data.frames && data.frames.length > 0) {
+                        // フレーム0のBase64画像をサムネイルとして使用
+                        frameData.thumbnail = data.frames[0].base64;
+                        frameData.isProcessing = false;
+                        renderVideoFrames();
+                    } else {
+                        alert('Failed to generate thumbnail');
+                        frameData.isProcessing = false;
+                        renderVideoFrames();
+                    }
+                })
+                .catch(err => {
+                    console.error('Error generating thumbnail:', err);
                     frameData.isProcessing = false;
                     renderVideoFrames();
-                } else {
-                    alert('Failed to generate thumbnail');
-                    frameData.isProcessing = false;
-                    renderVideoFrames();
-                }
-            })
-            .catch(err => {
-                console.error('Error generating thumbnail:', err);
-                frameData.isProcessing = false;
-                renderVideoFrames();
-            });
+                });
         }
 
         function uploadVideoToFrame(frameId, file) {
@@ -818,26 +848,26 @@
                 method: 'POST',
                 body: formData
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
-                    frameData.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
-                    frameData.videoUrl = data.video_url || `/${frameData.videoPath}`;
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
+                        frameData.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
+                        frameData.videoUrl = data.video_url || `/${frameData.videoPath}`;
 
-                    // サムネイル画像を取得（フレーム0）
-                    generateThumbnail(frameId, frameData.videoPath);
-                } else {
-                    alert('Upload failed: ' + data.message);
+                        // サムネイル画像を取得（フレーム0）
+                        generateThumbnail(frameId, frameData.videoPath);
+                    } else {
+                        alert('Upload failed: ' + data.message);
+                        frameData.isProcessing = false;
+                        renderVideoFrames();
+                    }
+                })
+                .catch(err => {
+                    alert('Error: ' + err.message);
                     frameData.isProcessing = false;
                     renderVideoFrames();
-                }
-            })
-            .catch(err => {
-                alert('Error: ' + err.message);
-                frameData.isProcessing = false;
-                renderVideoFrames();
-            });
+                });
         }
 
         function deleteVideoFrame(frameId) {
@@ -868,25 +898,25 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ video_path: videoPathForBackend })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    state.frames = data.frames;
-                    state.expandedFrameId = frameId;
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        state.frames = data.frames;
+                        state.expandedFrameId = frameId;
+                        frameData.isProcessing = false;
+                        renderVideoFrames();
+                        showExtractedFrames();
+                    } else {
+                        alert('Frame extraction failed: ' + data.message);
+                        frameData.isProcessing = false;
+                        renderVideoFrames();
+                    }
+                })
+                .catch(err => {
+                    alert('Error: ' + err.message);
                     frameData.isProcessing = false;
                     renderVideoFrames();
-                    showExtractedFrames();
-                } else {
-                    alert('Frame extraction failed: ' + data.message);
-                    frameData.isProcessing = false;
-                    renderVideoFrames();
-                }
-            })
-            .catch(err => {
-                alert('Error: ' + err.message);
-                frameData.isProcessing = false;
-                renderVideoFrames();
-            });
+                });
         }
 
         function showExtractedFrames() {
@@ -1084,43 +1114,43 @@
                 method: 'POST',
                 body: formData
             })
-            .then(res => res.json())
-            .then(data => {
-                clearInterval(progressInterval);
-                uploadProgressBar.style.width = '100%';
-                uploadPercent.textContent = '100%';
+                .then(res => res.json())
+                .then(data => {
+                    clearInterval(progressInterval);
+                    uploadProgressBar.style.width = '100%';
+                    uploadPercent.textContent = '100%';
 
-                if (data.status === 'success') {
-                    const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
-                    state.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
+                    if (data.status === 'success') {
+                        const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
+                        state.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
 
-                    const playbackUrl = data.video_url || `/${state.videoPath}`;
-                    state.videoUrl = playbackUrl;
+                        const playbackUrl = data.video_url || `/${state.videoPath}`;
+                        state.videoUrl = playbackUrl;
 
-                    videoSource.src = playbackUrl;
-                    videoPlayer.load();
+                        videoSource.src = playbackUrl;
+                        videoPlayer.load();
 
+                        setTimeout(() => {
+                            showPlayerSection();
+                            extractFrames();
+                        }, 500);
+                    } else {
+                        alert('Upload failed: ' + data.message);
+                    }
+                })
+                .catch(err => {
+                    clearInterval(progressInterval);
+                    alert('Error: ' + err.message);
+                })
+                .finally(() => {
+                    state.isProcessing = false;
+                    uploadZone.style.opacity = '1';
                     setTimeout(() => {
-                        showPlayerSection();
-                        extractFrames();
-                    }, 500);
-                } else {
-                    alert('Upload failed: ' + data.message);
-                }
-            })
-            .catch(err => {
-                clearInterval(progressInterval);
-                alert('Error: ' + err.message);
-            })
-            .finally(() => {
-                state.isProcessing = false;
-                uploadZone.style.opacity = '1';
-                setTimeout(() => {
-                    uploadProgress.classList.add('hidden');
-                    uploadProgressBar.style.width = '0%';
-                    uploadPercent.textContent = '0%';
-                }, 1000);
-            });
+                        uploadProgress.classList.add('hidden');
+                        uploadProgressBar.style.width = '0%';
+                        uploadPercent.textContent = '0%';
+                    }, 1000);
+                });
         }
 
         // ==================== フレーム抽出 ====================
@@ -1139,19 +1169,19 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ video_path: videoPathForBackend })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    state.frames = data.frames;
-                    renderFrames();
-                    if (state.frames.length > 0) {
-                        selectFrame(0);
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        state.frames = data.frames;
+                        renderFrames();
+                        if (state.frames.length > 0) {
+                            selectFrame(0);
+                        }
+                    } else {
+                        alert('Frame extraction failed: ' + data.message);
                     }
-                } else {
-                    alert('Frame extraction failed: ' + data.message);
-                }
-            })
-            .catch(err => alert('Error: ' + err.message));
+                })
+                .catch(err => alert('Error: ' + err.message));
         }
 
         // ==================== フレームレンダリング ====================
@@ -1216,181 +1246,149 @@
             const text = chatInput.value.trim();
             if (!text || state.isProcessing) return;
 
-            // Handle Generate mode conversation flow
-            if (state.selectedVideoMode === 'generate') {
-                handleGenerateMode(text);
-                return;
-            }
-
-            // Original behavior for other modes
-            if (!state.uploadedImage) {
-                alert('Please attach an image first');
-                return;
-            }
-
             addChatMessage('user', text);
             chatInput.value = '';
             state.isProcessing = true;
             sendBtn.disabled = true;
 
-            // Add loading message with progress dots
-            const loadingId = addChatMessage('ai', 'Got it, generating video<span id="loading-dots"></span>');
+            // Add loading message
+            const loadingMsgId = addChatMessage('ai', 'Thinking...');
 
-            // Animate dots during 7 second wait
-            let dotCount = 0;
-            const dotInterval = setInterval(() => {
-                const dotsEl = document.getElementById('loading-dots');
-                if (dotsEl) {
-                    dotCount = (dotCount + 1) % 4;
-                    dotsEl.textContent = '.'.repeat(dotCount);
-                }
-            }, 500);
+            // Helper to send the actual chat request
+            const sendRequest = (messageText) => {
+                const payload = {
+                    message: messageText,
+                    session_id: state.sessionId
+                };
 
-            // Generate video from image
-            const formData = new FormData();
-            formData.append('image', state.uploadedImage);
-            formData.append('prompt', text);
+                fetch('/editor/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        handleCommandResponse(data, loadingMsgId);
+                    })
+                    .catch(err => {
+                        updateChatMessage(loadingMsgId, 'Error: ' + err.message, true);
+                        state.isProcessing = false;
+                        sendBtn.disabled = false;
+                    });
+            };
 
-            fetch('/frames/generate-video', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                // Stop dot animation
-                clearInterval(dotInterval);
+            // If image is attached, upload it first
+            if (state.uploadedImage) {
+                const formData = new FormData();
+                formData.append('image', state.uploadedImage);
 
-                // Remove loading message
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
+                updateChatMessage(loadingMsgId, 'Uploading image...');
 
-                if (data.status === 'success') {
-                    state.generatedVideo = data.video_path;
+                fetch('/api/chat/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            // Append filename to text so parser finds it
+                            const newText = `${text} (image: ${data.filename})`;
 
-                    // Show generated video with video player
-                    addChatMessage('ai', 'Video generated successfully! Please review the preview.', true, data.video_url);
-                } else {
-                    addChatMessage('ai', 'Error: ' + data.message);
-                }
-            })
-            .catch(err => {
-                clearInterval(dotInterval);
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
-                addChatMessage('ai', 'Error: ' + err.message);
-            })
-            .finally(() => {
-                state.isProcessing = false;
-                sendBtn.disabled = false;
-                state.uploadedImage = null; // Reset
-                attachedImagePreview.classList.add('hidden');
-            });
+                            // Clear uploaded image state
+                            state.uploadedImage = null;
+                            attachedImagePreview.classList.add('hidden');
+
+                            sendRequest(newText);
+                        } else {
+                            throw new Error(data.message || 'Upload failed');
+                        }
+                    })
+                    .catch(err => {
+                        updateChatMessage(loadingMsgId, 'Error uploading image: ' + err.message, true);
+                        state.isProcessing = false;
+                        sendBtn.disabled = false;
+                    });
+            } else {
+                sendRequest(text);
+            }
         }
 
-        // Handle Generate mode conversation flow
-        function handleGenerateMode(userInput) {
-            addChatMessage('user', userInput);
-            chatInput.value = '';
-
-            // Step 1: Check if image is attached
-            if (state.conversationState === null) {
-                if (!state.uploadedImage) {
-                    addChatMessage('ai', 'I see you want to generate a video! Please attach an image first using the attachment button 📎');
-                    return;
-                }
-
-                // Image is attached, ask for duration
-                state.conversationState = 'awaiting_duration';
-                addChatMessage('ai', 'Great! I can see your image. How long should the video be? (e.g., 5 seconds, 8 seconds)');
+        function handleCommandResponse(data, msgId) {
+            if (data.status === 'error') {
+                updateChatMessage(msgId, '❌ ' + data.message, true);
+                state.isProcessing = false;
+                sendBtn.disabled = false;
                 return;
             }
 
-            // Step 2: Parse duration from user response
-            if (state.conversationState === 'awaiting_duration') {
-                const duration = parseDuration(userInput);
+            // Update message with initial response
+            updateChatMessage(msgId, data.message);
 
-                if (duration === null) {
-                    addChatMessage('ai', 'I didn\'t quite catch that. Please specify the duration in seconds (e.g., "5 seconds" or "8s")');
-                    return;
+            if (data.status === 'processing' && data.task_id) {
+                // Start polling
+                pollTaskStatus(data.task_id, msgId);
+            } else if (data.status === 'success') {
+                // Immediate success
+                if (data.intent === 'frame_edit' && data.variations) {
+                    // TODO: Show variations
+                    updateChatMessage(msgId, data.message + ' (Variations not yet implemented in UI)', true);
                 }
-
-                // Start video generation
-                state.conversationState = 'generating';
-                state.pendingDuration = duration;
-                generateVideoWithDuration(duration);
-            }
-        }
-
-        // Parse duration from user input
-        function parseDuration(text) {
-            // Match patterns like "5 seconds", "8s", "10 sec"
-            const match = text.match(/(\d+)\s*(second|sec|s|秒)/i);
-            if (match) {
-                return parseInt(match[1]);
-            }
-            return null;
-        }
-
-        // Generate video with specified duration
-        function generateVideoWithDuration(duration) {
-            state.isProcessing = true;
-            sendBtn.disabled = true;
-
-            // Add loading message
-            const loadingId = addChatMessage('ai', `Generating ${duration}-second video<span id="loading-dots"></span>`);
-
-            // Animate dots
-            let dotCount = 0;
-            const dotInterval = setInterval(() => {
-                const dotsEl = document.getElementById('loading-dots');
-                if (dotsEl) {
-                    dotCount = (dotCount + 1) % 4;
-                    dotsEl.textContent = '.'.repeat(dotCount);
-                }
-            }, 500);
-
-            // Generate video from image
-            const formData = new FormData();
-            formData.append('image', state.uploadedImage);
-            formData.append('duration', duration);
-            formData.append('mode', 'generate');
-
-            fetch('/editor/chat/generate', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                clearInterval(dotInterval);
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
-
-                if (data.status === 'success') {
-                    state.generatedVideo = data.video_path;
-
-                    // Show success message with video preview and apply button
-                    addChatMessage('ai', `✅ ${duration}-second video generated successfully! Click "Apply" to add it to the timeline.`, true, data.video_url);
-
-                    // Reset conversation state
-                    state.conversationState = null;
-                    state.uploadedImage = null;
-                    attachedImagePreview.classList.add('hidden');
-                } else {
-                    addChatMessage('ai', '❌ Error: ' + (data.message || 'Video generation failed'));
-                    state.conversationState = null;
-                }
-            })
-            .catch(err => {
-                clearInterval(dotInterval);
-                const loadingMsg = document.getElementById(loadingId);
-                if (loadingMsg) loadingMsg.remove();
-                addChatMessage('ai', '❌ Error: ' + err.message);
-                state.conversationState = null;
-            })
-            .finally(() => {
                 state.isProcessing = false;
                 sendBtn.disabled = false;
-            });
+            } else {
+                // Unknown status
+                state.isProcessing = false;
+                sendBtn.disabled = false;
+            }
+        }
+
+        function pollTaskStatus(taskId, msgId) {
+            // Add progress bar to message if not exists
+            addProgressBarToMessage(msgId);
+
+            const interval = setInterval(() => {
+                fetch(`/status?task_id=${taskId}`)
+                    .then(res => res.json())
+                    .then(statusData => {
+                        // Update progress
+                        updateChatProgress(msgId, statusData.progress_percent, statusData.message);
+
+                        if (statusData.status === 'COMPLETE') {
+                            clearInterval(interval);
+                            handleTaskCompletion(statusData, msgId);
+                        } else if (statusData.status === 'ERROR' || statusData.status === 'CANCELLED' || statusData.status === 'FAILURE') {
+                            clearInterval(interval);
+                            updateChatMessage(msgId, '❌ ' + (statusData.message || 'Task failed'), true);
+                            state.isProcessing = false;
+                            sendBtn.disabled = false;
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Polling error:', err);
+                    });
+            }, 1500);
+        }
+
+        function handleTaskCompletion(statusData, msgId) {
+            state.isProcessing = false;
+            sendBtn.disabled = false;
+
+            const videoUrl = statusData.final_video_url || statusData.output_url;
+
+            let successMsg = 'Task completed successfully!';
+            if (statusData.video_id) {
+                successMsg += ' Video ID: ' + statusData.video_id;
+            }
+
+            updateChatMessage(msgId, successMsg, true);
+
+            if (videoUrl) {
+                // Append video to the message
+                appendVideoToMessage(msgId, videoUrl);
+
+                // Auto-apply to next empty slot? Or let user click apply?
+                // Let's let user click apply like before.
+            }
         }
 
         function addChatMessage(role, content, isResponse = false, videoUrl = null) {
@@ -1410,47 +1408,87 @@
                         <span class="material-symbols-outlined !text-xl text-black">auto_awesome</span>
                     </div>
                     <div class="ai-message-content">
-                        <p style="margin-bottom: 12px;">${content}</p>
+                        <p class="message-text" style="margin-bottom: 12px;">${content}</p>
                 `;
-
-                // Video preview
-                if (videoUrl) {
-                    html += `
-                        <video controls style="width: 100%; border-radius: 8px; margin-top: 12px;">
-                            <source src="${videoUrl}" type="video/mp4">
-                            Your browser does not support the video tag.
-                        </video>
-                        <button class="apply-btn" id="apply-video-btn" style="margin-top: 12px;">Apply to Frame</button>
-                    `;
-                }
-
                 html += '</div>';
                 messageDiv.innerHTML = html;
-
-                // Video apply button handler
-                if (videoUrl) {
-                    setTimeout(() => {
-                        const applyVideoBtn = messageDiv.querySelector('#apply-video-btn');
-                        if (applyVideoBtn) {
-                            applyVideoBtn.addEventListener('click', () => {
-                                const frameId = applyGeneratedVideoToFrame(videoUrl);
-                                if (frameId !== -1) {
-                                    applyVideoBtn.disabled = true;
-                                    applyVideoBtn.textContent = `✓ Applied to Frame ${frameId + 1}`;
-                                    applyVideoBtn.style.background = '#10B981';
-                                } else {
-                                    applyVideoBtn.textContent = '✗ All frames full';
-                                    applyVideoBtn.style.background = '#EF4444';
-                                }
-                            });
-                        }
-                    }, 100);
-                }
             }
 
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
             return messageId;
+        }
+
+        function updateChatMessage(msgId, content, isFinal = false) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
+                const textEl = msgDiv.querySelector('.message-text');
+                if (textEl) textEl.textContent = content;
+            }
+        }
+
+        function addProgressBarToMessage(msgId) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
+                const contentDiv = msgDiv.querySelector('.ai-message-content');
+                if (!contentDiv.querySelector('.progress-container')) {
+                    const progressHtml = `
+                        <div class="progress-container" style="margin-top: 8px;">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs text-gray-400 progress-status">Starting...</span>
+                                <span class="text-xs text-gray-400 progress-percent">0%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-1.5">
+                                <div class="progress-bar bg-primary h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    `;
+                    contentDiv.insertAdjacentHTML('beforeend', progressHtml);
+                }
+            }
+        }
+
+        function updateChatProgress(msgId, percent, status) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
+                const bar = msgDiv.querySelector('.progress-bar');
+                const percentEl = msgDiv.querySelector('.progress-percent');
+                const statusEl = msgDiv.querySelector('.progress-status');
+
+                if (bar) bar.style.width = percent + '%';
+                if (percentEl) percentEl.textContent = percent + '%';
+                if (statusEl) statusEl.textContent = status;
+            }
+        }
+
+        function appendVideoToMessage(msgId, videoUrl) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
+                const contentDiv = msgDiv.querySelector('.ai-message-content');
+                const videoHtml = `
+                    <video controls style="width: 100%; border-radius: 8px; margin-top: 12px;">
+                        <source src="${videoUrl}" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <button class="apply-btn" style="margin-top: 12px;">Apply to Frame</button>
+                `;
+                contentDiv.insertAdjacentHTML('beforeend', videoHtml);
+
+                // Add event listener to the new button
+                const btn = contentDiv.querySelector('.apply-btn');
+                btn.addEventListener('click', () => {
+                    state.generatedVideo = videoUrl; // Update state so apply works
+                    const frameId = applyGeneratedVideoToFrame(videoUrl);
+                    if (frameId !== -1) {
+                        btn.disabled = true;
+                        btn.textContent = `✓ Applied to Frame ${frameId + 1}`;
+                        btn.style.background = '#10B981';
+                    } else {
+                        btn.textContent = '✗ All frames full';
+                        btn.style.background = '#EF4444';
+                    }
+                });
+            }
         }
 
         // ==================== Apply Generated Video to Frame ====================
@@ -1517,19 +1555,19 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    window.location.href = data.download_url;
-                } else {
-                    alert('Export failed: ' + data.message);
-                }
-            })
-            .catch(err => alert('Error: ' + err.message))
-            .finally(() => {
-                exportBtn.disabled = false;
-                exportBtn.innerHTML = '<span class="truncate">Export</span>';
-            });
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        window.location.href = data.download_url;
+                    } else {
+                        alert('Export failed: ' + data.message);
+                    }
+                })
+                .catch(err => alert('Error: ' + err.message))
+                .finally(() => {
+                    exportBtn.disabled = false;
+                    exportBtn.innerHTML = '<span class="truncate">Export</span>';
+                });
         });
 
         // ==================== バックボタン ====================
@@ -1552,4 +1590,5 @@
         }
     </script>
 </body>
+
 </html>

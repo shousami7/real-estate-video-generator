@@ -1530,6 +1530,64 @@ def get_timeline():
 # MCP Pipeline API Endpoints
 # -----------------------------------------------------------------------------
 
+@web_ui_blueprint.route('/api/chat/upload', methods=['POST'])
+def chat_upload_image():
+    """
+    Upload a single image for chat context.
+    Returns the relative path to the uploaded file.
+    """
+    try:
+        if 'image' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No image file provided"
+            }), 400
+
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({
+                "status": "error",
+                "message": "No file selected"
+            }), 400
+
+        if 'session_id' not in session:
+            session['session_id'] = str(uuid.uuid4())
+        
+        session_id = session['session_id']
+        
+        # Use standard Supabase structure: videos/{session_id}/input/
+        filename = secure_filename(file.filename)
+        storage_path = build_storage_path(session_id, "input", filename)
+        
+        file_bytes = file.read()
+        local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
+        
+        # Upload to Supabase if available
+        public_url = None
+        if is_supabase_configured():
+            public_url, upload_error = upload_bytes_to_supabase(
+                storage_path=storage_path,
+                file_bytes=file_bytes,
+                content_type=file.content_type or "image/jpeg"
+            )
+            if upload_error:
+                logger.warning(f"Supabase upload failed: {upload_error}")
+        
+        return jsonify({
+            "status": "success",
+            "filename": filename,
+            "local_path": local_path,
+            "public_url": public_url or f"/uploads/local/{storage_path}"
+        })
+
+    except Exception as e:
+        logger.error(f"Chat upload error: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 @web_ui_blueprint.route('/api/generate', methods=['POST'])
 def api_generate_video():
     """
