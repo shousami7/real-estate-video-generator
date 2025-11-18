@@ -342,6 +342,123 @@
             color: black !important;
             box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.3);
         }
+
+        /* Video Frame Slot Styles */
+        .video-frame-slot {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            background-size: cover;
+            background-position: center;
+            border-radius: 0.5rem;
+            border: 2px solid #374151;
+            transition: all 0.3s ease;
+            overflow: hidden;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-frame-slot:hover {
+            border-color: #34D399;
+            box-shadow: 0 0 0 1px #34D399;
+        }
+
+        .frame-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            font-size: 3rem;
+            color: #666;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .video-frame-slot:hover .frame-placeholder {
+            color: #34D399;
+            background: linear-gradient(135deg, #222 0%, #333 100%);
+        }
+
+        .frame-thumbnail {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 0.25rem;
+        }
+
+        .frame-delete-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            background: #ef4444;
+            border: none;
+            border-radius: 50%;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .frame-delete-btn:hover {
+            background: #dc2626;
+            transform: scale(1.1);
+        }
+
+        .frame-file-input {
+            display: none;
+        }
+
+        /* Back to Videos Button */
+        .back-to-videos-btn {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            z-index: 20;
+        }
+
+        .back-to-videos-btn:hover {
+            background: rgba(52, 211, 153, 0.8);
+            color: black;
+        }
+
+        /* Loading Spinner */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #374151;
+            border-top-color: #34D399;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
     </style>
 </head>
 <body class="bg-background-dark font-display">
@@ -401,6 +518,12 @@
                         <video id="video-player" class="w-full h-full hidden" controls>
                             <source id="video-source" type="video/mp4">
                         </video>
+
+                        <!-- Back to Videos Button -->
+                        <button id="back-to-videos-btn" class="back-to-videos-btn hidden">
+                            <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back</span>
+                            <span>Back to Videos</span>
+                        </button>
                     </div>
 
                     <!-- Upload Progress -->
@@ -415,9 +538,17 @@
                     </div>
                 </div>
 
-                <!-- Frames Grid -->
-                <div class="w-full max-w-5xl mx-auto">
-                    <h3 class="text-white text-lg font-bold mb-4">Video Frames</h3>
+                <!-- Video Frames Section (Initial State) -->
+                <div class="w-full max-w-5xl mx-auto" id="video-frames-section">
+                    <h3 class="text-white text-lg font-bold mb-4">Upload Videos</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
+                        <!-- 6 video frame slots will be inserted here by JS -->
+                    </div>
+                </div>
+
+                <!-- Extracted Frames Section (After decomposition) -->
+                <div class="w-full max-w-5xl mx-auto relative hidden" id="extracted-frames-section">
+                    <h3 class="text-white text-lg font-bold mb-4">Extracted Frames</h3>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="frames-container">
                         <!-- Frames will be inserted here by JS -->
                     </div>
@@ -484,11 +615,18 @@
     <script>
         // ==================== グローバル変数 ====================
         const state = {
-            videoPath: null,
-            videoUrl: null,
+            // 複数動画フレーム管理
+            videoFrames: {
+                // frameId: { videoPath, videoUrl, thumbnail, isProcessing }
+            },
+            expandedFrameId: null,  // 現在展開されているフレームID（フレーム分解表示中の場合）
+
+            // フレーム管理
             frames: [],
             selectedFrame: null,
             editedFrames: {},
+
+            // その他
             isProcessing: false,
             uploadedImage: null,
             generatedVideo: null,
@@ -501,6 +639,10 @@
         const videoContainer = document.getElementById('video-container');
         const editPanel = document.getElementById('edit-panel');
         const framesContainer = document.getElementById('frames-container');
+        const videoFramesContainer = document.getElementById('video-frames-container');
+        const videoFramesSection = document.getElementById('video-frames-section');
+        const extractedFramesSection = document.getElementById('extracted-frames-section');
+        const backToVideosBtn = document.getElementById('back-to-videos-btn');
         const chatContainer = document.getElementById('chat-container');
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
@@ -524,6 +666,242 @@
         // Allow chat input from the start (no frame selection required)
         chatInput.disabled = false;
         sendBtn.disabled = false;
+
+        // ==================== 初期化 ====================
+        function initializeVideoFrames() {
+            // 6つの空の動画枠を生成
+            for (let i = 0; i < 6; i++) {
+                state.videoFrames[i] = {
+                    videoPath: null,
+                    videoUrl: null,
+                    thumbnail: null,
+                    isProcessing: false
+                };
+            }
+            renderVideoFrames();
+        }
+
+        // ==================== 動画フレーム管理 ====================
+        function renderVideoFrames() {
+            videoFramesContainer.innerHTML = '';
+
+            for (let frameId = 0; frameId < 6; frameId++) {
+                const frameData = state.videoFrames[frameId];
+
+                const frameSlot = document.createElement('div');
+                frameSlot.className = 'video-frame-slot';
+                frameSlot.dataset.frameId = frameId;
+
+                // プレースホルダー
+                const placeholder = document.createElement('div');
+                placeholder.className = 'frame-placeholder';
+                placeholder.textContent = '＋';
+                frameSlot.appendChild(placeholder);
+
+                // サムネイル画像
+                const thumbnail = document.createElement('img');
+                thumbnail.className = 'frame-thumbnail';
+                if (frameData.thumbnail) {
+                    thumbnail.src = frameData.thumbnail;
+                    thumbnail.style.display = 'block';
+                } else {
+                    thumbnail.style.display = 'none';
+                }
+                frameSlot.appendChild(thumbnail);
+
+                // 削除ボタン
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'frame-delete-btn';
+                deleteBtn.innerHTML = '🗑';
+                deleteBtn.style.display = frameData.thumbnail ? 'flex' : 'none';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteVideoFrame(frameId);
+                });
+                frameSlot.appendChild(deleteBtn);
+
+                // 隠しファイル入力
+                const fileInput = document.createElement('input');
+                fileInput.className = 'frame-file-input';
+                fileInput.type = 'file';
+                fileInput.accept = 'video/*';
+                fileInput.dataset.frameId = frameId;
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        uploadVideoToFrame(frameId, e.target.files[0]);
+                    }
+                });
+                frameSlot.appendChild(fileInput);
+
+                // フレーム枠をクリックすると、ファイルダイアログを開く
+                frameSlot.addEventListener('click', () => {
+                    fileInput.click();
+                });
+
+                // ホバー時に削除ボタンを表示
+                frameSlot.addEventListener('mouseenter', () => {
+                    if (frameData.thumbnail) {
+                        deleteBtn.style.display = 'flex';
+                    }
+                });
+                frameSlot.addEventListener('mouseleave', () => {
+                    deleteBtn.style.display = 'none';
+                });
+
+                // ローディング状態の場合、スピナーを表示
+                if (frameData.isProcessing) {
+                    const spinner = document.createElement('div');
+                    spinner.className = 'loading-spinner';
+                    frameSlot.appendChild(spinner);
+                }
+
+                videoFramesContainer.appendChild(frameSlot);
+            }
+        }
+
+        function generateThumbnail(frameId, videoPath) {
+            const frameData = state.videoFrames[frameId];
+            const videoPathForBackend = videoPath?.startsWith('/')
+                ? videoPath.substring(1)
+                : videoPath;
+
+            fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: videoPathForBackend })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success' && data.frames && data.frames.length > 0) {
+                    // フレーム0のBase64画像をサムネイルとして使用
+                    frameData.thumbnail = data.frames[0].base64;
+                    frameData.isProcessing = false;
+                    renderVideoFrames();
+
+                    // 自動的にフレーム分解を開始
+                    setTimeout(() => {
+                        extractFramesForVideo(frameId);
+                    }, 300);
+                } else {
+                    alert('Failed to generate thumbnail');
+                    frameData.isProcessing = false;
+                    renderVideoFrames();
+                }
+            })
+            .catch(err => {
+                console.error('Error generating thumbnail:', err);
+                frameData.isProcessing = false;
+                renderVideoFrames();
+            });
+        }
+
+        function uploadVideoToFrame(frameId, file) {
+            if (!file.type.startsWith('video/')) {
+                alert('Please select a valid video file');
+                return;
+            }
+
+            const frameData = state.videoFrames[frameId];
+            frameData.isProcessing = true;
+            renderVideoFrames();
+
+            const formData = new FormData();
+            formData.append('video', file);
+
+            fetch('/video/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
+                    frameData.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
+                    frameData.videoUrl = data.video_url || `/${frameData.videoPath}`;
+
+                    // サムネイル画像を取得（フレーム0）
+                    generateThumbnail(frameId, frameData.videoPath);
+                } else {
+                    alert('Upload failed: ' + data.message);
+                    frameData.isProcessing = false;
+                    renderVideoFrames();
+                }
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+                frameData.isProcessing = false;
+                renderVideoFrames();
+            });
+        }
+
+        function deleteVideoFrame(frameId) {
+            const frameData = state.videoFrames[frameId];
+            frameData.videoPath = null;
+            frameData.videoUrl = null;
+            frameData.thumbnail = null;
+            frameData.isProcessing = false;
+            renderVideoFrames();
+        }
+
+        function extractFramesForVideo(frameId) {
+            const frameData = state.videoFrames[frameId];
+            if (!frameData.videoPath) {
+                alert('No video uploaded for this frame');
+                return;
+            }
+
+            frameData.isProcessing = true;
+            renderVideoFrames();
+
+            const videoPathForBackend = frameData.videoPath?.startsWith('/')
+                ? frameData.videoPath.substring(1)
+                : frameData.videoPath;
+
+            fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: videoPathForBackend })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    state.frames = data.frames;
+                    state.expandedFrameId = frameId;
+                    frameData.isProcessing = false;
+                    renderVideoFrames();
+                    showExtractedFrames();
+                } else {
+                    alert('Frame extraction failed: ' + data.message);
+                    frameData.isProcessing = false;
+                    renderVideoFrames();
+                }
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+                frameData.isProcessing = false;
+                renderVideoFrames();
+            });
+        }
+
+        function showExtractedFrames() {
+            videoFramesSection.classList.add('hidden');
+            extractedFramesSection.classList.remove('hidden');
+            backToVideosBtn.classList.remove('hidden');
+            renderFrames();
+            if (state.frames.length > 0) {
+                selectFrame(0);
+            }
+        }
+
+        function backToVideoFrames() {
+            videoFramesSection.classList.remove('hidden');
+            extractedFramesSection.classList.add('hidden');
+            backToVideosBtn.classList.add('hidden');
+            state.expandedFrameId = null;
+            renderVideoFrames();
+        }
+
+        backToVideosBtn.addEventListener('click', backToVideoFrames);
 
         // ==================== ビデオアップロード処理 ====================
         uploadZone.addEventListener('click', () => videoInput.click());
@@ -1009,6 +1387,20 @@
         backBtn.addEventListener('click', () => {
             window.location.href = '/';
         });
+
+        // ==================== ページ初期化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeVideoFrames();
+        });
+
+        // 既にDOMが読み込まれている場合は直ちに初期化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                initializeVideoFrames();
+            });
+        } else {
+            initializeVideoFrames();
+        }
     </script>
 </body>
 </html>
