@@ -218,8 +218,10 @@ class VideoComposer:
                 # First transition: starts at (duration of clip 1 - transition_duration)
                 accumulated_offset = video_durations[0] - transition_duration
             else:
-                # Subsequent transitions: add the duration of the previous clip minus the overlap
-                accumulated_offset += video_durations[i-1] - transition_duration
+                # FIX: The previous segment's duration already includes the required overlap from the *previous* transition.
+                # We only need to add the full duration of the video just added at the previous step.
+                # The total elapsed time up to the start of the current transition is the previous offset plus the full clip duration.
+                accumulated_offset += video_durations[i-1]
 
             transition_filter = f"[{current_input}][v{i}]xfade=transition={transition_type}:duration={transition_duration}:offset={accumulated_offset}[{output_label}]"
             transition_filters.append(transition_filter)

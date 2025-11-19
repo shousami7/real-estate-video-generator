@@ -313,7 +313,7 @@ class VeoVideoGenerator:
                 # Poll until video generation completes
                 logger.info("Waiting for video generation to complete...")
                 poll_count = 0
-                max_polls = 10  # 5 minutes with 30 second intervals
+                max_polls = 30  # Increased to 15 minutes (30 * 30s)
 
                 while not operation.done:
                     time.sleep(30)
