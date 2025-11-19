@@ -1358,11 +1358,13 @@ def editor_chat():
             }
 
         # アシスタントの応答を履歴に追加
+        # 循環参照を避けるため、chat_historyを除外したコピーを作成
+        result_for_history = {k: v for k, v in result.items() if k != 'chat_history'}
         session['chat_history'].append({
             "role": "assistant",
             "content": result.get('message', ''),
             "timestamp": datetime.now().isoformat(),
-            "data": result
+            "data": result_for_history
         })
 
         # チャット履歴を結果に含める
