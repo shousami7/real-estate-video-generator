@@ -18,6 +18,7 @@ from utils.response_utils import build_task_response
 from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
+    get_initialization_error,
     upload_bytes_to_supabase,
     build_storage_path,
     SUPABASE_CLIENT,
@@ -46,7 +47,12 @@ SUPABASE_REQUIRED = is_supabase_required()
 if is_supabase_configured():
     logger.info("✓ Supabase client ready (web process)")
 else:
-    message = "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. Falling back to local storage only."
+    init_error = get_initialization_error()
+    if init_error:
+        message = f"⚠️  Supabase not available: {init_error}"
+    else:
+        message = "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set. Falling back to local storage only."
+    
     if SUPABASE_REQUIRED:
         raise RuntimeError(
             "SUPABASE_REQUIRED=1 but no Supabase credentials were found. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."

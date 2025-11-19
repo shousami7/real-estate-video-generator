@@ -11,6 +11,7 @@ from generate_property_video import PropertyVideoGenerator
 from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
+    get_initialization_error,
     upload_file_to_supabase,
     upload_video_file,
     upload_log_file,
@@ -29,9 +30,14 @@ SUPABASE_REQUIRED = is_supabase_required()
 if is_supabase_configured():
     logger.info("✓ Supabase client initialized in Celery worker")
 else:
-    warning_message = (
-        "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in Celery worker. Generated videos will be served from local storage."
-    )
+    init_error = get_initialization_error()
+    if init_error:
+        warning_message = f"⚠️  Supabase not available in Celery worker: {init_error}"
+    else:
+        warning_message = (
+            "⚠️  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in Celery worker. Generated videos will be served from local storage."
+        )
+    
     if SUPABASE_REQUIRED:
         raise RuntimeError(
             "SUPABASE_REQUIRED=1 but the Celery worker could not initialize the Supabase client."

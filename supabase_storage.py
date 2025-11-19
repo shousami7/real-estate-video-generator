@@ -28,6 +28,7 @@ SUPABASE_REQUIRED = _env_truthy("SUPABASE_REQUIRED", "false")
 _SUPABASE_DISABLED_REASON: Optional[str] = None
 _PUBLIC_URL_CACHE: Dict[str, Tuple[str, datetime]] = {}
 _CACHE_TTL_SECONDS = 3600
+_INIT_ERROR: Optional[str] = None
 
 
 def _disable_supabase(reason: str) -> None:
@@ -49,6 +50,8 @@ def _init_supabase_client() -> Optional["Client"]:
     """
     Initialize a Supabase client if credentials are provided.
     """
+    global _INIT_ERROR
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or create_client is None:
         if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
             message = (
@@ -58,6 +61,7 @@ def _init_supabase_client() -> Optional["Client"]:
             message = "Supabase package not available; install supabase-py to enable uploads."
 
         logger.debug(message)
+        _INIT_ERROR = message
         if SUPABASE_REQUIRED:
             raise RuntimeError(
                 "Supabase uploads are required (SUPABASE_REQUIRED=1) but cannot be initialized: %s"
@@ -67,7 +71,9 @@ def _init_supabase_client() -> Optional["Client"]:
 
     parsed_url = urlparse(SUPABASE_URL)
     if not parsed_url.scheme or not parsed_url.netloc:
-        logger.warning("Invalid SUPABASE_URL provided; storage uploads will use local disk.")
+        message = "Invalid SUPABASE_URL provided; storage uploads will use local disk."
+        logger.warning(message)
+        _INIT_ERROR = message
         if SUPABASE_REQUIRED:
             raise RuntimeError("Supabase uploads are required but SUPABASE_URL is invalid: %s" % SUPABASE_URL)
         return None
@@ -98,6 +104,11 @@ def is_supabase_configured() -> bool:
 def is_supabase_required() -> bool:
     """Return True when SUPABASE_REQUIRED=1 (local fallback should be disabled)."""
     return SUPABASE_REQUIRED
+
+
+def get_initialization_error() -> Optional[str]:
+    """Return the reason why Supabase client initialization failed, if any."""
+    return _INIT_ERROR
 
 
 def upload_bytes_to_supabase(
