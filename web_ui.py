@@ -26,6 +26,10 @@ from supabase_storage import (
 from chat_command_handler import ChatCommandHandler, CommandIntent
 from scene_manager import SceneManager
 from datetime import datetime
+from utils.video_duration import probe_video_duration as get_video_duration
+
+# Cache for Supabase task logs to prevent redundant downloads
+_TASK_LOG_CACHE: Dict[str, dict] = {}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,6 +74,77 @@ def _save_bytes_to_local_storage(relative_path: str, file_bytes: bytes) -> str:
     with open(full_path, "wb") as destination:
         destination.write(file_bytes)
     return full_path
+
+
+def _ingest_api_image(video_id: str, image_file: Any, stage: str) -> tuple[Optional[str], Optional[tuple]]:
+    """
+    Helper to process image uploads for API endpoints.
+    Returns (image_path, error_response).
+    If error_response is set, return it immediately.
+    """
+    if not image_file or not image_file.filename:
+        return None, None
+
+    filename = secure_filename(image_file.filename)
+    storage_path = build_storage_path(video_id, "input", filename)
+    file_bytes = image_file.read()
+
+    if not file_bytes:
+        return None, (jsonify(build_task_response(
+            task_id="",
+            video_id=video_id,
+            stage=stage,
+            status="error",
+            error="Empty image file"
+        )), 400)
+
+    # Save locally
+    local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
+    
+    # Upload to Supabase if configured
+    if is_supabase_configured():
+        _, upload_error = upload_bytes_to_supabase(
+            storage_path=storage_path,
+            file_bytes=file_bytes,
+            content_type=image_file.content_type or "image/jpeg"
+        )
+        if upload_error:
+            logger.warning(f"Supabase upload failed: {upload_error}")
+
+    return local_path, None
+
+
+def _load_task_log(video_id: str, task_id: str) -> Optional[dict]:
+    """
+    Load task log from Supabase with caching.
+    """
+    cached = _TASK_LOG_CACHE.get(task_id)
+    if cached:
+        return cached
+
+    if not is_supabase_configured():
+        return None
+
+    try:
+        log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
+        log_bytes = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
+        if log_bytes:
+            data = json.loads(log_bytes)
+            _TASK_LOG_CACHE[task_id] = data
+            return data
+    except Exception as e:
+        logger.warning(f"Could not load task log from Supabase: {e}")
+    
+    return None
+
+
+REQUIRED_TASK_KEYS = {
+    "task_id", "video_id", "stage", "status", "output_url", "frames", "error"
+}
+
+
+def _has_full_payload(payload: Any) -> bool:
+    return isinstance(payload, dict) and REQUIRED_TASK_KEYS.issubset(payload.keys())
 
 @web_ui_blueprint.route('/')
 def index():
@@ -1415,26 +1490,16 @@ def get_task_status(task_id: str):
             result = task.result if isinstance(task.result, dict) else {}
             video_id = result.get('video_id') or get_task_video_mapping(task_id) or video_id or "unknown"
 
-            # If Celery result already contains the unified payload, return it without downloading logs
-            if result and all(k in result for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
+            # 1) If Celery result already contains the full unified payload, return it
+            if _has_full_payload(result):
                 return jsonify(result)
 
-            # Load log from Supabase (required for unified response) only if result is missing
-            if not result and is_supabase_configured():
-                try:
-                    log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
-                    log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
-                    if log_response:
-                        log_data = json.loads(log_response)
-                        # Ensure all required keys exist
-                        if all(k in log_data for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
-                            return jsonify(log_data)
-                        else:
-                            logger.warning(f"Log file missing required keys: {log_path}")
-                except Exception as log_error:
-                    logger.warning(f"Could not load task log from Supabase: {log_error}")
+            # 2) If not full, try loading from Supabase log (with cache)
+            log_data = _load_task_log(video_id, task_id)
+            if log_data and _has_full_payload(log_data):
+                return jsonify(log_data)
 
-            # Fallback: construct response from task result or defaults
+            # 3) Fallback: construct response from task result or defaults
             return jsonify(build_task_response(
                 task_id=task_id,
                 video_id=video_id,
@@ -1455,16 +1520,10 @@ def get_task_status(task_id: str):
                     return jsonify(result)
 
             # Try to load error log from Supabase only if needed
-            if is_supabase_configured() and video_id and video_id != "unknown":
-                try:
-                    log_path = build_storage_path(video_id, "logs", f"{task_id}.json")
-                    log_response = SUPABASE_CLIENT.storage.from_(SUPABASE_BUCKET_NAME).download(log_path)
-                    if log_response:
-                        log_data = json.loads(log_response)
-                        if log_data.get('status') == 'error':
-                            return jsonify(log_data)
-                except Exception:
-                    pass
+            if video_id and video_id != "unknown":
+                log_data = _load_task_log(video_id, task_id)
+                if log_data and log_data.get('status') == 'error':
+                    return jsonify(log_data)
 
             return jsonify(build_task_response(
                 task_id=task_id,
@@ -1596,7 +1655,7 @@ def api_generate_video():
     Request (multipart/form-data or JSON):
         - prompt: str (required) - Video generation prompt
         - video_id: str (optional) - Session/video ID for context
-        - image: file (optional) - Image file for image-to-video
+        - image: file (required for now) - Image file for image-to-video
         - duration: int (optional) - Video duration in seconds (4-20, default: 8)
 
     Returns (202 Accepted):
@@ -1649,34 +1708,9 @@ def api_generate_video():
         session['api_session_id'] = video_id
 
         # Handle image upload if provided
-        image_path = None
-        if image_file and image_file.filename:
-            filename = secure_filename(image_file.filename)
-            storage_path = build_storage_path(video_id, "input", filename)
-            file_bytes = image_file.read()
-
-            if not file_bytes:
-                return jsonify(build_task_response(
-                    task_id="",
-                    video_id=video_id,
-                    stage="generate",
-                    status="error",
-                    error="Empty image file"
-                )), 400
-
-            # Save locally
-            local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
-            image_path = local_path
-
-            # Upload to Supabase if configured
-            if is_supabase_configured():
-                public_url, upload_error = upload_bytes_to_supabase(
-                    storage_path=storage_path,
-                    file_bytes=file_bytes,
-                    content_type=image_file.content_type or "image/jpeg"
-                )
-                if upload_error:
-                    logger.warning(f"Supabase upload failed: {upload_error}")
+        image_path, error_resp = _ingest_api_image(video_id, image_file, "generate")
+        if error_resp:
+            return error_resp
 
         # Check if we have an image (required for now)
         if not image_path:
@@ -1734,7 +1768,7 @@ def api_extend_video():
     Request (multipart/form-data or JSON):
         - video_id: str (required) - Existing video/session ID
         - extra_duration: int (optional) - Duration for extended segment (4-20, default: 8)
-        - image: file (optional) - New image for extension
+        - image: file (required for now) - New image for extension
         - prompt: str (optional) - Extension prompt
 
     Returns (202 Accepted):
@@ -1795,34 +1829,9 @@ def api_extend_video():
             )), 404
 
         # Handle image upload if provided
-        image_path = None
-        if image_file and image_file.filename:
-            filename = secure_filename(image_file.filename)
-            storage_path = build_storage_path(video_id, "input", filename)
-            file_bytes = image_file.read()
-
-            if not file_bytes:
-                return jsonify(build_task_response(
-                    task_id="",
-                    video_id=video_id,
-                    stage="extend",
-                    status="error",
-                    error="Empty image file"
-                )), 400
-
-            # Save locally
-            local_path = _save_bytes_to_local_storage(storage_path, file_bytes)
-            image_path = local_path
-
-            # Upload to Supabase if configured
-            if is_supabase_configured():
-                public_url, upload_error = upload_bytes_to_supabase(
-                    storage_path=storage_path,
-                    file_bytes=file_bytes,
-                    content_type=image_file.content_type or "image/jpeg"
-                )
-                if upload_error:
-                    logger.warning(f"Supabase upload failed: {upload_error}")
+        image_path, error_resp = _ingest_api_image(video_id, image_file, "extend")
+        if error_resp:
+            return error_resp
 
         # Check if we have an image (required for now)
         if not image_path:
@@ -2026,8 +2035,22 @@ def api_edit_frame():
         # Parse request data
         data = request.get_json() or {}
         video_id = data.get('video_id')
-        frame_index = data.get('frame_index')
+        raw_frame_index = data.get('frame_index')
         instruction = data.get('instruction')
+
+        # Validate frame_index immediately
+        try:
+            frame_index = int(raw_frame_index)
+            if frame_index < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify(build_task_response(
+                task_id="",
+                video_id=video_id or "unknown",
+                stage="edit",
+                status="error",
+                error="frame_index must be a non-negative integer",
+            )), 400
 
         # Validate inputs
         if not video_id:
