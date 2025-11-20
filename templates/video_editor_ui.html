@@ -797,10 +797,11 @@
         <!-- Main Content -->
         <main class="flex flex-1 overflow-hidden">
             <!-- Left Section: Video Player and Frames -->
-            <div class="flex-1 flex flex-col p-6 overflow-y-auto">
+            <div class="flex-1 flex flex-col p-6 overflow-hidden h-full">
                 <!-- Video Player Area (with upload UI when no video) -->
-                <div class="w-full max-w-5xl mx-auto mb-8" id="video-player-area">
-                    <div class="aspect-video rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative"
+                <div class="w-full mb-4 flex-1 min-h-0 flex flex-col items-center justify-center"
+                    id="video-player-area">
+                    <div class="aspect-video max-h-full w-full max-w-full rounded-xl overflow-hidden bg-panel-dark flex items-center justify-center relative shadow-lg"
                         id="video-container">
                         <!-- Upload UI (shown when no video) -->
                         <div id="upload-zone"
@@ -846,7 +847,7 @@
                 </div>
 
                 <!-- Video Frames Section (Initial State) -->
-                <div class="w-full max-w-5xl mx-auto" id="video-frames-section">
+                <div class="w-full shrink-0" id="video-frames-section">
                     <h3 class="text-white text-lg font-bold mb-4">Upload Videos</h3>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
                         <!-- 6 video frame slots will be inserted here by JS -->
@@ -854,7 +855,7 @@
                 </div>
 
                 <!-- Extracted Frames Section (After decomposition) -->
-                <div class="w-full max-w-5xl mx-auto relative hidden" id="extracted-frames-section">
+                <div class="w-full relative hidden shrink-0" id="extracted-frames-section">
                     <h3 class="text-white text-lg font-bold mb-4">Extracted Frames</h3>
                     <div class="grid grid-cols-6 gap-3" id="frames-container">
                         <!-- Frames will be inserted here by JS -->
@@ -992,9 +993,6 @@
 
         // ==================== 初期化 ====================
         function initializeVideoFrames() {
-            // 古いアップロードUIを非表示にする
-            uploadZone.style.display = 'none';
-
             // 6つの空の動画枠を生成
             for (let i = 0; i < 6; i++) {
                 state.videoFrames[i] = {
