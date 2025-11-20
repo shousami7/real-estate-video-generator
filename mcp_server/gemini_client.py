@@ -10,7 +10,9 @@ Prereqs (run from repo root or this directory):
   pip install -r requirements.txt google-genai anyio
 
 Env vars:
-- GOOGLE_API_KEY: required for Gemini (or use Vertex AI auth in your environment)
+- GOOGLE_API_KEY: required for Gemini (unless using Vertex AI)
+- GOOGLE_CLOUD_PROJECT: required for Vertex AI
+- GOOGLE_CLOUD_LOCATION: required for Vertex AI (e.g. us-central1)
 - BACKEND_URL: backend Flask URL for the MCP server (default: http://localhost:5000)
 - GEMINI_MODEL: optional, defaults to gemini-2.0-flash-exp
 - MCP_SERVER_CMD: optional override for the server command (default: python server.py)
@@ -91,16 +93,17 @@ def render_content(result) -> str:
 
 async def main() -> None:
     api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise SystemExit("Missing GOOGLE_API_KEY for Gemini.")
+    project = os.getenv("GOOGLE_CLOUD_PROJECT")
+    location = os.getenv("GOOGLE_CLOUD_LOCATION")
 
-    backend_url = os.getenv("BACKEND_URL", "http://localhost:5000")
-    server_cmd = os.getenv("MCP_SERVER_CMD", "python server.py")
-    cmd_parts = shlex.split(server_cmd)
-    if not cmd_parts:
-        raise SystemExit("MCP_SERVER_CMD is empty.")
-
-    gemini_client = genai.Client(api_key=api_key)
+    if project and location:
+        print(f"Using Vertex AI (Project: {project}, Location: {location})")
+        gemini_client = genai.Client(vertexai=True, project=project, location=location)
+    elif api_key:
+        print("Using Google AI Studio (API Key)")
+        gemini_client = genai.Client(api_key=api_key)
+    else:
+        raise SystemExit("Missing credentials. Set GOOGLE_API_KEY or (GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION).")
     server_params = StdioServerParameters(
         command=cmd_parts[0],
         args=cmd_parts[1:],
