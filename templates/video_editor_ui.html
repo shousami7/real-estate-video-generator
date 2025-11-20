@@ -465,6 +465,296 @@
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
+
+        /* Plan Sheet Container */
+        .plan-sheet {
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(30, 30, 30, 0.9) 100%);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(52, 211, 153, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+                0 2px 8px rgba(52, 211, 153, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .plan-sheet::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.3), transparent);
+        }
+
+        .plan-sheet:hover {
+            border-color: rgba(52, 211, 153, 0.4);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4),
+                0 4px 12px rgba(52, 211, 153, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        /* Header */
+        .sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .sheet-title {
+            font-weight: 600;
+            color: #34D399;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            opacity: 0.9;
+        }
+
+        .edit-btn {
+            background: rgba(52, 211, 153, 0.1);
+            border: 1px solid rgba(52, 211, 153, 0.2);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 6px 10px;
+            opacity: 0.5;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .edit-btn:hover {
+            opacity: 1;
+            background: rgba(52, 211, 153, 0.15);
+            border-color: rgba(52, 211, 153, 0.4);
+            transform: scale(1.05);
+        }
+
+        .edit-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Body Fields */
+        .sheet-body {
+            margin-bottom: 20px;
+        }
+
+        .field {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            color: #E2E8F0;
+            font-size: 14px;
+            align-items: center;
+        }
+
+        .field label {
+            font-weight: 500;
+            min-width: 80px;
+            color: rgba(156, 163, 175, 0.9);
+            font-size: 13px;
+            letter-spacing: 0.2px;
+        }
+
+        .editable-value {
+            color: #fff;
+            font-weight: 400;
+            letter-spacing: 0.1px;
+        }
+
+        .non-editable {
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: 400;
+        }
+
+        .plan-sheet .edit-input {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px;
+            padding: 4px 8px;
+            color: #fff !important;
+            font-size: 14px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: none !important;
+        }
+
+        .plan-sheet .edit-input:hover {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-color: rgba(52, 211, 153, 0.3) !important;
+        }
+
+        .plan-sheet .edit-input:focus {
+            outline: none !important;
+            border-color: #34D399 !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.2) !important;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Action Buttons */
+        .sheet-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-generate {
+            background: linear-gradient(135deg, #34D399 0%, #2bc787 100%);
+            color: #0a0a0a;
+            border: none;
+            padding: 10px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            letter-spacing: 0.3px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(52, 211, 153, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+        }
+
+        .btn-generate:hover {
+            background: linear-gradient(135deg, #2bc787 0%, #22b573 100%);
+            box-shadow: 0 6px 16px rgba(52, 211, 153, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+
+        .btn-generate:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(52, 211, 153, 0.2);
+        }
+
+        .btn-generate:disabled {
+            background: rgba(74, 85, 104, 0.5);
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+            opacity: 0.6;
+        }
+
+        .btn-delete {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 10px 28px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+        }
+
+        .btn-delete:hover {
+            background: rgba(239, 68, 68, 0.25);
+            border-color: rgba(239, 68, 68, 0.5);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn-delete:active {
+            transform: translateY(0);
+        }
+
+        .btn-delete:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Progress Bar */
+        .progress-section {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .progress-label {
+            font-size: 12px;
+            color: rgba(156, 163, 175, 0.9);
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(42, 42, 42, 0.8);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #34D399 0%, #10b981 50%, #34D399 100%);
+            background-size: 200% 100%;
+            animation: shimmer 2s ease-in-out infinite;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        /* Complete Message */
+        .complete-message {
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #34D399;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 8px rgba(52, 211, 153, 0.1);
+        }
+
+        .view-link {
+            color: #60a5fa;
+            text-decoration: none;
+            margin-left: 8px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid transparent;
+        }
+
+        .view-link:hover {
+            color: #93c5fd;
+            border-bottom-color: #60a5fa;
+        }
     </style>
 </head>
 
@@ -566,7 +856,7 @@
                 <!-- Extracted Frames Section (After decomposition) -->
                 <div class="w-full max-w-5xl mx-auto relative hidden" id="extracted-frames-section">
                     <h3 class="text-white text-lg font-bold mb-4">Extracted Frames</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="frames-container">
+                    <div class="grid grid-cols-6 gap-3" id="frames-container">
                         <!-- Frames will be inserted here by JS -->
                     </div>
                 </div>
@@ -587,7 +877,7 @@
 
                 <!-- Chat Messages Area -->
                 <div class="flex-1 flex flex-col p-4 overflow-y-auto" id="chat-container">
-                    <div class="text-center text-gray-500 py-8">
+                    <div id="chat-placeholder" class="text-center text-gray-500 py-8">
                         <span class="material-symbols-outlined text-6xl mb-2">photo_library</span>
                         <p class="text-sm">Select a frame to start editing with AI</p>
                     </div>
@@ -630,10 +920,9 @@
                         </div>
                         <input id="chat-input"
                             class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors"
-                            placeholder="Describe the edit you want..." type="text" disabled />
+                            placeholder="Describe the edit you want..." type="text" />
                         <button id="send-btn"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled>
+                            class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
                             <span class="material-symbols-outlined !text-xl">arrow_upward</span>
                         </button>
                     </div>
@@ -662,7 +951,9 @@
             generatedVideo: null,
             selectedVideoMode: null,
             conversationState: null, // Track conversation state for Generate mode
-            pendingDuration: null // Store duration when AI asks for it
+            pendingDuration: null, // Store duration when AI asks for it
+            planSheets: [],       // Track all active plan sheets
+            sessionId: null,      // Session ID for video generation
         };
 
         // ==================== DOM要素 ====================
@@ -724,43 +1015,48 @@
                 const frameData = state.videoFrames[frameId];
 
                 const frameSlot = document.createElement('div');
-                frameSlot.className = 'video-frame-slot';
+                // Base classes for the slot
+                let baseClasses = 'aspect-video bg-[#1a1a1a] rounded-lg flex items-center justify-center relative group transition-all duration-200';
+
+                if (frameData.thumbnail) {
+                    // Filled state
+                    frameSlot.className = `${baseClasses} border-2 border-transparent hover:border-gray-500 cursor-pointer overflow-hidden`;
+                } else {
+                    // Empty state
+                    frameSlot.className = `${baseClasses} border-2 border-dashed border-gray-600 hover:border-gray-500 cursor-pointer`;
+                }
+
                 frameSlot.dataset.frameId = frameId;
 
-                // プレースホルダー
-                const placeholder = document.createElement('div');
-                placeholder.className = 'frame-placeholder';
-                placeholder.textContent = '＋';
-                frameSlot.appendChild(placeholder);
-
-                // サムネイル画像
-                const thumbnail = document.createElement('img');
-                thumbnail.className = 'frame-thumbnail';
                 if (frameData.thumbnail) {
+                    // Thumbnail
+                    const thumbnail = document.createElement('img');
+                    thumbnail.className = 'w-full h-full object-cover';
                     thumbnail.src = frameData.thumbnail;
-                    thumbnail.style.display = 'block';
+                    frameSlot.appendChild(thumbnail);
+
+                    // Delete button (only for filled slots)
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'absolute top-1 right-1 bg-black/70 text-white rounded-full p-1 hover:bg-red-600 transition-colors hidden group-hover:flex items-center justify-center';
+                    deleteBtn.innerHTML = '<span class="material-symbols-outlined !text-sm">close</span>';
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteVideoFrame(frameId);
+                    });
+                    frameSlot.appendChild(deleteBtn);
                 } else {
-                    thumbnail.style.display = 'none';
+                    // Empty state icon
+                    const icon = document.createElement('span');
+                    icon.className = 'material-symbols-outlined text-gray-500 !text-3xl';
+                    icon.textContent = 'videocam_off';
+                    frameSlot.appendChild(icon);
                 }
-                frameSlot.appendChild(thumbnail);
 
-                // 削除ボタン
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'frame-delete-btn';
-                deleteBtn.innerHTML = '🗑';
-                deleteBtn.style.display = frameData.thumbnail ? 'flex' : 'none';
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteVideoFrame(frameId);
-                });
-                frameSlot.appendChild(deleteBtn);
-
-                // 隠しファイル入力
+                // Hidden file input
                 const fileInput = document.createElement('input');
-                fileInput.className = 'frame-file-input';
                 fileInput.type = 'file';
                 fileInput.accept = 'video/*';
-                fileInput.dataset.frameId = frameId;
+                fileInput.className = 'hidden';
                 fileInput.addEventListener('change', (e) => {
                     if (e.target.files.length > 0) {
                         uploadVideoToFrame(frameId, e.target.files[0]);
@@ -768,26 +1064,16 @@
                 });
                 frameSlot.appendChild(fileInput);
 
-                // フレーム枠をクリックすると、空なら動画アップロード、既に動画があればフレーム抽出
+                // Click handler
                 frameSlot.addEventListener('click', () => {
                     if (frameData.videoPath) {
-                        // 既に動画が入っている場合は、フレーム抽出ビューを表示
                         extractFramesForVideo(frameId);
                     } else {
-                        // 空の場合は、ファイルダイアログを開く
                         fileInput.click();
                     }
                 });
 
-                // ホバー時に削除ボタンを表示
-                frameSlot.addEventListener('mouseenter', () => {
-                    if (frameData.thumbnail) {
-                        deleteBtn.style.display = 'flex';
-                    }
-                });
-                frameSlot.addEventListener('mouseleave', () => {
-                    deleteBtn.style.display = 'none';
-                });
+
 
                 // ローディング状態の場合、スピナーを表示
                 if (frameData.isProcessing) {
@@ -795,7 +1081,6 @@
                     spinner.className = 'loading-spinner';
                     frameSlot.appendChild(spinner);
                 }
-
                 videoFramesContainer.appendChild(frameSlot);
             }
         }
@@ -1084,6 +1369,13 @@
                 // ポップアップを閉じる
                 videoModePopup.classList.remove('show');
 
+                // Auto-populate for Generate mode
+                if (mode === 'generate') {
+                    chatInput.value = "Generate: ";
+                    chatInput.placeholder = "(type what you want to make video of)";
+                    chatInput.focus();
+                }
+
                 console.log('Selected video mode:', mode);
             });
         });
@@ -1237,8 +1529,22 @@
         sendBtn.addEventListener('click', () => sendMessage());
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+                if (chatInput.value.startsWith('Generate: ')) {
+                    e.preventDefault();
+                    const prompt = chatInput.value.replace('Generate: ', '').trim();
+                    if (prompt) {
+                        createPlanSheet({
+                            mode: 'Generate',
+                            duration: 8,  // default
+                            prompt: prompt,
+                            pic: state.uploadedImage ? 'yes' : 'no'
+                        });
+                        chatInput.value = '';  // clear input
+                    }
+                } else {
+                    e.preventDefault();
+                    sendMessage();
+                }
             }
         });
 
@@ -1393,6 +1699,11 @@
 
         function addChatMessage(role, content, isResponse = false, videoUrl = null) {
             const messageId = 'msg-' + Date.now();
+
+            // Hide placeholder
+            const placeholder = document.getElementById('chat-placeholder');
+            if (placeholder) placeholder.classList.add('hidden');
+
             const messageDiv = document.createElement('div');
             messageDiv.id = messageId;
             messageDiv.className = 'flex gap-3 chat-message';
@@ -1451,6 +1762,293 @@
         function updateChatProgress(msgId, percent, status) {
             const msgDiv = document.getElementById(msgId);
             if (msgDiv) {
+                const progressBar = msgDiv.querySelector('.progress-bar');
+                const percentText = msgDiv.querySelector('.progress-percent');
+                const statusText = msgDiv.querySelector('.progress-status');
+
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (percentText) percentText.textContent = `${percent}%`;
+                if (statusText && status) statusText.textContent = status;
+            }
+        }
+
+        function appendVideoToMessage(msgId, videoUrl) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
+                const contentDiv = msgDiv.querySelector('.ai-message-content');
+                const videoHtml = `
+                    <div class="mt-3 rounded-lg overflow-hidden border border-gray-700">
+                        <video controls class="w-full" src="${videoUrl}"></video>
+                    </div>
+                `;
+                contentDiv.insertAdjacentHTML('beforeend', videoHtml);
+            }
+        }
+
+        // ==================== Plan Sheet Functions ====================
+
+        function createPlanSheet(config) {
+            // Hide placeholder
+            const placeholder = document.getElementById('chat-placeholder');
+            if (placeholder) placeholder.classList.add('hidden');
+
+            const sheetHTML = generatePlanSheetHTML(config);
+            chatContainer.insertAdjacentHTML('beforeend', sheetHTML);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Add to state
+            const sheetId = Date.now().toString();
+            state.planSheets.push({
+                id: sheetId,
+                ...config
+            });
+        }
+
+        function generatePlanSheetHTML(config) {
+            const timestamp = Date.now();
+            const hasPic = config.pic === 'yes';
+
+            return `
+            <div class="plan-sheet" data-sheet-id="${timestamp}">
+                <!-- Header -->
+                <div class="sheet-header">
+                    <span class="sheet-title">Plan Sheet (Auto Generated)</span>
+                    <button class="edit-btn" onclick="toggleEdit(this)" title="Edit All">
+                        <span class="material-symbols-outlined" style="font-size: 16px;">edit</span>
+                    </button>
+                </div>
+                
+                <!-- Body -->
+                <div class="sheet-body">
+                    <!-- Mode (non-editable) -->
+                    <div class="field">
+                        <label>Mode:</label>
+                        <span class="non-editable">${config.mode}</span>
+                    </div>
+                    
+                    <!-- Duration (editable) -->
+                    <div class="field">
+                        <label>Duration:</label>
+                        <span class="editable-value cursor-pointer hover:text-white transition-colors" 
+                              onclick="activateFieldEdit(this, 'number')"
+                              title="Click to edit">${config.duration} sec</span>
+                        <input type="number" class="edit-input hidden" value="${config.duration}" min="4" max="20" 
+                               onblur="saveFieldEdit(this, 'sec')" onkeypress="handleEditKeypress(event, this, 'sec')">
+                    </div>
+                    
+                    <!-- Prompt (editable) -->
+                    <div class="field">
+                        <label>Prompt:</label>
+                        <span class="editable-value cursor-pointer hover:text-white transition-colors" 
+                              onclick="activateFieldEdit(this, 'text')"
+                              title="Click to edit">${config.prompt}</span>
+                        <input type="text" class="edit-input hidden w-full" value="${config.prompt}"
+                               onblur="saveFieldEdit(this)" onkeypress="handleEditKeypress(event, this)">
+                    </div>
+                    
+                    <!-- pic (non-editable) -->
+                    <div class="field">
+                        <label>pic:</label>
+                        <span class="non-editable">${hasPic ? 'yes' : 'no'}</span>
+                    </div>
+                </div>
+                
+                <!-- Actions -->
+                <div class="sheet-actions">
+                    <button class="btn-generate" onclick="executeGenerate(this)">Generate</button>
+                    <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
+                </div>
+            </div>
+            `;
+        }
+
+        function activateFieldEdit(span, type) {
+            const input = span.nextElementSibling;
+            span.classList.add('hidden');
+            input.classList.remove('hidden');
+            input.focus();
+            if (type === 'number') {
+                input.select();
+            }
+        }
+
+        function saveFieldEdit(input, suffix = '') {
+            const span = input.previousElementSibling;
+            const value = input.value;
+            span.textContent = value + (suffix ? ' ' + suffix : '');
+            input.classList.add('hidden');
+            span.classList.remove('hidden');
+        }
+
+        function handleEditKeypress(e, input, suffix = '') {
+            if (e.key === 'Enter') {
+                input.blur(); // Triggers saveFieldEdit
+            }
+        }
+
+        function toggleEdit(btn) {
+            const sheet = btn.closest('.plan-sheet');
+            const isEditing = btn.dataset.editing === 'true';
+            const iconSpan = btn.querySelector('.material-symbols-outlined');
+
+            if (!isEditing) {
+                // Enter edit mode
+                sheet.querySelectorAll('.editable-value').forEach(el => {
+                    el.classList.add('hidden');
+                });
+                sheet.querySelectorAll('.edit-input').forEach(input => {
+                    input.classList.remove('hidden');
+                });
+                iconSpan.textContent = 'save';
+                btn.dataset.editing = 'true';
+            } else {
+                // Save and exit edit mode
+                sheet.querySelectorAll('.edit-input').forEach(input => {
+                    const valueSpan = input.previousElementSibling;
+                    if (input.type === 'number') {
+                        valueSpan.textContent = `${input.value} sec`;
+                    } else {
+                        valueSpan.textContent = input.value;
+                    }
+                    input.classList.add('hidden');
+                    valueSpan.classList.remove('hidden');
+                });
+                iconSpan.textContent = 'edit';
+                btn.dataset.editing = 'false';
+            }
+        }
+
+        function deletePlanSheet(btn) {
+            const sheet = btn.closest('.plan-sheet');
+
+            // If task is running, show confirmation
+            if (sheet.dataset.taskId) {
+                if (!confirm('Task is running. Are you sure you want to delete this plan?')) {
+                    return;
+                }
+            }
+
+            // Remove from DOM
+            sheet.remove();
+        }
+
+        function executeGenerate(btn) {
+            const sheet = btn.closest('.plan-sheet');
+
+            // Extract values from Plan Sheet
+            const duration = parseInt(sheet.querySelector('.field:nth-child(2) input').value);
+            const prompt = sheet.querySelector('.field:nth-child(3) input').value;
+            const hasPic = sheet.querySelector('.field:nth-child(4) .non-editable').textContent === 'yes';
+
+            // Build FormData
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            formData.append('duration', duration);
+            if (state.sessionId) {
+                formData.append('video_id', state.sessionId);
+            }
+
+            if (hasPic && state.uploadedImage) {
+                formData.append('image', state.uploadedImage);
+            }
+
+            // Call existing /api/generate endpoint
+            fetch('/api/generate', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    // Update Plan Sheet to "Processing" state
+                    markSheetAsProcessing(sheet, data.task_id);
+
+                    // Start polling
+                    pollPlanSheetStatus(data.task_id, sheet);
+                })
+                .catch(err => {
+                    showSheetError(sheet, err.message);
+                });
+        }
+
+        function markSheetAsProcessing(sheet, taskId) {
+            sheet.dataset.taskId = taskId;
+
+            // Disable buttons
+            sheet.querySelector('.btn-generate').disabled = true;
+            sheet.querySelector('.btn-delete').disabled = true;
+
+            // Add progress bar
+            const progressHTML = `
+                <div class="progress-section">
+                    <span class="progress-label">Processing...</span>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+            sheet.querySelector('.sheet-actions').insertAdjacentHTML('beforebegin', progressHTML);
+        }
+
+        function updateSheetProgress(sheet, progress) {
+            const progressFill = sheet.querySelector('.progress-fill');
+            if (progressFill) {
+                progressFill.style.width = `${progress}%`;
+            }
+        }
+
+        function pollPlanSheetStatus(taskId, sheet) {
+            const interval = setInterval(() => {
+                fetch(`/api/task/${taskId}/status`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'completed') {
+                            clearInterval(interval);
+                            markSheetAsCompleted(sheet, data.output_url);
+                        } else if (data.status === 'error') {
+                            clearInterval(interval);
+                            showSheetError(sheet, data.error);
+                        } else {
+                            updateSheetProgress(sheet, data.progress || 0);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Polling error:', err);
+                    });
+            }, 3000);  // Poll every 3 seconds
+        }
+
+        function markSheetAsCompleted(sheet, videoUrl) {
+            sheet.querySelector('.progress-section')?.remove();
+
+            const completeHTML = `
+                <div class="complete-message">
+                    ✅ Video generated!
+                    <a href="${videoUrl}" target="_blank" class="view-link">View</a>
+                </div>
+            `;
+            sheet.querySelector('.sheet-actions').insertAdjacentHTML('beforebegin', completeHTML);
+
+            // Re-enable delete button
+            sheet.querySelector('.btn-delete').disabled = false;
+        }
+
+        function showSheetError(sheet, message) {
+            sheet.querySelector('.progress-section')?.remove();
+            const errorHTML = `
+                <div class="complete-message" style="border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.1);">
+                    ❌ Error: ${message}
+                </div>
+            `;
+            sheet.querySelector('.sheet-actions').insertAdjacentHTML('beforebegin', errorHTML);
+
+            // Re-enable buttons
+            sheet.querySelector('.btn-generate').disabled = false;
+            sheet.querySelector('.btn-delete').disabled = false;
+        }
+
+        function updateChatProgress(msgId, percent, status) {
+            const msgDiv = document.getElementById(msgId);
+            if (msgDiv) {
                 const bar = msgDiv.querySelector('.progress-bar');
                 const percentEl = msgDiv.querySelector('.progress-percent');
                 const statusEl = msgDiv.querySelector('.progress-status');
@@ -1466,12 +2064,10 @@
             if (msgDiv) {
                 const contentDiv = msgDiv.querySelector('.ai-message-content');
                 const videoHtml = `
-                    <video controls style="width: 100%; border-radius: 8px; margin-top: 12px;">
-                        <source src="${videoUrl}" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
-                    <button class="apply-btn" style="margin-top: 12px;">Apply to Frame</button>
-                `;
+                    <div class="mt-3 rounded-lg overflow-hidden border border-gray-700">
+                        <video controls class="w-full" src="${videoUrl}"></video>
+                    </div>
+                    <button class=\"apply-btn\" style=\"margin-top: 12px;\">Apply to Frame</button>                `;
                 contentDiv.insertAdjacentHTML('beforeend', videoHtml);
 
                 // Add event listener to the new button
