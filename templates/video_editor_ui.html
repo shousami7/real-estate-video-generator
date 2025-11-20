@@ -161,6 +161,22 @@
             border: 1px solid rgba(52, 211, 153, 0.1);
         }
 
+        /* Agent mode styling */
+        .agent-mode .ai-message-content {
+            background: radial-gradient(circle at 10% 20%, rgba(52, 211, 153, 0.18), transparent 40%), #111827;
+            border-color: rgba(52, 211, 153, 0.35);
+            box-shadow: 0 6px 18px rgba(52, 211, 153, 0.25);
+        }
+
+        .agent-mode .ai-avatar {
+            background: linear-gradient(135deg, #0ea5e9 0%, #34d399 55%, #10b981 100%);
+            box-shadow: 0 4px 14px rgba(52, 211, 153, 0.35);
+        }
+
+        .video-mode-option.muted {
+            opacity: 0.55;
+        }
+
         /* Apply button */
         .apply-btn {
             margin-top: 12px;
@@ -929,14 +945,14 @@
                                 title="Video Mode">
                                 <span class="material-symbols-outlined !text-base">add</span>
                             </button>
-                            <div id="agent-indicator" class="agent-indicator hidden">Agent</div>
+                            <div id="agent-indicator" class="agent-indicator hidden" title="Agent mode (MCP/Gemini orchestration)">Agent</div>
                             <!-- Popup Menu -->
                             <div id="video-mode-popup" class="video-mode-popup">
                                 <div class="video-mode-option" data-mode="generate">Generate</div>
                                 <div class="video-mode-option" data-mode="extend">Extend</div>
                                 <div class="video-mode-option" data-mode="stitch">Stitch</div>
                                 <div class="video-mode-option" data-mode="adjust">Adjust</div>
-                                <div class="video-mode-option" data-mode="agent">Agent</div>
+                                <div class="video-mode-option" data-mode="agent" title="Agent: drive tools via MCP/Gemini">Agent</div>
                             </div>
                         </div>
                         <input id="chat-input"
@@ -1413,8 +1429,14 @@
             if (state.isAgentMode) {
                 agentIndicator.classList.remove('hidden');
                 videoModeBtn.classList.add('active');
+                chatContainer.classList.add('agent-mode');
+                modeOptions.forEach(opt => {
+                    if (opt.dataset.mode !== 'agent') opt.classList.add('muted');
+                });
             } else {
                 agentIndicator.classList.add('hidden');
+                chatContainer.classList.remove('agent-mode');
+                modeOptions.forEach(opt => opt.classList.remove('muted'));
             }
         }
 

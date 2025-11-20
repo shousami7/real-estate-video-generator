@@ -35,6 +35,12 @@ async def test_agent_flow():
             "prompt": "A beautiful house",
             "image_path": "/path/to/image.jpg"
         },
+        "plan": {
+            "action": "Generate Video",
+            "prompt": "A beautiful house",
+            "image_input": "Yes",
+            "duration": "8s"
+        },
         "reason": "User asked to generate video from image"
     }
     
@@ -63,7 +69,9 @@ async def test_agent_flow():
     
     assert decision["tool"] == "generate_video"
     assert decision["arguments"]["image_path"] == "/path/to/image.jpg"
-    print("✓ Gemini correctly picked the tool and arguments")
+    assert "plan" in decision
+    assert decision["plan"]["action"] == "Generate Video"
+    print("✓ Gemini correctly picked the tool, arguments, and plan")
 
     # Test tool execution flow (simulating main loop logic)
     print("\n2. Testing tool execution...")

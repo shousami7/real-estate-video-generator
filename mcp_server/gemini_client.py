@@ -58,7 +58,14 @@ def build_prompt(tools: list, user_message: str) -> str:
         "User message:\n"
         f"{user_message}\n\n"
         "Respond with compact JSON only:\n"
-        '{"tool": "<tool_name>", "arguments": { ... }, "reason": "<brief>"}'
+        "Respond with compact JSON only:\n"
+        '{"tool": "<tool_name>", "arguments": { ... }, "plan": { "action": "...", "details": "..." }, "reason": "<brief>"}\n'
+        "IMPORTANT: You MUST include a 'plan' object that summarizes the action for the user.\n"
+        "For 'generate': include prompt, image_input(yes/no), duration.\n"
+        "For 'extend': include video_id, duration, prompt.\n"
+        "For 'extract': include video_id.\n"
+        "For 'edit': include frame_index, instruction.\n"
+        "For 'stitch': include video_ids."
     )
 
 
@@ -134,6 +141,27 @@ async def main() -> None:
 
             try:
                 plan = pick_tool(gemini_client, tools, user_message)
+                
+                # Display Plan Sheet
+                print("\n" + "="*40)
+                print("          PLAN SHEET")
+                print("="*40)
+                if "plan" in plan:
+                    p = plan["plan"]
+                    if isinstance(p, dict):
+                        for k, v in p.items():
+                            print(f"{k.replace('_', ' ').title()}: {v}")
+                    else:
+                        print(str(p))
+                else:
+                    print(f"Action: {plan.get('tool')}")
+                    print(f"Reason: {plan.get('reason')}")
+                print("="*40 + "\n")
+
+                # Optional: Add confirmation here if requested later
+                # confirm = input("Proceed? (y/n): ").strip().lower()
+                # if confirm != 'y': continue
+
                 print(f"Gemini picked: {plan.get('tool')} args={plan.get('arguments')}")
             except Exception as exc:
                 print(f"[Gemini parsing error] {exc}")
