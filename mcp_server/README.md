@@ -33,6 +33,20 @@ python server.py
 
 The server runs in stdio mode and communicates with the MCP client via stdin/stdout.
 
+## Run with Gemini (local MCP client)
+
+If you want Gemini to drive tool calls instead of ChatGPT, use the sample client:
+
+```bash
+cd mcp_server
+pip install -r requirements.txt google-genai anyio
+export GOOGLE_API_KEY=<your_key>           # or set Vertex AI creds in your env
+export BACKEND_URL=http://localhost:5000   # Flask backend
+python gemini_client.py
+```
+
+You can override the model with `GEMINI_MODEL` (default: `gemini-2.0-flash-exp`) and the server command with `MCP_SERVER_CMD` if needed. Type prompts in the console; Gemini will pick an MCP tool and call the local server over stdio.
+
 ## Available Tools
 
 ### 1. generate_video
@@ -40,6 +54,7 @@ Generate a new video from a text prompt.
 
 **Arguments:**
 - `prompt` (string, required): Text description of the video
+- `image_path` (string, required): Absolute path to the input image file
 - `video_id` (string, optional): Video ID to use
 
 **Returns:** `task_id` for status tracking
@@ -49,6 +64,7 @@ Extend an existing video with additional duration.
 
 **Arguments:**
 - `video_id` (string, required): ID of the video to extend
+- `image_path` (string, required): Absolute path to the new image file for extension
 - `extra_duration` (integer, required): Additional seconds (4-20)
 
 **Returns:** `task_id`

@@ -339,6 +339,24 @@
             position: relative;
         }
 
+        .agent-indicator {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #34D399;
+            color: #0b0f16;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 999px;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+            letter-spacing: 0.02em;
+        }
+
+        .agent-indicator.hidden {
+            display: none;
+        }
+
         /* Reflect selected mode on the plus button itself */
         .mode-btn.active button,
         #video-mode-btn.active {
@@ -911,12 +929,14 @@
                                 title="Video Mode">
                                 <span class="material-symbols-outlined !text-base">add</span>
                             </button>
+                            <div id="agent-indicator" class="agent-indicator hidden">Agent</div>
                             <!-- Popup Menu -->
                             <div id="video-mode-popup" class="video-mode-popup">
                                 <div class="video-mode-option" data-mode="generate">Generate</div>
                                 <div class="video-mode-option" data-mode="extend">Extend</div>
                                 <div class="video-mode-option" data-mode="stitch">Stitch</div>
                                 <div class="video-mode-option" data-mode="adjust">Adjust</div>
+                                <div class="video-mode-option" data-mode="agent">Agent</div>
                             </div>
                         </div>
                         <input id="chat-input"
@@ -955,6 +975,7 @@
             pendingDuration: null, // Store duration when AI asks for it
             planSheets: [],       // Track all active plan sheets
             sessionId: null,      // Session ID for video generation
+            isAgentMode: false,   // Agent (MCP) mode toggle
         };
 
         // ==================== DOM要素 ====================
@@ -986,6 +1007,8 @@
         const dragOverlay = document.getElementById('drag-overlay');
         const videoModeBtn = document.getElementById('video-mode-btn');
         const videoModePopup = document.getElementById('video-mode-popup');
+        const agentIndicator = document.getElementById('agent-indicator');
+        const defaultChatPlaceholder = chatInput.placeholder;
 
         // Allow chat input from the start (no frame selection required)
         chatInput.disabled = false;
@@ -1360,6 +1383,7 @@
 
                 // 状態を保存
                 state.selectedVideoMode = mode;
+                state.isAgentMode = (mode === 'agent');
 
                 // ボタンにアクティブ状態を追加
                 videoModeBtn.classList.add('active');
@@ -1367,16 +1391,32 @@
                 // ポップアップを閉じる
                 videoModePopup.classList.remove('show');
 
+                // Agent indicator
+                updateAgentIndicator();
+
                 // Auto-populate for Generate mode
                 if (mode === 'generate') {
                     chatInput.value = "Generate: ";
                     chatInput.placeholder = "(type what you want to make video of)";
                     chatInput.focus();
+                } else if (mode === 'agent') {
+                    chatInput.placeholder = "Agent mode (MCP): describe what you want the agent to do...";
+                } else {
+                    chatInput.placeholder = defaultChatPlaceholder;
                 }
 
                 console.log('Selected video mode:', mode);
             });
         });
+
+        function updateAgentIndicator() {
+            if (state.isAgentMode) {
+                agentIndicator.classList.remove('hidden');
+                videoModeBtn.classList.add('active');
+            } else {
+                agentIndicator.classList.add('hidden');
+            }
+        }
 
         function handleVideoUpload(file) {
             if (!file.type.startsWith('video/')) {
@@ -1562,7 +1602,9 @@
             const sendRequest = (messageText) => {
                 const payload = {
                     message: messageText,
-                    session_id: state.sessionId
+                    session_id: state.sessionId,
+                    video_mode: state.selectedVideoMode,
+                    agent_mode: state.isAgentMode
                 };
 
                 fetch('/editor/chat', {

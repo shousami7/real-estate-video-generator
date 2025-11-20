@@ -899,6 +899,8 @@ def editor_chat():
         data = request.get_json()
         user_input = data.get('message', '').strip()
         provided_session_id = data.get('session_id')
+        is_agent_mode = bool(data.get('agent_mode'))
+        video_mode = data.get('video_mode')
 
         if not user_input:
             return jsonify({
@@ -929,49 +931,53 @@ def editor_chat():
 
         logger.info(f"Editor chat: session_id={session_id}, input={user_input}")
 
-        # コマンド解釈
-        handler = ChatCommandHandler()
-        command = handler.parse_command(user_input)
-
-        # コマンドバリデーション
-        is_valid, error_message = handler.validate_command(command)
-        if not is_valid:
-            session['chat_history'].append({
-                "role": "assistant",
-                "content": error_message,
-                "timestamp": datetime.now().isoformat()
-            })
-            return jsonify({
-                "status": "error",
-                "message": error_message,
-                "intent": command['intent'].value,
-                "chat_history": session['chat_history']
-            }), 400
-
-        # SceneManager初期化
-        scene_manager = SceneManager(session_id)
-
-        # インテントに応じて処理分岐
-        intent = command['intent']
-        params = command['params']
-
-        if intent == CommandIntent.CREATE:
-            result = _handle_create_video(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.EXTEND:
-            result = _handle_extend_scene(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.TRANSITION:
-            result = _handle_merge_scenes(params, scene_manager, session_id)
-
-        elif intent == CommandIntent.FRAME_EDIT:
-            result = _handle_frame_edit(params, scene_manager, session_id)
-
+        # Agentモード: MCP/Gemini連携に切り替える場合はここで分岐
+        if is_agent_mode:
+            result = _handle_agent_mode(user_input, session_id, video_mode)
         else:
-            result = {
-                "status": "error",
-                "message": handler.get_intent_help_message(intent)
-            }
+            # コマンド解釈
+            handler = ChatCommandHandler()
+            command = handler.parse_command(user_input)
+
+            # コマンドバリデーション
+            is_valid, error_message = handler.validate_command(command)
+            if not is_valid:
+                session['chat_history'].append({
+                    "role": "assistant",
+                    "content": error_message,
+                    "timestamp": datetime.now().isoformat()
+                })
+                return jsonify({
+                    "status": "error",
+                    "message": error_message,
+                    "intent": command['intent'].value,
+                    "chat_history": session['chat_history']
+                }), 400
+
+            # SceneManager初期化
+            scene_manager = SceneManager(session_id)
+
+            # インテントに応じて処理分岐
+            intent = command['intent']
+            params = command['params']
+
+            if intent == CommandIntent.CREATE:
+                result = _handle_create_video(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.EXTEND:
+                result = _handle_extend_scene(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.TRANSITION:
+                result = _handle_merge_scenes(params, scene_manager, session_id)
+
+            elif intent == CommandIntent.FRAME_EDIT:
+                result = _handle_frame_edit(params, scene_manager, session_id)
+
+            else:
+                result = {
+                    "status": "error",
+                    "message": handler.get_intent_help_message(intent)
+                }
 
         # アシスタントの応答を履歴に追加
         # 循環参照を避けるため、chat_historyを除外したコピーを作成
@@ -1049,6 +1055,28 @@ def clear_chat_history():
     except Exception as e:
         logger.error(f"Clear chat history error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None = None) -> dict:
+    """
+    Placeholder handler for Agent (MCP/Gemini) mode.
+    This is where MCP orchestration should be integrated. For now, it echoes intent.
+    """
+    logger.info(f"[AgentMode] session_id={session_id}, video_mode={video_mode}, input={user_input}")
+
+    # TODO: Wire to MCP/Gemini client here. For now, just return a stub response.
+    message = "Agent mode is enabled. MCP/Gemini orchestration not yet wired in this server. " \
+              "Run the local gemini_client.py to drive MCP tools, or integrate here."
+
+    return {
+        "status": "success",
+        "message": message,
+        "intent": "agent",
+        "data": {
+            "video_mode": video_mode,
+            "echo": user_input
+        }
+    }
 
 
 # -----------------------------------------------------------------------------

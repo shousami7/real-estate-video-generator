@@ -85,12 +85,16 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Text description of the video to generate"
                     },
+                    "image_path": {
+                        "type": "string",
+                        "description": "Absolute path to the input image file (required)"
+                    },
                     "video_id": {
                         "type": "string",
                         "description": "Optional video ID (session ID) to use. Auto-generated if not provided."
                     }
                 },
-                "required": ["prompt"]
+                "required": ["prompt", "image_path"]
             }
         ),
         Tool(
@@ -103,6 +107,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "ID of the video to extend"
                     },
+                    "image_path": {
+                        "type": "string",
+                        "description": "Absolute path to the new image file for extension (required)"
+                    },
                     "extra_duration": {
                         "type": "integer",
                         "description": "Additional seconds to add (4-20)",
@@ -110,7 +118,7 @@ async def list_tools() -> list[Tool]:
                         "maximum": 20
                     }
                 },
-                "required": ["video_id", "extra_duration"]
+                "required": ["video_id", "image_path", "extra_duration"]
             }
         ),
         Tool(
@@ -207,24 +215,44 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
     try:
         if name == "generate_video":
-            result = make_request(
-                "POST",
-                "/api/generate",
-                json={
+            image_path = arguments["image_path"]
+            if not os.path.exists(image_path):
+                return [TextContent(type="text", text=json.dumps({"error": f"Image file not found: {image_path}", "status": "error"}, indent=2))]
+
+            with open(image_path, "rb") as img_file:
+                files = {"image": (os.path.basename(image_path), img_file, "image/jpeg")}
+                data = {
                     "prompt": arguments["prompt"],
                     "video_id": arguments.get("video_id")
                 }
-            )
+                # Remove None values
+                data = {k: v for k, v in data.items() if v is not None}
+                
+                result = make_request(
+                    "POST",
+                    "/api/generate",
+                    data=data,
+                    files=files
+                )
 
         elif name == "extend_video":
-            result = make_request(
-                "POST",
-                "/api/extend",
-                json={
+            image_path = arguments["image_path"]
+            if not os.path.exists(image_path):
+                return [TextContent(type="text", text=json.dumps({"error": f"Image file not found: {image_path}", "status": "error"}, indent=2))]
+
+            with open(image_path, "rb") as img_file:
+                files = {"image": (os.path.basename(image_path), img_file, "image/jpeg")}
+                data = {
                     "video_id": arguments["video_id"],
                     "extra_duration": arguments["extra_duration"]
                 }
-            )
+                
+                result = make_request(
+                    "POST",
+                    "/api/extend",
+                    data=data,
+                    files=files
+                )
 
         elif name == "extract_frames":
             result = make_request(
