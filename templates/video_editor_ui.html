@@ -2202,6 +2202,8 @@
         function markSheetAsCompleted(sheet, videoUrl) {
             sheet.querySelector('.progress-section')?.remove();
 
+            switchSheetToDownload(sheet, videoUrl);
+
             const completeHTML = `
                 <div class="complete-message">
                     ✅ Video generated!
@@ -2212,6 +2214,40 @@
 
             // Re-enable delete button
             sheet.querySelector('.btn-delete').disabled = false;
+        }
+
+        function switchSheetToDownload(sheet, videoUrl) {
+            const editBtn = sheet.querySelector('.edit-btn');
+            if (!editBtn) return;
+
+            // Exit any edit state so inputs are hidden
+            sheet.querySelectorAll('.edit-input').forEach(input => {
+                const valueSpan = input.previousElementSibling;
+                input.classList.add('hidden');
+                if (valueSpan) valueSpan.classList.remove('hidden');
+            });
+
+            const iconSpan = editBtn.querySelector('.material-symbols-outlined');
+            if (iconSpan) iconSpan.textContent = 'download';
+
+            editBtn.title = 'Download video';
+            editBtn.dataset.editing = 'false';
+            editBtn.onclick = () => downloadVideo(videoUrl);
+        }
+
+        function downloadVideo(videoUrl) {
+            if (!videoUrl) return;
+
+            const link = document.createElement('a');
+            link.href = videoUrl;
+            const parts = videoUrl.split('/');
+            const filePart = parts[parts.length - 1] || 'video.mp4';
+            link.download = filePart.split('?')[0] || 'video.mp4';
+            link.target = '_blank';
+
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
         }
 
         function showSheetError(sheet, message) {
