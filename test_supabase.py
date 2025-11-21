@@ -3,6 +3,7 @@
 Quick test script to verify Supabase configuration.
 """
 import os
+import time
 from dotenv import load_dotenv
 
 # Load environment variables FIRST before importing supabase_storage
@@ -35,9 +36,12 @@ def test_supabase():
     # Try a simple test upload
     print("\n3. Testing Upload:")
     test_data = b"Hello, Supabase!"
-    test_path = "test/connection_test.txt"
+    # Use a unique path per run to avoid 409 "resource already exists" errors
+    unique_suffix = os.getenv("SUPABASE_TEST_SUFFIX") or str(int(time.time()))
+    test_path = f"test/connection_test_{unique_suffix}.txt"
     
     try:
+        print(f"   Upload path: {test_path}")
         public_url, error = supabase_storage.upload_bytes_to_supabase(
             storage_path=test_path,
             file_bytes=test_data,
