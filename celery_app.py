@@ -98,10 +98,15 @@ def make_celery() -> Celery:
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",
+        result_accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
         task_always_eager=force_sync,  # Run tasks synchronously if Redis unavailable
         task_eager_propagates=True,    # Propagate exceptions in eager mode
+        # Fix exception serialization issues
+        task_ignore_result=False,
+        result_expires=3600,
+        task_store_errors_even_if_ignored=True,
     )
 
     if force_sync:

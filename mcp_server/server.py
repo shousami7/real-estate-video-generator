@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import logging
+import signal
 from typing import Any, Optional
 
 import requests
@@ -306,10 +307,51 @@ async def main():
     """Run the MCP server."""
     logger.info("Starting Real Estate Video Pipeline MCP Server")
     logger.info(f"Backend URL: {BACKEND_URL}")
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+    
+    # Set up signal handlers for graceful shutdown
+    loop = asyncio.get_running_loop()
+    shutdown_event = asyncio.Event()
+    
+    def signal_handler(sig, frame):
+        logger.info(f"Received signal {sig}, shutting down gracefully...")
+        shutdown_event.set()
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            # Run server in a task so we can cancel it
+            server_task = asyncio.create_task(
+                app.run(read_stream, write_stream, app.create_initialization_options())
+            )
+            
+            # Wait for either server completion or shutdown signal
+            done, pending = await asyncio.wait(
+                [server_task, asyncio.create_task(shutdown_event.wait())],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Cancel any pending tasks
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                    
+    except Exception as e:
+        logger.error(f"Server error: {e}")
+        raise
+    finally:
+        logger.info("MCP Server stopped")
 
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Suppress the KeyboardInterrupt traceback
+        pass

@@ -232,6 +232,7 @@ def generate_video_from_chat_task(
         )
 
         # 完了まで待機（ポーリング）
+        # Note: generate_video already waits for completion internally
         self.update_state(
             state="GENERATING",
             meta={
@@ -243,8 +244,6 @@ def generate_video_from_chat_task(
                 "step": "WAITING",
             }
         )
-
-        video_response = veo.wait_for_completion(operation)
 
         # 動画をダウンロード
         logger.info("Downloading generated video...")
@@ -267,8 +266,8 @@ def generate_video_from_chat_task(
 
         # ダウンロード
         downloaded_path = veo.download_video(
-            video_response=video_response,
-            output_path=temp_local_path
+            operation,
+            temp_local_path
         )
 
         # 動画の長さを取得
@@ -484,6 +483,7 @@ def extend_scene_task(
         )
 
         # 完了まで待機
+        # Note: generate_video already waits for completion internally
         self.update_state(
             state="EXTENDING",
             meta={
@@ -495,8 +495,6 @@ def extend_scene_task(
                 "step": "WAITING",
             }
         )
-
-        video_response = veo.wait_for_completion(operation)
 
         # ダウンロード
         self.update_state(
@@ -516,8 +514,8 @@ def extend_scene_task(
         temp_local_path = os.path.join(output_dir, f"{scene_id}.mp4")
 
         downloaded_path = veo.download_video(
-            video_response=video_response,
-            output_path=temp_local_path
+            operation,
+            temp_local_path
         )
 
         # 動画の長さを取得
