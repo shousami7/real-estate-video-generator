@@ -308,7 +308,7 @@ output_video = frame_editor.rebuild_video()
    - Check disk space
 
 3. **AI generation returns errors**
-   - Verify GOOGLE_API_KEY is set
+   - Verify GOOGLE_CLOUD_PROJECT/GCP_PROJECT_ID is set and ADC is configured
    - Check API quota limits
    - Verify network connectivity
 

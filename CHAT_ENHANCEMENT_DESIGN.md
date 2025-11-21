@@ -798,7 +798,7 @@ AI:   ✓ Scene1を更新しました。
 | **フロントエンド** | 既存HTML/CSS/JS（変更不要） |
 | **バックエンド** | Flask + Python 3.10+ |
 | **非同期処理** | Celery + Redis |
-| **動画生成** | Google Veo API (Vertex AI / AI Studio) |
+| **動画生成** | Google Veo API (Vertex AI) |
 | **動画編集** | FFmpeg |
 | **ストレージ** | Supabase Storage |
 | **NLP** | 正規表現ベース（MVP）→ 将来: LLM統合 |
@@ -808,7 +808,7 @@ AI:   ✓ Scene1を更新しました。
 ## ✅ チェックリスト
 
 ### 実装前の確認
-- [ ] Veo API キーが設定されているか（`GOOGLE_API_KEY` or `GCP_PROJECT_ID`）
+- [ ] Vertex認証用のプロジェクトIDが設定されているか（`GOOGLE_CLOUD_PROJECT` または `GCP_PROJECT_ID`）
 - [ ] Supabaseが設定されているか（`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`）
 - [ ] FFmpegがインストールされているか（`which ffmpeg`）
 - [ ] Celeryが起動しているか（`celery -A celery_app worker`）

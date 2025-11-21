@@ -25,16 +25,22 @@ class VideoEditorChatAgent:
     INTENT_EDIT_FRAME = "edit_frame"
     INTENT_UNKNOWN = "unknown"
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: Optional[str] = None):
         """
         Initialize the chat agent with Gemini API
 
         Args:
-            api_key: Google AI API key
+            api_key: Google AI Studio API key (falls back to GOOGLE_API_KEY env var)
         """
-        self.api_key = api_key
-        self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-2.0-flash-exp"
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+
+        if not self.api_key:
+            raise ValueError("api_key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
+
+        logger.info(f"Initializing Chat Agent with Google AI Studio")
+        self.client = genai.Client(api_key=self.api_key)
+
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
         logger.info(f"Chat agent initialized with model: {self.model}")
 
     def analyze_intent(self, user_message: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -246,11 +252,16 @@ if __name__ == "__main__":
     import sys
 
     api_key = os.getenv("GOOGLE_API_KEY")
+
     if not api_key:
         print("Error: GOOGLE_API_KEY not set")
         sys.exit(1)
 
-    agent = VideoEditorChatAgent(api_key)
+    try:
+        agent = VideoEditorChatAgent(api_key=api_key)
+    except Exception as e:
+        print(f"Failed to initialize agent: {e}")
+        sys.exit(1)
 
     # Test cases
     test_messages = [

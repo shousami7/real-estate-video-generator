@@ -155,10 +155,12 @@ real-estate-video-generator/
 
 ### 1. 環境変数の設定
 
-`.env` ファイルに API キーを設定：
+`.env` ファイルに Vertex 用の情報を設定：
 
 ```bash
-GOOGLE_API_KEY=your_api_key_here
+GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service_account.json  # または gcloud auth application-default login
 SECRET_KEY=your_secret_key_here
 ```
 
@@ -202,8 +204,8 @@ sudo apt-get install ffmpeg
 
 ### AI生成がエラーになる
 
-- `GOOGLE_API_KEY` が `.env` に設定されているか確認
-- APIクォータ制限を確認
+- `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` が設定され、ADC/サービスアカウントが有効か確認
+- Vertex AIのクォータ制限を確認
 - ネットワーク接続を確認
 
 ### 動画エクスポートが失敗する

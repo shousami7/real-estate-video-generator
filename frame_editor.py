@@ -172,17 +172,17 @@ class FrameEditor:
 
 class AIFrameEditor:
     """
-    AI-powered frame editing using Google AI
+    AI-powered frame editing (placeholder implementation).
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize AI Frame Editor
+        Initialize AI Frame Editor (currently demo/no-op for auth).
 
         Args:
-            api_key: Google AI API key
+            api_key: Optional Google AI Studio API key for future AI-backed edits
         """
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         logger.info("Initialized AI Frame Editor (Demo Mode)")
 
     def generate_frame_variations(

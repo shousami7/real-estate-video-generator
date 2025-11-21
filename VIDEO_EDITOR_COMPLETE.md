@@ -289,7 +289,9 @@ ffmpeg -version
 `.env` ファイルを作成:
 
 ```bash
-GOOGLE_API_KEY=your_google_ai_api_key_here
+GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service_account.json  # または gcloud auth application-default login でADCを用意
 SECRET_KEY=your_secret_key_for_flask_sessions
 ```
 

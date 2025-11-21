@@ -18,9 +18,11 @@ from supabase_storage import (
     get_public_url,
 )
 from veo_generator import VeoVideoGenerator
+from frame_editor import FrameEditor, AIFrameEditor
 from video_composer import VideoComposer
 from scene_manager import SceneManager
 from utils.video_duration import probe_video_duration as get_video_duration
+import uuid
 
 logger = get_task_logger(__name__)
 
@@ -202,15 +204,9 @@ def generate_video_from_chat_task(
         )
 
         # Veo Video Generator初期化
-        api_key = os.getenv("GOOGLE_API_KEY")
-        project_id = os.getenv("GCP_PROJECT_ID")
-        location = os.getenv("GCP_LOCATION", "us-central1")
-
-        veo = VeoVideoGenerator(
-            api_key=api_key,
-            project_id=project_id,
-            location=location
-        )
+        veo_config = _configure_veo_auth()
+        
+        veo = VeoVideoGenerator(**veo_config)
 
         # 画像から動画生成
         logger.info(f"Generating video with Veo API: {prompt[:100]}...")
@@ -452,15 +448,9 @@ def extend_scene_task(
             raise ValueError(f"Previous scene not found: {previous_scene_id}")
 
         # Veo Video Generator初期化
-        api_key = os.getenv("GOOGLE_API_KEY")
-        project_id = os.getenv("GCP_PROJECT_ID")
-        location = os.getenv("GCP_LOCATION", "us-central1")
-
-        veo = VeoVideoGenerator(
-            api_key=api_key,
-            project_id=project_id,
-            location=location
-        )
+        veo_config = _configure_veo_auth()
+        
+        veo = VeoVideoGenerator(**veo_config)
 
         # 前の動画を読み込み（Veo APIのprevious_video機能を使用）
         # TODO: VeoVideoGeneratorにload_video_objectメソッドを追加
@@ -818,3 +808,211 @@ def merge_scenes_task(
                 pass
 
         return error_result
+
+
+def _configure_veo_auth() -> Dict[str, Any]:
+    """
+    Configure Veo authentication (Google AI Studio).
+    """
+    api_key = os.getenv("GOOGLE_API_KEY")
+
+    if not api_key:
+        logger.error("Missing GOOGLE_API_KEY for Google AI Studio auth")
+        raise ValueError("Authentication missing: set GOOGLE_API_KEY for Google AI Studio.")
+
+    logger.info(f"Using Google AI Studio with API key authentication")
+    return {
+        "api_key": api_key,
+    }
+
+
+@celery.task(bind=True, name="tasks.extract_frames_task")
+def extract_frames_task(
+    self,
+    video_id: str,
+    video_path: Optional[str] = None,
+    fps: float = 1.0
+) -> Dict[str, Any]:
+    """
+    Extract frames from a video.
+    """
+    logger.info(f"Starting frame extraction: video_id={video_id}")
+    try:
+        self.update_state(state="EXTRACTING", meta={"progress": 10, "message": "Initializing extraction..."})
+
+        if not video_path:
+            # Try to find video path from SceneManager if not provided
+            scene_manager = SceneManager(video_id)
+            last_scene = scene_manager.get_last_scene()
+            if last_scene:
+                video_path = last_scene.video_path
+            else:
+                raise ValueError(f"Video path not provided and no scenes found for {video_id}")
+
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        frames_dir = os.path.join(LOCAL_UPLOAD_ROOT, video_id, 'extracted')
+        os.makedirs(frames_dir, exist_ok=True)
+
+        frame_editor = FrameEditor(video_path, frames_dir)
+        
+        # Calculate frame count
+        video_duration = get_video_duration(video_path)
+        frame_count = min(int(video_duration * fps), 100)
+        
+        self.update_state(state="EXTRACTING", meta={"progress": 30, "message": f"Extracting {frame_count} frames..."})
+        
+        extracted_frames = frame_editor.extract_frames(frame_count=frame_count)
+        
+        # Format response
+        frames_response = []
+        for frame in extracted_frames:
+            # In a real scenario, we might upload these to Supabase here
+            # For now, return local paths/URLs
+            frame_filename = os.path.basename(frame['path'])
+            # Assuming a route exists to serve these or they are uploaded
+            # If using Supabase, we would upload here.
+            
+            frame_url = f"/uploads/local/{video_id}/extracted/{frame_filename}"
+            
+            frames_response.append({
+                "index": frame['frame_id'],
+                "timestamp": frame['seconds'],
+                "url": frame_url,
+                "path": frame['path']
+            })
+
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=video_id,
+            stage="extract",
+            status="completed",
+            frames=frames_response
+        )
+        return result
+
+    except Exception as exc:
+        logger.exception(f"Frame extraction failed: {exc}")
+        return build_task_response(
+            task_id=self.request.id,
+            video_id=video_id,
+            stage="extract",
+            status="error",
+            error=str(exc)
+        )
+
+
+@celery.task(bind=True, name="tasks.edit_frame_task")
+def edit_frame_task(
+    self,
+    video_id: str,
+    frame_index: int,
+    instruction: str,
+    scene_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Edit a specific frame using AI.
+    """
+    logger.info(f"Starting frame edit: video_id={video_id}, frame={frame_index}")
+    try:
+        # For frame editing, we currently rely on the same auth config
+        # Note: AIFrameEditor might need specific handling if it doesn't support Vertex AI yet.
+        # Assuming AIFrameEditor takes an api_key. If using Vertex AI, we might need to adapt AIFrameEditor.
+        # For now, we'll try to get an API key if available, or error out if AIFrameEditor strictly needs it.
+        
+        veo_config = _configure_veo_auth()
+        
+        
+        self.update_state(state="EDITING", meta={"progress": 10, "message": "Preparing frame for editing..."})
+
+        scene_manager = SceneManager(video_id)
+        if scene_id:
+            scene = scene_manager.get_scene(scene_id)
+            if not scene:
+                raise ValueError(f"Scene {scene_id} not found")
+            video_path = scene.video_path
+        else:
+            last_scene = scene_manager.get_last_scene()
+            if not last_scene:
+                raise ValueError(f"No scenes found for {video_id}")
+            video_path = last_scene.video_path
+
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        # Extract the specific frame
+        temp_dir = os.path.join(LOCAL_UPLOAD_ROOT, video_id, 'temp_edit')
+        os.makedirs(temp_dir, exist_ok=True)
+        frame_editor = FrameEditor(video_path, temp_dir)
+        
+        # Extract enough frames to reach the index
+        extracted = frame_editor.extract_frames(frame_count=frame_index + 5)
+        if frame_index >= len(extracted):
+             raise ValueError(f"Frame index {frame_index} out of range")
+             
+        target_frame_path = extracted[frame_index]['path']
+        
+        self.update_state(state="EDITING", meta={"progress": 40, "message": "Generating AI edits..."})
+        
+        ai_editor = AIFrameEditor()
+        variations = ai_editor.generate_frame_variations(
+            base_image_path=target_frame_path,
+            prompt=instruction,
+            variation_count=1
+        )
+        
+        if not variations:
+            raise RuntimeError("Failed to generate variations")
+            
+        # Save result
+        edited_dir = os.path.join(LOCAL_UPLOAD_ROOT, video_id, 'edited')
+        os.makedirs(edited_dir, exist_ok=True)
+        edited_filename = f"edited_{frame_index}_{uuid.uuid4().hex[:8]}.png"
+        edited_path = os.path.join(edited_dir, edited_filename)
+        
+        # Save base64 to file
+        import base64
+        variation = variations[0]
+        if 'image_url' in variation and variation['image_url'].startswith('data:image'):
+            base64_str = variation['image_url'].split(',')[1]
+            image_data = base64.b64decode(base64_str)
+            with open(edited_path, 'wb') as f:
+                f.write(image_data)
+                
+        edited_url = f"/uploads/local/{video_id}/edited/{edited_filename}"
+        
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=video_id,
+            stage="edit",
+            status="completed",
+            frames=[{
+                "index": frame_index,
+                "original_path": target_frame_path,
+                "edited_url": edited_url,
+                "instruction": instruction
+            }]
+        )
+        return result
+
+    except Exception as exc:
+        logger.exception(f"Frame editing failed: {exc}")
+        return build_task_response(
+            task_id=self.request.id,
+            video_id=video_id,
+            stage="edit",
+            status="error",
+            error=str(exc)
+        )
+
+
+# -----------------------------------------------------------------------------
+# Aliases for Backward Compatibility / External Callers
+# -----------------------------------------------------------------------------
+# These aliases map the "unregistered" task names seen in logs to the actual implementations.
+task_generate_video = generate_video_from_chat_task
+task_extend_video = extend_scene_task
+task_stitch_videos = merge_scenes_task
+task_extract_frames = extract_frames_task
+task_edit_frame = edit_frame_task

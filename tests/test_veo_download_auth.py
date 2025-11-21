@@ -65,8 +65,7 @@ def test_vertex_ai_refreshes_credentials(monkeypatch, tmp_path):
 
     generator = veo_generator.VeoVideoGenerator(
         project_id="demo-project",
-        api_key="unused",
-        use_vertex_ai=True,
+        location="us-central1",
     )
 
     output_path = tmp_path / "video.mp4"
@@ -78,7 +77,7 @@ def test_vertex_ai_refreshes_credentials(monkeypatch, tmp_path):
     assert output_path.read_bytes() == b"payload"
 
 
-def test_studio_mode_uses_api_key(monkeypatch, tmp_path):
+def test_download_attempts_without_auth_when_google_auth_missing(monkeypatch, tmp_path):
     _stub_client(monkeypatch)
     monkeypatch.setattr(veo_generator, "HAS_GOOGLE_AUTH", False)
 
@@ -86,15 +85,15 @@ def test_studio_mode_uses_api_key(monkeypatch, tmp_path):
     monkeypatch.setattr(veo_generator.requests, "get", _make_fake_get(captured))
 
     generator = veo_generator.VeoVideoGenerator(
-        api_key="studio-api-key",
-        use_vertex_ai=False,
-        project_id=None,
+        project_id="demo-project",
+        location="us-central1",
     )
 
     output_path = tmp_path / "studio.mp4"
     generator._download_from_uri("https://example.com/video.mp4", output_path)
 
-    assert captured["headers"].get("X-Goog-API-Key") == "studio-api-key"
+    # Without google-auth installed we should still attempt an unauthenticated download (no API key)
+    assert "X-Goog-API-Key" not in captured["headers"]
     assert "Authorization" not in captured["headers"]
     assert output_path.exists()
     assert output_path.read_bytes() == b"payload"

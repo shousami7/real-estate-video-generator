@@ -1,8 +1,16 @@
 from dotenv import load_dotenv
 import os
 
+# Define the base directory of the project
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # 絶対パスで .env を読み込む（Flask reloader による cwd 変更に対応）
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+
+# Load environment variables explicitly for the worker process
+# This ensures that environment variables are loaded even if the worker's CWD is different.
+load_dotenv()
+
 import logging
 from typing import Dict, Optional
 from celery import Celery

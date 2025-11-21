@@ -41,10 +41,7 @@ If you want Gemini to drive tool calls instead of ChatGPT, use the sample client
 cd mcp_server
 pip install -r requirements.txt google-genai anyio
 
-# Option 1: Use Google AI Studio API Key
-export GOOGLE_API_KEY=<your_key>
-
-# Option 2: Use Vertex AI (GCP Credentials)
+# Vertex AI (GCP Credentials)
 export GOOGLE_CLOUD_PROJECT=<your_project_id>
 export GOOGLE_CLOUD_LOCATION=<your_region> # e.g. us-central1
 # Ensure you have ADC set up: gcloud auth application-default login

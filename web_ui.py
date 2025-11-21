@@ -3,6 +3,7 @@ import json
 import uuid
 import logging
 from typing import Any, Dict, List, Optional
+from google import genai
 
 from flask import (
     Blueprint, render_template, request, jsonify, session, send_from_directory, redirect, url_for
@@ -485,13 +486,8 @@ def edit_frame():
             }), 400
 
         api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            return jsonify({
-                "status": "error",
-                "message": "API key not configured"
-            }), 500
 
-        ai_editor = AIFrameEditor(api_key)
+        ai_editor = AIFrameEditor(api_key=api_key)
         frame_path = session['editor_frames'][frame_id]['path']
         variations = ai_editor.generate_frame_variations(
             base_image_path=frame_path,
@@ -636,9 +632,9 @@ def generate_video_from_image():
         logger.info(f"Prompt: {prompt}")
 
         # Generate video using Demo mode (7 second delay)
-        api_key = os.getenv("GOOGLE_API_KEY", "demo-key")
-
-        ai_editor = AIFrameEditor(api_key)
+        # Note: AIFrameEditor is currently a demo/placeholder.
+        # If it becomes real, pass project_id/location here.
+        ai_editor = AIFrameEditor()
 
         # This will wait 7 seconds and return pre-saved demo video
         logger.info("[DEMO] Starting 7-second simulated generation...")
@@ -803,14 +799,11 @@ def editor_chat_generate():
 
         # Get API configuration
         api_key = os.getenv("GOOGLE_API_KEY")
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-        use_vertex_ai = bool(project_id)
 
-        if not api_key and not use_vertex_ai:
+        if not api_key:
             return jsonify({
                 "status": "error",
-                "message": "GOOGLE_API_KEY or GOOGLE_CLOUD_PROJECT must be configured"
+                "message": "GOOGLE_API_KEY must be configured for Google AI Studio"
             }), 500
 
         # Import veo_generator
@@ -819,12 +812,7 @@ def editor_chat_generate():
         # Generate video using VeoVideoGenerator
         logger.info(f"[GENERATE MODE] Starting video generation with {duration_seconds}s duration")
 
-        veo = VeoVideoGenerator(
-            api_key=api_key,
-            project_id=project_id,
-            location=location,
-            use_vertex_ai=use_vertex_ai
-        )
+        veo = VeoVideoGenerator(api_key=api_key)
 
         output_dir = os.path.join('output', session_id, 'generated')
         os.makedirs(output_dir, exist_ok=True)
@@ -880,11 +868,9 @@ def editor_chat():
     統合チャットエンドポイント
     自然言語コマンドを解析して適切な機能にルーティング
 
-    Request Body:
-        {
-            "message": str,  # ユーザーのチャット入力
-            "session_id": str  # オプション: セッションID（省略時は自動生成）
-        }
+    Accepts either:
+    - JSON: {"message": str, "session_id": str, "agent_mode": bool, "video_mode": str}
+    - Multipart form data: message (text), image (file), session_id, agent_mode, video_mode
 
     Returns:
         {
@@ -896,11 +882,24 @@ def editor_chat():
         }
     """
     try:
-        data = request.get_json()
-        user_input = data.get('message', '').strip()
-        provided_session_id = data.get('session_id')
-        is_agent_mode = bool(data.get('agent_mode'))
-        video_mode = data.get('video_mode')
+        # Handle both JSON and multipart form data
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # Multipart form data (with optional image upload)
+            user_input = request.form.get('message', '').strip()
+            provided_session_id = request.form.get('session_id')
+            is_agent_mode = request.form.get('agent_mode', '').lower() in ['true', '1', 'yes']
+            video_mode = request.form.get('video_mode')
+            
+            # Handle image upload
+            image_file = request.files.get('image')
+        else:
+            # JSON data (text-only)
+            data = request.get_json()
+            user_input = data.get('message', '').strip()
+            provided_session_id = data.get('session_id')
+            is_agent_mode = bool(data.get('agent_mode'))
+            video_mode = data.get('video_mode')
+            image_file = None
 
         if not user_input:
             return jsonify({
@@ -918,6 +917,25 @@ def editor_chat():
         else:
             session_id = session['editor_session_id']
 
+        # Handle image upload if present
+        if image_file and image_file.filename:
+            upload_dir = os.path.join('uploads', session_id, 'editor', 'generate')
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            filename = secure_filename(image_file.filename)
+            # Add timestamp to avoid overwriting
+            timestamp = int(datetime.now().timestamp())
+            filename = f"{timestamp}_{filename}"
+            image_path = os.path.join(upload_dir, filename)
+            image_file.save(image_path)
+            
+            logger.info(f"Image uploaded for agent mode: {image_path}")
+            
+            # Store the uploaded image path in session for reference
+            if 'latest_uploaded_image' not in session:
+                session['latest_uploaded_image'] = {}
+            session['latest_uploaded_image'][session_id] = image_path
+
         # チャット履歴の初期化
         if 'chat_history' not in session:
             session['chat_history'] = []
@@ -926,10 +944,11 @@ def editor_chat():
         session['chat_history'].append({
             "role": "user",
             "content": user_input,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "has_image": bool(image_file and image_file.filename)
         })
 
-        logger.info(f"Editor chat: session_id={session_id}, input={user_input}")
+        logger.info(f"Editor chat: session_id={session_id}, input={user_input}, has_image={bool(image_file and image_file.filename)}")
 
         # Agentモード: MCP/Gemini連携に切り替える場合はここで分岐
         if is_agent_mode:
@@ -1059,24 +1078,282 @@ def clear_chat_history():
 
 def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None = None) -> dict:
     """
-    Placeholder handler for Agent (MCP/Gemini) mode.
-    This is where MCP orchestration should be integrated. For now, it echoes intent.
+    Handle Agent (MCP/Gemini) mode.
+    Uses Gemini to interpret the user's command and maps it to the appropriate Celery task.
     """
     logger.info(f"[AgentMode] session_id={session_id}, video_mode={video_mode}, input={user_input}")
 
-    # TODO: Wire to MCP/Gemini client here. For now, just return a stub response.
-    message = "Agent mode is enabled. MCP/Gemini orchestration not yet wired in this server. " \
-              "Run the local gemini_client.py to drive MCP tools, or integrate here."
-
-    return {
-        "status": "success",
-        "message": message,
-        "intent": "agent",
-        "data": {
-            "video_mode": video_mode,
-            "echo": user_input
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {
+            "status": "error",
+            "message": "GOOGLE_API_KEY is not configured. Please set it in your .env file.",
+            "intent": "agent_error"
         }
-    }
+
+    try:
+        # 1. Initialize Gemini Client
+        client = genai.Client(api_key=api_key)
+        
+        # 2. Define Tools (Schema)
+        tools = [
+            {
+                "name": "generate_video",
+                "description": "Generate a new video from a text prompt. Use this when the user wants to create a new video from scratch or from an uploaded image.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Text description of the video to generate"},
+                        "duration": {"type": "string", "description": "Duration of the video (e.g. '8s')"},
+                        "aspect_ratio": {"type": "string", "description": "Aspect ratio (e.g. '16:9')"}
+                    },
+                    "required": ["prompt"]
+                }
+            },
+            {
+                "name": "extend_video",
+                "description": "Extend the current or specified video. Use this when the user wants to make the video longer or add a scene.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Description of the extension/next scene"},
+                        "duration": {"type": "string", "description": "Duration to add (e.g. '8s')"}
+                    },
+                    "required": ["prompt"]
+                }
+            },
+            {
+                "name": "extract_frames",
+                "description": "Extract frames from a video. Use this when the user wants to see specific frames or images from the video.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "fps": {"type": "integer", "description": "Frames per second to extract"}
+                    }
+                }
+            },
+            {
+                "name": "edit_frame",
+                "description": "Edit a specific frame using AI. Use this when the user wants to modify an image or frame.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "frame_index": {"type": "integer", "description": "Index of the frame to edit"},
+                        "instruction": {"type": "string", "description": "Instruction for editing"}
+                    },
+                    "required": ["frame_index", "instruction"]
+                }
+            },
+            {
+                "name": "stitch_videos",
+                "description": "Stitch/Merge multiple scenes together. Use this when the user wants to combine clips into a final video.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "transition_type": {"type": "string", "description": "Transition type (cut, fade)"}
+                    }
+                }
+            }
+        ]
+
+        # 3. Call Gemini to decide intent
+        # We use a simplified prompt approach since we are inside the backend
+        prompt = f"""
+        You are an AI video production assistant. Your job is to interpret the user's request and select the best tool to execute it.
+        
+        User Request: "{user_input}"
+        
+        Available Tools:
+        {json.dumps(tools, indent=2)}
+        
+        Respond ONLY with a valid JSON object in this format:
+        {{
+            "tool": "tool_name",
+            "arguments": {{ ... }},
+            "reply": "A brief, friendly message to the user confirming what you are doing."
+        }}
+        
+        If the request is unclear or not related to video production, respond with:
+        {{
+            "tool": null,
+            "reply": "I can help you generate, extend, edit, and stitch videos. Could you please clarify your request?"
+        }}
+        """
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=prompt,
+            config={"response_mime_type": "application/json"}
+        )
+        
+        try:
+            result = json.loads(response.text)
+        except json.JSONDecodeError:
+            # Fallback cleanup if model returns markdown code blocks
+            text = response.text.strip()
+            if text.startswith("```json"):
+                text = text[7:-3]
+            result = json.loads(text)
+
+        tool_name = result.get("tool")
+        args = result.get("arguments", {})
+        reply_message = result.get("reply", "Processing your request...")
+
+        if not tool_name:
+            return {
+                "status": "success",
+                "message": reply_message,
+                "intent": "chat"
+            }
+
+        # 4. Execute the selected tool (Map to Celery Tasks)
+        task = None
+        task_type = "unknown"
+        
+        # Common args
+        scene_manager = SceneManager(session_id)
+        
+        if tool_name == "generate_video":
+            # Check for recently uploaded image in session (from chat upload)
+            latest_image = None
+            
+            # First check if image was uploaded via the chat interface
+            if 'latest_uploaded_image' in session and session_id in session['latest_uploaded_image']:
+                latest_image = session['latest_uploaded_image'][session_id]
+                logger.info(f"Using image from chat upload: {latest_image}")
+            
+            # Fallback: check upload directory for any previously uploaded images
+            if not latest_image:
+                # chat_upload_image saves to: videos/{session_id}/input/{filename}
+                # which maps to: uploads/videos/{session_id}/input/{filename}
+                upload_dir = os.path.join('uploads', 'videos', session_id, 'input')
+                if os.path.exists(upload_dir):
+                    files = sorted([os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if not f.startswith('.')], 
+                                   key=os.path.getmtime, reverse=True)
+                    if files:
+                        latest_image = files[0]
+                        logger.info(f"Using latest image from directory: {latest_image}")
+            
+            if not latest_image:
+                 return {
+                    "status": "error",
+                    "message": "I need an image to generate a video. Please upload an image first.",
+                    "intent": "error"
+                }
+
+            task = celery.send_task('tasks.generate_video_from_chat_task', args=[
+                session_id,
+                str(uuid.uuid4()), # scene_id
+                latest_image,
+                args.get("prompt", user_input),
+                args.get("duration", "8s"),
+                args.get("aspect_ratio", "16:9"),
+                "720p"
+            ])
+            task_type = "generate"
+
+        elif tool_name == "extend_video":
+            # Need previous scene ID
+            scenes = scene_manager.get_scenes()
+            if not scenes:
+                return {
+                    "status": "error",
+                    "message": "No video found to extend. Please generate a video first.",
+                    "intent": "error"
+                }
+            last_scene = scenes[-1]
+            
+            # For extension, we ideally need a NEW image (end frame of previous or new upload).
+            # For Veo 3.0, we pass the previous video as context.
+            # The task 'extend_scene_task' signature: (session_id, scene_id, previous_scene_id, new_image_path, prompt, ...)
+            
+            # We'll reuse the last image for now if no new one provided, or rely on the task to handle it.
+            # Actually, extend_scene_task requires a new_image_path. 
+            # We'll use the original image of the last scene as a fallback for this demo logic.
+            image_path = last_scene.get('image_path')
+            
+            task = celery.send_task('tasks.extend_scene_task', args=[
+                session_id,
+                str(uuid.uuid4()), # new scene_id
+                last_scene['id'], # previous_scene_id
+                image_path, # new_image_path (reusing for now)
+                args.get("prompt", "Continue the video"),
+                args.get("duration", "8s")
+            ])
+            task_type = "extend"
+
+        elif tool_name == "extract_frames":
+             # Get latest video
+            scenes = scene_manager.get_scenes()
+            if not scenes:
+                 return {"status": "error", "message": "No video to extract frames from.", "intent": "error"}
+            
+            # We use the session_id as video_id for the task if we want to extract from the 'composed' video,
+            # or the scene id. Let's default to the session context.
+            task = celery.send_task('tasks.extract_frames_task', args=[
+                session_id,
+                None, # video_path (optional, task finds it)
+                args.get("fps", 1)
+            ])
+            task_type = "extract"
+
+        elif tool_name == "edit_frame":
+            task = celery.send_task('tasks.edit_frame_task', args=[
+                session_id,
+                args.get("frame_index", 0),
+                args.get("instruction", "")
+            ])
+            task_type = "edit"
+
+        elif tool_name == "stitch_videos":
+            task = celery.send_task('tasks.merge_scenes_task', args=[
+                session_id,
+                args.get("transition_type", "fade")
+            ])
+            task_type = "stitch"
+
+        if task:
+            store_task_video_mapping(task.id, session_id)
+            
+            # Build plan sheet data for frontend visualization
+            plan_sheet = None
+            if tool_name in ["generate_video", "extend_video"]:
+                # Extract duration value (remove 's' suffix if present)
+                duration_str = args.get("duration", "8s")
+                duration_value = int(duration_str.rstrip('s')) if isinstance(duration_str, str) else int(duration_str)
+                
+                plan_sheet = {
+                    "mode": "Generate" if tool_name == "generate_video" else "Extend",
+                    "duration": duration_value,
+                    "prompt": args.get("prompt", user_input),
+                    "pic": "yes",  # We require an image for both generate and extend
+                    "task_id": task.id
+                }
+            
+            return {
+                "status": "processing",
+                "message": reply_message,
+                "intent": task_type,
+                "data": {
+                    "task_id": task.id,
+                    "video_id": session_id,
+                    "plan_sheet": plan_sheet  # Include plan sheet for frontend
+                }
+            }
+        else:
+             return {
+                "status": "error",
+                "message": "Failed to create task for the selected tool.",
+                "intent": "error"
+            }
+
+    except Exception as e:
+        logger.error(f"Agent mode error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"I encountered an error processing your request: {str(e)}",
+            "intent": "error"
+        }
 
 
 # -----------------------------------------------------------------------------
@@ -1255,10 +1532,12 @@ def chat_upload_image():
                 "message": "No file selected"
             }), 400
 
-        if 'session_id' not in session:
-            session['session_id'] = str(uuid.uuid4())
-        
-        session_id = session['session_id']
+        # Reuse the same chat/editor session so agent mode can find the upload later
+        session_id = session.get('editor_session_id') or session.get('session_id')
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        session['editor_session_id'] = session_id
+        session['session_id'] = session_id  # keep in sync with other endpoints
         
         # Use standard Supabase structure: videos/{session_id}/input/
         filename = secure_filename(file.filename)
@@ -1278,6 +1557,14 @@ def chat_upload_image():
             if upload_error:
                 logger.warning(f"Supabase upload failed: {upload_error}")
         
+        # Store the uploaded image path in session for Agent Mode reference
+        if 'latest_uploaded_image' not in session:
+            session['latest_uploaded_image'] = {}
+        
+        # Use the session_id that was used for the upload (video_id)
+        session['latest_uploaded_image'][session_id] = local_path
+        logger.info(f"Stored uploaded image in session for {session_id}: {local_path}")
+
         return jsonify({
             "status": "success",
             "filename": filename,
@@ -1772,19 +2059,8 @@ def api_edit_frame():
         target_frame = extracted_frames[frame_index]
         frame_path = target_frame['path']
 
-        # Get API key for AI editing
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            return jsonify(build_task_response(
-                task_id="",
-                video_id=video_id,
-                stage="edit",
-                status="error",
-                error="GOOGLE_API_KEY not configured. Cannot perform AI editing."
-            )), 500
-
         # Use AIFrameEditor to generate edited version
-        ai_editor = AIFrameEditor(api_key)
+        ai_editor = AIFrameEditor()
 
         edited_frames_dir = os.path.join('frames', video_id, 'edited')
         os.makedirs(edited_frames_dir, exist_ok=True)
@@ -2228,20 +2504,12 @@ def _handle_frame_edit(params: Dict[str, Any], scene_manager: SceneManager, sess
     # 既存のフレーム編集機能を活用
     # （MVPでは簡易実装: 最初のフレームを編集）
     try:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            return {
-                "status": "error",
-                "message": "GOOGLE_API_KEYが設定されていません",
-                "intent": "frame_edit"
-            }
-
         # フレーム抽出
         frame_editor = FrameEditor(scene.video_path)
         # タイムスタンプに最も近いフレームを抽出
         # TODO: extract_frame_at_time メソッドを実装
         # 暫定: 最初のフレームを使用
-        frames = frame_editor.extract_frames(num_frames=1)
+        frames = frame_editor.extract_frames(frame_count=1)
         if not frames:
             return {
                 "status": "error",
@@ -2252,7 +2520,7 @@ def _handle_frame_edit(params: Dict[str, Any], scene_manager: SceneManager, sess
         frame_path = frames[0]['path']
 
         # AI編集
-        ai_editor = AIFrameEditor(api_key)
+        ai_editor = AIFrameEditor()
         variations = ai_editor.generate_frame_variations(
             base_image_path=frame_path,
             prompt=params.get('prompt'),

@@ -1,7 +1,7 @@
 """
 Google Veo Video Generator Module
 Handles image-to-video generation using Google Generative AI (Veo) API
-Supports both Google AI Studio (API key) and Vertex AI (GCP project)
+via Google AI Studio (API key authentication)
 """
 
 from google import genai
@@ -30,15 +30,11 @@ logger = logging.getLogger(__name__)
 class VeoVideoGenerator:
     """
     Manages video generation using Google Generative AI Veo Image-to-Video API
-
-    Supports two modes:
-    1. Google AI Studio (API key authentication)
-    2. Vertex AI (GCP project + service account authentication)
+    through Google AI Studio (API key authentication).
     """
 
     # Available Veo models (3.0 general supports image conditioning)
-    VEO_MODEL_STUDIO = "veo-3.0-generate-001"  # Google AI Studio (General)
-    VEO_MODEL_VERTEX = "veo-3.0-generate-001"  # Vertex AI (General)
+    VEO_MODEL = "veo-3.0-generate-001"
     # If an override points to a model without image conditioning (e.g. 3.0 Fast),
     # fall back to a compatible model by default.
     VEO_IMAGE_CONDITIONING_FALLBACK = "veo-3.0-generate-001"
@@ -46,29 +42,21 @@ class VeoVideoGenerator:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        project_id: Optional[str] = None,
-        location: str = "us-central1",
-        use_vertex_ai: bool = False
     ):
         """
         Initialize the Veo Video Generator
 
         Args:
-            api_key: Google AI API key (for Google AI Studio mode)
-            project_id: GCP Project ID (for Vertex AI mode)
-            location: GCP region (default: us-central1)
-            use_vertex_ai: Whether to use Vertex AI instead of Google AI Studio
+            api_key: Google AI Studio API key (falls back to GOOGLE_API_KEY env var)
         """
-        self.use_vertex_ai = use_vertex_ai
-        self.project_id = project_id
-        self.location = location
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+
+        if not self.api_key:
+            raise ValueError("api_key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
 
         # Determine which model to use
         env_model_override = os.getenv("VEO_MODEL_OVERRIDE")
-        self.model = env_model_override or (
-            self.VEO_MODEL_VERTEX if use_vertex_ai else self.VEO_MODEL_STUDIO
-        )
+        self.model = env_model_override or self.VEO_MODEL
 
         # Fallback model when the active model does not support image/video
         # references. This can be overridden via env for future upgrades.
@@ -76,29 +64,10 @@ class VeoVideoGenerator:
             "VEO_IMAGE_MODEL_OVERRIDE", self.VEO_IMAGE_CONDITIONING_FALLBACK
         )
 
-        # Initialize client based on mode
-        if use_vertex_ai:
-            if not project_id:
-                raise ValueError("project_id is required for Vertex AI mode")
-
-            logger.info(f"Initializing Vertex AI client (Project: {project_id}, Location: {location})")
-            self.client = genai.Client(
-                vertexai=True,
-                project=project_id,
-                location=location
-            )
-            logger.info(f"✓ Vertex AI Mode - Using GCP credits")
-            logger.info(f"✓ Model: {self.model}")
-            logger.info(f"✓ Project: {project_id}")
-            logger.info(f"✓ Location: {location}")
-        else:
-            if not api_key:
-                raise ValueError("api_key is required for Google AI Studio mode")
-
-            logger.info("Initializing Google AI Studio client")
-            self.client = genai.Client(api_key=api_key)
-            logger.info(f"✓ Google AI Studio Mode")
-            logger.info(f"✓ Model: {self.model}")
+        logger.info("Initializing Google AI Studio client")
+        self.client = genai.Client(api_key=self.api_key)
+        logger.info("✓ Google AI Studio Mode - Using API key authentication")
+        logger.info("✓ Model: %s", self.model)
 
         logger.info(f"Veo Video Generator initialized successfully")
 
@@ -256,7 +225,7 @@ class VeoVideoGenerator:
         Returns:
             Operation object for video generation
         """
-        mode_name = "Vertex AI" if self.use_vertex_ai else "Google AI Studio"
+        mode_name = "Google AI Studio"
         logger.info(f"Submitting video generation request ({mode_name})")
         logger.info(f"Model: {self.model}")
         logger.info(f"Prompt: {prompt[:100]}...")
@@ -326,7 +295,7 @@ class VeoVideoGenerator:
                         logger.info(f"Still generating... ({poll_count * 30}s elapsed)")
 
                     if poll_count >= max_polls:
-                        raise TimeoutError("Video generation timed out after 5 minutes")
+                        raise TimeoutError("Video generation timed out after 15 minutes")
 
                 operation_error = getattr(operation, "error", None)
                 if operation_error:
@@ -379,13 +348,12 @@ class VeoVideoGenerator:
                     error_details = error_str
                 
                 error_msg = (
-                    "APIクォータ制限に達しました\n\n"
-                    "Google AI APIの使用量制限を超えています。\n\n"
+                    "Google AI Studio APIのクォータ制限に達しました。\n\n"
                     "対処方法:\n"
-                    "1. Google AI Studio (https://ai.dev/usage) で使用量を確認\n"
-                    "2. プランと請求情報を確認\n"
-                    "3. レート制限の詳細: https://ai.google.dev/gemini-api/docs/rate-limits\n"
-                    "4. しばらく待ってから再度お試しください（通常、クォータは時間単位または日単位でリセットされます）\n"
+                    "1. AI Studio APIのクォータを確認: https://aistudio.google.com/apikey\n"
+                    "2. レート制限の詳細: https://ai.google.dev/gemini-api/docs/rate-limits\n"
+                    "3. しばらく待ってから再度お試しください（時間単位または日単位でリセットされます）\n"
+                    "4. 必要に応じて有料プランへのアップグレードを検討\n"
                 )
                 logger.error(f"API quota exceeded: {error_str}")
                 logger.error(f"Error details: {error_details}")
@@ -397,13 +365,14 @@ class VeoVideoGenerator:
             logger.error(traceback.format_exc())
             raise
 
-    def _download_from_uri(self, uri: str, output_path: str) -> None:
+    def _download_from_uri(self, uri: str, output_path: str, api_key: Optional[str] = None) -> None:
         """
         Download file from URI using HTTP requests with Google API authentication
 
         Args:
             uri: GCS URI or HTTP(S) URL
             output_path: Path to save the downloaded file
+            api_key: Optional API key to use for authentication
         """
         logger.info(f"Downloading from URI: {uri}")
 
@@ -418,38 +387,36 @@ class VeoVideoGenerator:
                 uri = f"https://storage.googleapis.com/{bucket}/{object_path}"
                 logger.info(f"Converted GCS URI to HTTPS endpoint: {uri}")
 
-            # Prepare authentication headers based on mode
+            # Prepare authentication headers
             headers = {}
 
-            if self.use_vertex_ai:
-                # For Vertex AI, try to use GCP authentication
-                logger.info("Using Vertex AI mode - preparing GCP authentication")
+            # Add API Key header if available (works for some public/protected resources)
+            if api_key:
+                headers["X-Goog-Api-Key"] = api_key
 
-                if HAS_GOOGLE_AUTH:
-                    try:
-                        credentials, project = get_default_credentials()
-                        needs_refresh = (
-                            getattr(credentials, "expired", False)
-                            or getattr(credentials, "token", None) is None
-                        )
-                        if needs_refresh:
-                            credentials.refresh(Request())
-                        token = getattr(credentials, "token", None)
-                        if token:
-                            headers['Authorization'] = f'Bearer {token}'
-                            logger.info("Using GCP OAuth2 credentials for download")
-                        else:
-                            logger.warning("Loaded GCP credentials but no access token available; continuing without auth")
-                    except Exception as auth_error:
-                        logger.warning(f"Could not get GCP credentials, trying unauthenticated: {auth_error}")
-                else:
-                    logger.info("google-auth not available, attempting unauthenticated download")
+            logger.info("Preparing GCP authentication for download")
+            if HAS_GOOGLE_AUTH:
+                try:
+                    # Request read-only storage scope explicitly
+                    scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
+                    credentials, _ = get_default_credentials(scopes=scopes)
+                    
+                    needs_refresh = (
+                        getattr(credentials, "expired", False)
+                        or getattr(credentials, "token", None) is None
+                    )
+                    if needs_refresh:
+                        credentials.refresh(Request())
+                    token = getattr(credentials, "token", None)
+                    if token:
+                        headers['Authorization'] = f'Bearer {token}'
+                        logger.info("Using GCP OAuth2 credentials for download")
+                    else:
+                        logger.warning("Loaded GCP credentials but no access token available; continuing without auth")
+                except Exception as auth_error:
+                    logger.warning(f"Could not refresh application default credentials, attempting unauthenticated: {auth_error}")
             else:
-                # For Google AI Studio, use API key
-                if not self.api_key:
-                    raise ValueError("API key is required for Google AI Studio mode downloads")
-                headers['X-Goog-API-Key'] = self.api_key
-                logger.info("Using Google AI Studio mode with API key authentication")
+                logger.warning("google-auth not available, attempting unauthenticated download")
 
             logger.info("Making request to download video...")
 
@@ -539,14 +506,19 @@ class VeoVideoGenerator:
             sdk_download_successful = False
 
             # Method 1: Try to use client.files.download if available
+            # Only attempt this if the URI looks like a resource name (not a URL)
+            is_url = file_uri.startswith("http") or file_uri.startswith("gs://")
+            
             try:
-                if hasattr(self.client, 'files') and hasattr(self.client.files, 'download'):
+                if not is_url and hasattr(self.client, 'files') and hasattr(self.client.files, 'download'):
                     logger.info("Attempting download using genai SDK native method...")
                     downloaded_file = self.client.files.download(file_uri)
                     with open(output_path, 'wb') as f:
                         f.write(downloaded_file)
                     sdk_download_successful = True
                     logger.info("Successfully downloaded using SDK native method")
+                elif is_url:
+                    logger.info("Skipping SDK native download for URL/URI format")
             except Exception as sdk_error:
                 logger.warning(f"SDK native download failed: {sdk_error}")
 
@@ -583,7 +555,7 @@ class VeoVideoGenerator:
                         logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
 
                         # Download from URI
-                        self._download_from_uri(file_uri, output_path)
+                        self._download_from_uri(file_uri, output_path, api_key=self.api_key)
 
                         # Verify file was written
                         if not os.path.exists(output_path):
@@ -791,15 +763,16 @@ if __name__ == "__main__":
     # Example usage
     import sys
 
-    if len(sys.argv) < 4:
-        print("Usage: python veo_generator.py <api_key> <image_path> <output_path>")
+    if len(sys.argv) < 3:
+        print("Usage: python veo_generator.py <image_path> <output_path> [api_key]")
+        print("Note: api_key defaults to GOOGLE_API_KEY environment variable")
         sys.exit(1)
 
-    api_key = sys.argv[1]
-    image_path = sys.argv[2]
-    output_path = sys.argv[3]
+    image_path = sys.argv[1]
+    output_path = sys.argv[2]
+    api_key_arg = sys.argv[3] if len(sys.argv) > 3 else None
 
-    generator = VeoVideoGenerator(api_key)
+    generator = VeoVideoGenerator(api_key=api_key_arg)
 
     prompt = "Luxurious modern apartment building exterior, cinematic pan showing architectural details"
 

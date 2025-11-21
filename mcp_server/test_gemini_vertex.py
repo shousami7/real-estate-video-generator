@@ -25,7 +25,6 @@ def test_vertex_initialization():
     with patch.dict(os.environ, {
         "GOOGLE_CLOUD_PROJECT": "test-project",
         "GOOGLE_CLOUD_LOCATION": "us-central1",
-        "GOOGLE_API_KEY": "" # Ensure API key is empty
     }):
         # Mock genai.Client
         mock_client_cls = genai_mock.Client
@@ -34,16 +33,6 @@ def test_vertex_initialization():
         # Instead of running main, let's just test the logic block if we extracted it,
         # but since it's in main, we'll simulate the environment and checking the call.
         
-        # We can't easily run main() because it has an infinite loop and async calls.
-        # Let's verify the logic by inspecting the code or refactoring.
-        # For now, I will rely on the fact that I can import the module and check the logic 
-        # if I refactored it, but I didn't refactor main.
-        
-        # Let's try to mock genai.Client and see if we can trigger the initialization logic
-        # by calling a modified version of main or just verifying the env var check logic
-        # which I just wrote.
-        
-        # Actually, the best way is to verify the logic I wrote:
         project = os.getenv("GOOGLE_CLOUD_PROJECT")
         location = os.getenv("GOOGLE_CLOUD_LOCATION")
         
@@ -57,21 +46,6 @@ def test_vertex_initialization():
             print("✓ genai.Client initialized with vertexai=True")
         else:
             print("FAIL: Env vars not found")
-
-def test_api_key_fallback():
-    print("\nTesting API Key Fallback...")
-    
-    with patch.dict(os.environ, {
-        "GOOGLE_CLOUD_PROJECT": "",
-        "GOOGLE_CLOUD_LOCATION": "",
-        "GOOGLE_API_KEY": "test-key"
-    }):
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if api_key:
-             print(f"✓ API Key present: {api_key}")
-             client = genai_mock.Client(api_key=api_key)
-             genai_mock.Client.assert_called_with(api_key="test-key")
-             print("✓ genai.Client initialized with api_key")
 
 if __name__ == "__main__":
     test_vertex_initialization()

@@ -89,14 +89,16 @@ ffmpeg -version
 
 # Set up environment variables (.env file)
 cat > .env << EOF
-GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+GOOGLE_CLOUD_LOCATION=us-central1
 SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 EOF
 
 # Or manually create .env file with:
-# GOOGLE_API_KEY=your_google_api_key_here
+# GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+# GOOGLE_CLOUD_LOCATION=us-central1
 # SECRET_KEY=your_random_secret_key_here
 # CELERY_BROKER_URL=redis://localhost:6379/0
 # CELERY_RESULT_BACKEND=redis://localhost:6379/0
@@ -126,15 +128,16 @@ When `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_BUCKET_NAME` are
 
 If the Supabase credentials are not present and `SUPABASE_REQUIRED` is left `false`, the system gracefully falls back to serving everything from `uploads/` as before.
 
-## Getting Google AI API Key
+## Vertex AI Authentication
 
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click "Create API Key"
-4. Select or create a Google Cloud project
-5. Copy and save your API key securely
-
-**Note**: Ensure you have access to the Veo model in your Google AI account.
+1. Enable the Vertex AI API in your GCP project.
+2. Authenticate with Application Default Credentials:
+   ```bash
+   gcloud auth application-default login
+   gcloud config set project <your_project_id>
+   ```
+3. Set `GOOGLE_CLOUD_PROJECT` (and optionally `GOOGLE_CLOUD_LOCATION`), or rely on `gcloud config get-value project`.
+4. If running outside gcloud, set `GOOGLE_APPLICATION_CREDENTIALS` to a service account JSON key with `aiplatform.user` access.
 
 ## Usage
 
@@ -202,83 +205,9 @@ Features:
 - Background generation (async mode only)
 - No command-line knowledge required
 
-### Command-Line Interface
+### Command-Line Interface (Vertex AI)
 
-### Basic Usage
-
-Generate a luxury property video from 3 images:
-
-```bash
-python generate_property_video.py \
-  --api-key YOUR_GOOGLE_API_KEY \
-  --images exterior.jpg interior.jpg lobby.jpg \
-  --output luxury_apartment.mp4
-```
-
-### Using Environment Variable
-
-```bash
-export GOOGLE_API_KEY=your_api_key_here
-
-python generate_property_video.py \
-  --images photo1.jpg photo2.jpg photo3.jpg
-```
-
-### Advanced Usage
-
-Custom transitions and settings:
-
-```bash
-python generate_property_video.py \
-  --api-key YOUR_GOOGLE_API_KEY \
-  --images exterior.jpg interior.jpg common_area.jpg \
-  --output penthouse_showcase.mp4 \
-  --transition wipeleft \
-  --transition-duration 0.8 \
-  --clip-duration 10 \
-  --resolution 1920x1080 \
-  --output-dir /path/to/output
-```
-
-### Custom Prompts
-
-Provide your own video generation prompts:
-
-```bash
-python generate_property_video.py \
-  --api-key YOUR_GOOGLE_API_KEY \
-  --images img1.jpg img2.jpg img3.jpg \
-  --prompts \
-    "Modern skyscraper exterior with sunset lighting" \
-    "Luxurious penthouse living room with city views" \
-    "Elegant lobby with marble and gold accents"
-```
-
-## Command-Line Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--api-key` | Google AI API key | `$GOOGLE_API_KEY` |
-| `--images` | 3 property images (required) | - |
-| `--output` | Output video filename | `final_property_video.mp4` |
-| `--output-dir` | Base output directory | `output/` |
-| `--session-name` | Session folder name | Timestamp |
-| `--transition` | Transition type | `fade` |
-| `--transition-duration` | Transition length (seconds) | `0.5` |
-| `--clip-duration` | Each clip duration (seconds) | `8` |
-| `--resolution` | Output resolution | `1280x720` |
-| `--prompts` | Custom prompts for each clip | Built-in prompts |
-| `--verbose` | Enable verbose logging | `false` |
-
-### Available Transitions
-
-- `fade` - Smooth fade transition (recommended)
-- `wipeleft` - Wipe from right to left
-- `wiperight` - Wipe from left to right
-- `wipeup` - Wipe from bottom to top
-- `wipedown` - Wipe from top to bottom
-- `slideleft` - Slide transition left
-- `slideright` - Slide transition right
+Legacy API-key CLI flags have been removed. Set `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION` and use the web UI or Celery tasks; see `VERTEX_AI_MIGRATION.md` for current Vertex-only usage tips.
 
 ## Output Structure
 
@@ -324,13 +253,13 @@ amenities showcase, professional real estate presentation
 
 ### veo_generator.py
 
-Handles all Google AI API interactions:
+Handles all Google AI API interactions (Vertex AI):
 
 ```python
 from veo_generator import VeoVideoGenerator
 
 # Initialize
-generator = VeoVideoGenerator(api_key="your_api_key")
+generator = VeoVideoGenerator(project_id="your_gcp_project", location="us-central1")
 
 # Complete workflow: upload, generate, download
 video_path = generator.generate_from_image_file(
@@ -401,21 +330,15 @@ Error: FFmpeg not found
 - Ubuntu: `sudo apt install ffmpeg`
 - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-### API Key Issues
+### Authentication Issues
 
 ```
-Error: API key not provided
+Error: missing project credentials
 ```
 
-**Solution**: Set your API key:
-```bash
-export GOOGLE_API_KEY=your_api_key_here
-```
-
-Or use `--api-key` flag:
-```bash
-python generate_property_video.py --api-key YOUR_KEY --images ...
-```
+**Solution**:
+- Ensure `GOOGLE_CLOUD_PROJECT` (or `GCP_PROJECT_ID`) is set.
+- Run `gcloud auth application-default login` or provide a service account via `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ### Video Generation Timeout
 
@@ -424,10 +347,10 @@ TimeoutError: Video generation timed out
 ```
 
 **Solution**: The system waits up to 10 minutes. If it times out:
-- Check your Google AI account status and Veo access
-- Verify your API key is valid
+- Check your Vertex AI quota and Veo access
+- Verify ADC/service account permissions
 - Try again with a smaller image
-- Check Google AI service status
+- Check Google Cloud service status
 
 ### File Not Found
 
@@ -470,17 +393,14 @@ python generate_property_video.py \
 ls property_images/
 # exterior.jpg  interior.jpg  lobby.jpg
 
-# 2. Set API key
-export GOOGLE_API_KEY=your_google_api_key_here
+# 2. Set Vertex project and authenticate
+export GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+export GOOGLE_CLOUD_LOCATION=us-central1
+gcloud auth application-default login
 
-# 3. Generate video
-python generate_property_video.py \
-  --images property_images/exterior.jpg \
-           property_images/interior.jpg \
-           property_images/lobby.jpg \
-  --output manhattan_penthouse.mp4 \
-  --transition fade \
-  --transition-duration 0.5
+# 3. Run the web app / worker as needed
+python app.py  # start the Flask UI
+# celery -A celery_app worker --loglevel=info  # start worker (if using async tasks)
 
 # 4. Output appears in output/TIMESTAMP/
 # View your video!
