@@ -11,7 +11,7 @@ from google.api_core import exceptions as google_exceptions
 import os
 import time
 from typing import Optional, Dict, Any
-from pathlib import Path
+
 import logging
 import requests
 from urllib.parse import urlparse
@@ -385,7 +385,9 @@ class VeoVideoGenerator:
         try:
             # Normalize Google Cloud Storage URIs to standard HTTPS endpoints
             parsed = urlparse(uri)
-            if parsed.scheme in {"gs", "gcs"}:
+            is_gcs = parsed.scheme in {"gs", "gcs"}
+            
+            if is_gcs:
                 bucket = parsed.netloc
                 object_path = parsed.path.lstrip("/")
                 if not bucket or not object_path:
@@ -393,41 +395,55 @@ class VeoVideoGenerator:
                 uri = f"https://storage.googleapis.com/{bucket}/{object_path}"
                 logger.info(f"Converted GCS URI to HTTPS endpoint: {uri}")
 
-            # Prepare authentication headers
+            # Check if this is a Gemini/AI Studio file URL
+            is_gemini_file = "generativelanguage.googleapis.com" in uri and "/files/" in uri
+            
+            # Prepare authentication headers and params
             headers = {}
+            params = {}
 
-            # Add API Key header if available (works for some public/protected resources)
-            if api_key:
-                headers["X-Goog-Api-Key"] = api_key
-
-            logger.info("Preparing GCP authentication for download")
-            if HAS_GOOGLE_AUTH:
-                try:
-                    # Request read-only storage scope explicitly
-                    scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
-                    credentials, _ = get_default_credentials(scopes=scopes)
-                    
-                    needs_refresh = (
-                        getattr(credentials, "expired", False)
-                        or getattr(credentials, "token", None) is None
-                    )
-                    if needs_refresh:
-                        credentials.refresh(Request())
-                    token = getattr(credentials, "token", None)
-                    if token:
-                        headers['Authorization'] = f'Bearer {token}'
-                        logger.info("Using GCP OAuth2 credentials for download")
-                    else:
-                        logger.warning("Loaded GCP credentials but no access token available; continuing without auth")
-                except Exception as auth_error:
-                    logger.warning(f"Could not refresh application default credentials, attempting unauthenticated: {auth_error}")
+            if is_gemini_file:
+                logger.info("Detected Gemini/AI Studio file URL")
+                # For Gemini files, use API key as query parameter
+                if api_key:
+                    params["key"] = api_key
+                    logger.info("Using API key for Gemini file download")
+                else:
+                    logger.warning("No API key provided for Gemini file download")
             else:
-                logger.warning("google-auth not available, attempting unauthenticated download")
+                # For GCS or other URLs, use standard Google Auth headers if available
+                # Add API Key header if available (works for some public/protected resources)
+                if api_key:
+                    headers["X-Goog-Api-Key"] = api_key
+
+                logger.info("Preparing GCP authentication for download")
+                if HAS_GOOGLE_AUTH:
+                    try:
+                        # Request read-only storage scope explicitly
+                        scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
+                        credentials, _ = get_default_credentials(scopes=scopes)
+                        
+                        needs_refresh = (
+                            getattr(credentials, "expired", False)
+                            or getattr(credentials, "token", None) is None
+                        )
+                        if needs_refresh:
+                            credentials.refresh(Request())
+                        token = getattr(credentials, "token", None)
+                        if token:
+                            headers['Authorization'] = f'Bearer {token}'
+                            logger.info("Using GCP OAuth2 credentials for download")
+                        else:
+                            logger.warning("Loaded GCP credentials but no access token available; continuing without auth")
+                    except Exception as auth_error:
+                        logger.warning(f"Could not refresh application default credentials, attempting unauthenticated: {auth_error}")
+                else:
+                    logger.warning("google-auth not available, attempting unauthenticated download")
 
             logger.info("Making request to download video...")
 
             # Download using requests with authentication
-            response = requests.get(uri, headers=headers, timeout=300, stream=True)
+            response = requests.get(uri, headers=headers, params=params, timeout=300, stream=True)
 
             logger.info(f"Response status code: {response.status_code}")
             response.raise_for_status()
@@ -508,23 +524,37 @@ class VeoVideoGenerator:
 
             logger.info(f"Downloading video from: {file_uri}")
 
-            # Try to download using SDK native methods first
+            # Try to download using SDK native methods first.
+            # Official GenAI examples do:
+            #   vid = op.response.generated_videos[0]
+            #   client.files.download(file=vid.video)
+            #   vid.video.save("out.mp4")
+            # so we follow the same pattern here.
             sdk_download_successful = False
 
-            # Method 1: Try to use client.files.download if available
-            # Only attempt this if the URI looks like a resource name (not a URL)
-            is_url = file_uri.startswith("http") or file_uri.startswith("gs://")
-            
             try:
-                if not is_url and hasattr(self.client, 'files') and hasattr(self.client.files, 'download'):
-                    logger.info("Attempting download using genai SDK native method...")
-                    downloaded_file = self.client.files.download(file_uri)
-                    with open(output_path, 'wb') as f:
-                        f.write(downloaded_file)
-                    sdk_download_successful = True
-                    logger.info("Successfully downloaded using SDK native method")
-                elif is_url:
-                    logger.info("Skipping SDK native download for URL/URI format")
+                if hasattr(self.client, "files") and hasattr(self.client.files, "download"):
+                    if hasattr(video_file, "save"):
+                        logger.info("Using genai SDK download with file object + save()")
+                        # This will populate the file object with bytes.
+                        self.client.files.download(file=video_file)
+                        video_file.save(output_path)
+                        sdk_download_successful = True
+                        logger.info("Successfully downloaded using SDK file.save() flow")
+                    else:
+                        # Fallback: try passing a resource name (e.g. 'files/xyz') if present.
+                        file_name = getattr(video_file, "name", None) or file_uri
+                        if file_name:
+                            logger.info(f"Using genai SDK download with resource name: {file_name}")
+                            downloaded_content = self.client.files.download(name=file_name)
+                            if hasattr(downloaded_content, "read"):
+                                data = downloaded_content.read()
+                            else:
+                                data = downloaded_content
+                            with open(output_path, "wb") as f:
+                                f.write(data)
+                            sdk_download_successful = True
+                            logger.info("Successfully downloaded using SDK name-based flow")
             except Exception as sdk_error:
                 logger.warning(f"SDK native download failed: {sdk_error}")
 
