@@ -218,7 +218,7 @@ def get_status():
             "final_video_url": "/download",
             "editor_url": "/video/editor",
             "video_id": video_id,
-            "stage": result.get('stage') or stage,
+            "stage": meta.get('stage') or stage,
         })
 
     if task.state in {states.FAILURE, states.REVOKED}:
@@ -1278,7 +1278,9 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
                 last_scene['id'], # previous_scene_id
                 image_path, # new_image_path (reusing for now)
                 args.get("prompt", "Continue the video"),
-                args.get("duration", "8s")
+                args.get("duration", "8s"),
+                args.get("aspect_ratio", "16:9"),
+                "720p"
             ])
             task_type = "extend"
 
