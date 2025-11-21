@@ -1381,6 +1381,31 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
 # MCP Task Status Endpoint
 # -----------------------------------------------------------------------------
 
+@web_ui_blueprint.route('/api/task/<task_id>/cancel', methods=['POST'])
+def api_cancel_task(task_id):
+    """
+    Cancel a running Celery task.
+    """
+    try:
+        # Revoke the task
+        celery.control.revoke(task_id, terminate=True)
+        
+        # Update our local mapping if needed (optional, but good for consistency)
+        # In a real app, we might want to mark it as cancelled in a DB
+        
+        logger.info(f"Task {task_id} cancelled by user request")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Task cancellation requested"
+        })
+    except Exception as e:
+        logger.error(f"Error cancelling task {task_id}: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 @web_ui_blueprint.route('/api/task/<task_id>/status', methods=['GET'])
 def get_task_status(task_id: str):
     """
@@ -2312,12 +2337,10 @@ def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, se
     logger.info(f"Handling CREATE command: {params}")
 
     # 画像パスの検証
-    image_path = params.get('image_path')
+    requested_image = params.get('image_path')
+    latest_uploaded = (session.get('latest_uploaded_image') or {}).get(session_id)
 
-    # TODO: 画像パスが指定されていない場合、セッションのアップロードから取得
-    # または、プロンプトのみでテキストから動画生成（Veo API対応時）
-
-    if not image_path:
+    if not requested_image and not latest_uploaded:
         return {
             "status": "error",
             "message": "画像パスを指定してください（例: 「image1.jpgから動画を作って」）",
@@ -2325,19 +2348,29 @@ def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, se
         }
 
     # 画像ファイルの存在確認（ローカルまたはアップロード済み）
-    # MVPでは簡易実装: セッションのuploadディレクトリを確認
-    upload_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id)
-    full_image_path = os.path.join(upload_dir, image_path)
+    candidate_paths = []
 
-    if not os.path.exists(full_image_path):
-        # グローバルアップロードディレクトリも確認
-        full_image_path = os.path.join(LOCAL_UPLOAD_ROOT, image_path)
-        if not os.path.exists(full_image_path):
-            return {
-                "status": "error",
-                "message": f"画像が見つかりません: {image_path}。先にアップロードしてください。",
-                "intent": "create"
-            }
+    if latest_uploaded:
+        candidate_paths.append(latest_uploaded)
+
+    if requested_image:
+        if os.path.isabs(requested_image):
+            candidate_paths.append(requested_image)
+        else:
+            candidate_paths.extend([
+                os.path.join(LOCAL_UPLOAD_ROOT, requested_image),
+                os.path.join(LOCAL_UPLOAD_ROOT, session_id, requested_image),
+                _local_storage_full_path(build_storage_path(session_id, "input", requested_image)),
+            ])
+
+    resolved_image_path = next((p for p in candidate_paths if p and os.path.exists(p)), None)
+
+    if not resolved_image_path:
+        return {
+            "status": "error",
+            "message": f"画像が見つかりません: {requested_image or '未指定'}。先に画像をアップロードしてください。",
+            "intent": "create"
+        }
 
     # 次のシーンIDを生成
     scene_id = scene_manager.generate_next_scene_id()
@@ -2350,7 +2383,7 @@ def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, se
         task = generate_video_from_chat_task.delay(
             session_id=session_id,
             scene_id=scene_id,
-            image_path=full_image_path,
+            image_path=resolved_image_path,
             prompt=params.get('prompt'),
             duration=params.get('duration', '8s'),
             aspect_ratio=params.get('aspect_ratio', '16:9'),
@@ -2402,9 +2435,10 @@ def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, se
         }
 
     # 新しい画像パス
-    new_image_path = params.get('image_path')
+    requested_image = params.get('image_path')
+    latest_uploaded = (session.get('latest_uploaded_image') or {}).get(session_id)
 
-    if not new_image_path:
+    if not requested_image and not latest_uploaded:
         return {
             "status": "error",
             "message": "新しいシーンの画像パスを指定してください（例: 「image2.jpgで続きを作って」）",
@@ -2412,17 +2446,29 @@ def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, se
         }
 
     # 画像ファイルの存在確認
-    upload_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id)
-    full_image_path = os.path.join(upload_dir, new_image_path)
+    candidate_paths = []
 
-    if not os.path.exists(full_image_path):
-        full_image_path = os.path.join(LOCAL_UPLOAD_ROOT, new_image_path)
-        if not os.path.exists(full_image_path):
-            return {
-                "status": "error",
-                "message": f"画像が見つかりません: {new_image_path}",
-                "intent": "extend"
-            }
+    if latest_uploaded:
+        candidate_paths.append(latest_uploaded)
+
+    if requested_image:
+        if os.path.isabs(requested_image):
+            candidate_paths.append(requested_image)
+        else:
+            candidate_paths.extend([
+                os.path.join(LOCAL_UPLOAD_ROOT, requested_image),
+                os.path.join(LOCAL_UPLOAD_ROOT, session_id, requested_image),
+                _local_storage_full_path(build_storage_path(session_id, "input", requested_image)),
+            ])
+
+    resolved_image_path = next((p for p in candidate_paths if p and os.path.exists(p)), None)
+
+    if not resolved_image_path:
+        return {
+            "status": "error",
+            "message": f"画像が見つかりません: {requested_image or '未指定'}",
+            "intent": "extend"
+        }
 
     # 次のシーンIDを生成
     scene_id = scene_manager.generate_next_scene_id()
@@ -2435,7 +2481,7 @@ def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, se
             session_id=session_id,
             scene_id=scene_id,
             previous_scene_id=last_scene.scene_id,
-            new_image_path=full_image_path,
+            new_image_path=resolved_image_path,
             prompt=params.get('prompt'),
             duration=params.get('duration', '8s'),
             aspect_ratio=params.get('aspect_ratio', '16:9'),
