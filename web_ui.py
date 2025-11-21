@@ -1871,13 +1871,24 @@ def api_extend_video():
         logger.info(f"[MCP API] Video extension started: task_id={task.id}, video_id={video_id}, scene_id={scene_id}")
         store_task_video_mapping(task.id, video_id)
 
-        # Return unified response
-        return jsonify(build_task_response(
+        # Build plan sheet data for frontend visualization
+        plan_sheet = {
+            "mode": "Extend",
+            "duration": duration_seconds,
+            "prompt": prompt,
+            "pic": "yes",
+            "task_id": task.id
+        }
+
+        # Return unified response with plan sheet
+        response = build_task_response(
             task_id=task.id,
             video_id=video_id,
             stage="extend",
             status="running",
-        )), 202
+        )
+        response["plan_sheet"] = plan_sheet
+        return jsonify(response), 202
 
     except Exception as e:
         logger.error(f"[MCP API] Extend error: {e}", exc_info=True)
@@ -2490,13 +2501,30 @@ def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, se
 
         logger.info(f"Scene extension task started: task_id={task.id}, scene_id={scene_id}")
 
+        # Build plan sheet data for frontend visualization
+        duration_str = params.get('duration', '8s')
+        duration_value = int(duration_str.rstrip('s')) if isinstance(duration_str, str) else int(duration_str)
+
+        plan_sheet = {
+            "mode": "Extend",
+            "duration": duration_value,
+            "prompt": params.get('prompt', 'Continue the smooth camera movement'),
+            "pic": "yes",
+            "task_id": task.id
+        }
+
         return {
             "status": "processing",
             "task_id": task.id,
             "scene_id": scene_id,
             "previous_scene_id": last_scene.scene_id,
             "message": f"{last_scene.scene_id}の次のシーンを生成中...\n新しいシーンID: {scene_id}",
-            "intent": "extend"
+            "intent": "extend",
+            "data": {
+                "task_id": task.id,
+                "video_id": session_id,
+                "plan_sheet": plan_sheet
+            }
         }
 
     except ImportError:
