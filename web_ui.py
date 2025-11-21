@@ -163,6 +163,7 @@ def index():
 def get_status():
     """
     Check the progress of the async video generation task.
+    Includes defensive handling for corrupted Celery backend data.
     """
     task_id = request.args.get('task_id') or session.get('generation_task_id')
 
@@ -174,14 +175,32 @@ def get_status():
         })
 
     task = AsyncResult(task_id, app=celery)
-    meta = task.info if isinstance(task.info, dict) else {}
+
+    # Safely access task.state and task.info - catch backend deserialization errors
+    try:
+        task_state = task.state
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
+        logger.warning(f"Task {task_id} has corrupted backend state: {e}")
+        return jsonify({
+            "status": "ERROR",
+            "message": "Task data corrupted in backend. Please retry the operation.",
+            "progress_percent": 0
+        })
+
+    try:
+        task_info = task.info
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
+        logger.warning(f"Task {task_id} info deserialization failed: {e}")
+        task_info = None
+
+    meta = task_info if isinstance(task_info, dict) else {}
     video_id = get_task_video_mapping(task_id) or meta.get('video_id') or session.get('session_id')
     progress = meta.get('progress', session.get('generation_progress', 0))
     message = meta.get('message', "Processing video request...")
-    stage = meta.get('stage', task.state)
+    stage = meta.get('stage', task_state)
     step = meta.get('step') or stage
 
-    if task.state == states.PENDING:
+    if task_state == states.PENDING:
         session['generation_status'] = 'QUEUED'
         session['generation_progress'] = progress
         return jsonify({
@@ -192,7 +211,7 @@ def get_status():
             "stage": stage,
         })
 
-    if task.state in {'STARTED', 'GENERATING_CLIPS', 'COMPOSING'}:
+    if task_state in {'STARTED', 'GENERATING_CLIPS', 'COMPOSING'}:
         session['generation_status'] = step
         session['generation_progress'] = progress
         session.modified = True
@@ -204,7 +223,7 @@ def get_status():
             "stage": stage,
         })
 
-    if task.state == states.SUCCESS:
+    if task_state == states.SUCCESS:
         final_video = meta.get('final_video') or session.get('final_video')
         if final_video:
             session['final_video'] = final_video
@@ -221,14 +240,14 @@ def get_status():
             "stage": meta.get('stage') or stage,
         })
 
-    if task.state in {states.FAILURE, states.REVOKED}:
+    if task_state in {states.FAILURE, states.REVOKED}:
         error_msg = session.get('generation_error')
         if not error_msg:
-            if isinstance(task.info, Exception):
-                error_msg = str(task.info)
+            if isinstance(task_info, Exception):
+                error_msg = str(task_info)
             else:
                 error_msg = meta.get('message', 'An unknown error occurred during video generation.')
-        status_label = "CANCELLED" if task.state == states.REVOKED else "ERROR"
+        status_label = "CANCELLED" if task_state == states.REVOKED else "ERROR"
         session['generation_status'] = status_label
         session['generation_error'] = error_msg
         session['generation_progress'] = progress
@@ -243,7 +262,7 @@ def get_status():
 
     # Fallback (should not normally reach here)
     return jsonify({
-        "status": task.state or "IDLE",
+        "status": task_state or "IDLE",
         "message": message,
         "progress_percent": progress,
         "video_id": video_id,
@@ -1367,6 +1386,10 @@ def get_task_status(task_id: str):
     """
     Get unified task status for MCP orchestration.
 
+    Includes defensive handling for corrupted Celery backend data.
+    Returns error status instead of crashing when task metadata
+    cannot be deserialized.
+
     Returns:
         {
             "task_id": str,
@@ -1386,7 +1409,34 @@ def get_task_status(task_id: str):
         # Get video_id from backend mapping first (fallback to task metadata/session)
         video_id = get_task_video_mapping(task_id) or session.get('editor_session_id') or session.get('session_id')
 
-        if task.state == states.PENDING:
+        # Safely access task.state - catch backend deserialization errors
+        try:
+            task_state = task.state
+        except (ValueError, KeyError, AttributeError, TypeError) as e:
+            # Backend has corrupted/invalid exception data - treat as error state
+            logger.warning(f"Task {task_id} has corrupted backend state: {e}")
+            return jsonify(build_task_response(
+                task_id=task_id,
+                video_id=video_id or "unknown",
+                stage="unknown",
+                status="error",
+                error="Task data corrupted in backend. Please retry the operation.",
+            ))
+
+        # Safely access task.info and task.result once, cache for reuse
+        try:
+            task_info = task.info
+        except (ValueError, KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"Task {task_id} info deserialization failed: {e}")
+            task_info = None
+
+        try:
+            task_result = task.result
+        except (ValueError, KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"Task {task_id} result deserialization failed: {e}")
+            task_result = None
+
+        if task_state == states.PENDING:
             # Task not yet started
             return jsonify(build_task_response(
                 task_id=task_id,
@@ -1395,9 +1445,9 @@ def get_task_status(task_id: str):
                 status="pending",
             ))
 
-        elif task.state in {states.STARTED, 'GENERATING_CLIPS', 'COMPOSING', 'GENERATING', 'EXTENDING', 'DOWNLOADING', 'SAVING', 'MERGING', 'UPLOADING'}:
+        elif task_state in {states.STARTED, 'GENERATING_CLIPS', 'COMPOSING', 'GENERATING', 'EXTENDING', 'DOWNLOADING', 'SAVING', 'MERGING', 'UPLOADING'}:
             # Task is running
-            meta = task.info if isinstance(task.info, dict) else {}
+            meta = task_info if isinstance(task_info, dict) else {}
             meta_video_id = meta.get('video_id')
             video_id = meta_video_id or get_task_video_mapping(task_id) or video_id or "unknown"
             progress = meta.get("progress", 0)
@@ -1410,9 +1460,9 @@ def get_task_status(task_id: str):
                 progress=progress,
             ))
 
-        elif task.state == states.SUCCESS:
+        elif task_state == states.SUCCESS:
             # Task completed - MUST load log file from Supabase
-            result = task.result if isinstance(task.result, dict) else {}
+            result = task_result if isinstance(task_result, dict) else {}
             video_id = result.get('video_id') or get_task_video_mapping(task_id) or video_id or "unknown"
 
             # 1) If Celery result already contains the full unified payload, return it
@@ -1435,12 +1485,12 @@ def get_task_status(task_id: str):
                 error=result.get('error'),
             ))
 
-        elif task.state in {states.FAILURE, states.REVOKED}:
+        elif task_state in {states.FAILURE, states.REVOKED}:
             # Task failed
-            error_msg = str(task.info) if task.info else "Task failed or was revoked"
+            error_msg = str(task_info) if task_info else "Task failed or was revoked"
             # If Celery result already contains a unified error payload, return it directly
-            if isinstance(task.result, dict):
-                result = task.result
+            if isinstance(task_result, dict):
+                result = task_result
                 if all(k in result for k in ["task_id", "video_id", "stage", "status", "output_url", "frames", "error"]):
                     return jsonify(result)
 

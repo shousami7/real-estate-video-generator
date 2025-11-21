@@ -3,7 +3,16 @@ import os
 import json
 from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
+from urllib.parse import urlparse
 from datetime import datetime
+import time
+
+try:
+    import httpx
+    import httpcore
+except ImportError:
+    httpx = None
+    httpcore = None
 
 try:
     # The supabase package is optional at runtime (only required when uploads are enabled)
@@ -133,45 +142,80 @@ def upload_bytes_to_supabase(
     if cache_control:
         file_options["cache-control"] = cache_control
 
-    try:
-        upload_response = client.storage.from_(SUPABASE_BUCKET_NAME).upload(
-            path=storage_path,
-            file=file_bytes,
-            file_options=file_options,
-        )
+    # Retry logic
+    max_retries = 3
+    last_exception = None
 
-        response_error = None
-        if isinstance(upload_response, dict):
-            response_error = upload_response.get("error")
-        else:
-            response_error = getattr(upload_response, "error", None)
+    for attempt in range(max_retries):
+        try:
+            upload_response = client.storage.from_(SUPABASE_BUCKET_NAME).upload(
+                path=storage_path,
+                file=file_bytes,
+                file_options=file_options,
+            )
 
-        if response_error:
-            if isinstance(response_error, dict):
-                error_message = response_error.get("message", "Unknown Supabase upload error")
+            response_error = None
+            if isinstance(upload_response, dict):
+                response_error = upload_response.get("error")
             else:
-                error_message = str(response_error)
-            logger.error("Supabase upload error for %s: %s", storage_path, error_message)
-            raise RuntimeError(error_message)
+                response_error = getattr(upload_response, "error", None)
 
-        public_url_response = client.storage.from_(SUPABASE_BUCKET_NAME).get_public_url(storage_path)
-        public_url = None
-        if isinstance(public_url_response, dict):
-            data = public_url_response.get("data") or {}
-            public_url = data.get("publicUrl") or data.get("publicURL")
-        elif isinstance(public_url_response, str):
-            public_url = public_url_response
+            if response_error:
+                if isinstance(response_error, dict):
+                    error_message = response_error.get("message", "Unknown Supabase upload error")
+                else:
+                    error_message = str(response_error)
+                logger.error("Supabase upload error for %s: %s", storage_path, error_message)
+                raise RuntimeError(error_message)
 
-        if not public_url:
-            raise RuntimeError("Failed to resolve Supabase public URL.")
+            public_url_response = client.storage.from_(SUPABASE_BUCKET_NAME).get_public_url(storage_path)
+            public_url = None
+            if isinstance(public_url_response, dict):
+                data = public_url_response.get("data") or {}
+                public_url = data.get("publicUrl") or data.get("publicURL")
+            elif isinstance(public_url_response, str):
+                public_url = public_url_response
 
-        return public_url, None
-    except Exception as exc:
-        # If Supabase is unreachable (e.g., network/DNS blocked), disable further attempts.
-        _disable_supabase(f"upload failed: {exc}")
-        logger.error("Supabase upload failed for %s: %s", storage_path, exc)
-        logger.debug("Detailed Supabase upload failure for %s", storage_path, exc_info=True)
-        return None, str(exc)
+            if not public_url:
+                raise RuntimeError("Failed to resolve Supabase public URL.")
+
+            return public_url, None
+
+        except Exception as exc:
+            last_exception = exc
+            is_last_attempt = attempt == max_retries - 1
+            
+            # Check if it's a connection/protocol error that is worth retrying
+            should_retry = False
+            if httpx and isinstance(exc, (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
+                should_retry = True
+            elif httpcore and isinstance(exc, (httpcore.RemoteProtocolError, httpcore.ConnectError, httpcore.ReadTimeout, httpcore.WriteTimeout)):
+                should_retry = True
+            elif "Server disconnected" in str(exc) or "Connection refused" in str(exc) or "timed out" in str(exc).lower():
+                should_retry = True
+            
+            if should_retry and not is_last_attempt:
+                wait_time = 1 * (attempt + 1)
+                logger.warning(f"Supabase upload failed (attempt {attempt+1}/{max_retries}): {exc}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            
+            # If we reach here, it's a fatal error or we ran out of retries
+            if is_last_attempt:
+                # Only disable Supabase if it looks like a persistent network/config issue, 
+                # but for now we keep the existing behavior of disabling it to be safe,
+                # or we can just log it. The original code disabled it.
+                # We'll keep the disable logic but only on the final failure.
+                _disable_supabase(f"upload failed after {max_retries} attempts: {exc}")
+                logger.error("Supabase upload failed for %s: %s", storage_path, exc)
+                logger.debug("Detailed Supabase upload failure for %s", storage_path, exc_info=True)
+                return None, str(exc)
+            
+            # If it's not a retryable error (e.g. auth error), fail immediately
+            logger.error("Supabase upload failed for %s (non-retryable): %s", storage_path, exc)
+            return None, str(exc)
+            
+    return None, "Upload failed (unknown reason)"
 
 
 def upload_file_to_supabase(

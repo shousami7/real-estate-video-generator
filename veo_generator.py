@@ -95,7 +95,7 @@ class VeoVideoGenerator:
             logger.info("Waiting for image to be processed...")
             poll_start = time.time()
             max_wait = 60  # 60 second timeout
-            poll_interval = 5  # 5 second polling interval
+            poll_interval = 10  # 10 second polling interval (reduced API calls)
 
             while uploaded_file.state == "PROCESSING":
                 if time.time() - poll_start > max_wait:
@@ -279,23 +279,29 @@ class VeoVideoGenerator:
 
                 logger.info(f"Video generation started. Operation name: {operation.name}")
 
-                # Poll until video generation completes
+                # Poll until video generation completes with exponential backoff
                 logger.info("Waiting for video generation to complete...")
+                poll_interval = 45  # Start at 45 seconds
+                max_interval = 90  # Max 90 seconds
                 poll_count = 0
-                max_polls = 30  # Increased to 15 minutes (30 * 30s)
+                max_polls = 20  # Reduced from 30, still allows 15+ minutes with exponential backoff
 
                 while not operation.done:
-                    time.sleep(30)
+                    time.sleep(poll_interval)
                     poll_count += 1
 
                     # Get updated operation status
                     operation = self.client.operations.get(operation)
 
-                    if poll_count % 2 == 0:  # Log every 60 seconds
-                        logger.info(f"Still generating... ({poll_count * 30}s elapsed)")
+                    if poll_count % 2 == 0:  # Log every other poll
+                        elapsed = poll_count * poll_interval
+                        logger.info(f"Still generating... (~{elapsed}s elapsed)")
 
                     if poll_count >= max_polls:
                         raise TimeoutError("Video generation timed out after 15 minutes")
+
+                    # Exponential backoff: increase interval up to max
+                    poll_interval = min(int(poll_interval * 1.2), max_interval)
 
                 operation_error = getattr(operation, "error", None)
                 if operation_error:

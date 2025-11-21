@@ -945,14 +945,16 @@
                                 title="Video Mode">
                                 <span class="material-symbols-outlined !text-base">add</span>
                             </button>
-                            <div id="agent-indicator" class="agent-indicator hidden" title="Agent mode (MCP/Gemini orchestration)">Agent</div>
+                            <div id="agent-indicator" class="agent-indicator hidden"
+                                title="Agent mode (MCP/Gemini orchestration)">Agent</div>
                             <!-- Popup Menu -->
                             <div id="video-mode-popup" class="video-mode-popup">
                                 <div class="video-mode-option" data-mode="generate">Generate</div>
                                 <div class="video-mode-option" data-mode="extend">Extend</div>
                                 <div class="video-mode-option" data-mode="stitch">Stitch</div>
                                 <div class="video-mode-option" data-mode="adjust">Adjust</div>
-                                <div class="video-mode-option" data-mode="agent" title="Agent: drive tools via MCP/Gemini">Agent</div>
+                                <div class="video-mode-option" data-mode="agent"
+                                    title="Agent: drive tools via MCP/Gemini">Agent</div>
                             </div>
                         </div>
                         <input id="chat-input"
@@ -1650,6 +1652,11 @@
                 const formData = new FormData();
                 formData.append('image', state.uploadedImage);
 
+                // Clear image preview immediately when send is clicked
+                const imageToUpload = state.uploadedImage;
+                state.uploadedImage = null;
+                attachedImagePreview.classList.add('hidden');
+
                 updateChatMessage(loadingMsgId, 'Uploading image...');
 
                 fetch('/api/chat/upload', {
@@ -1661,11 +1668,6 @@
                         if (data.status === 'success') {
                             // Append filename to text so parser finds it
                             const newText = `${text} (image: ${data.filename})`;
-
-                            // Clear uploaded image state
-                            state.uploadedImage = null;
-                            attachedImagePreview.classList.add('hidden');
-
                             sendRequest(newText);
                         } else {
                             throw new Error(data.message || 'Upload failed');
@@ -1696,7 +1698,7 @@
             if (data.data && data.data.plan_sheet) {
                 const planConfig = data.data.plan_sheet;
                 createPlanSheet(planConfig);
-                
+
                 // If we have a task_id, start polling
                 if (planConfig.task_id) {
                     // Find the newly created plan sheet by task_id
@@ -1731,7 +1733,22 @@
             // Add progress bar to message if not exists
             addProgressBarToMessage(msgId);
 
-            const interval = setInterval(() => {
+            let pollInterval = 2000; // Start at 2 seconds
+            const maxInterval = 10000; // Max 10 seconds
+            const maxDuration = 20 * 60 * 1000; // 20 minutes timeout
+            const startTime = Date.now();
+            let timeoutId = null;
+
+            const poll = () => {
+                // Check for timeout
+                if (Date.now() - startTime > maxDuration) {
+                    console.warn('Polling timeout reached (20 minutes)');
+                    updateChatMessage(msgId, '⚠️ Polling timeout - please check task status manually', true);
+                    state.isProcessing = false;
+                    sendBtn.disabled = false;
+                    return;
+                }
+
                 fetch(`/status?task_id=${taskId}`)
                     .then(res => res.json())
                     .then(statusData => {
@@ -1739,19 +1756,27 @@
                         updateChatProgress(msgId, statusData.progress_percent, statusData.message);
 
                         if (statusData.status === 'COMPLETE') {
-                            clearInterval(interval);
                             handleTaskCompletion(statusData, msgId);
                         } else if (statusData.status === 'ERROR' || statusData.status === 'CANCELLED' || statusData.status === 'FAILURE') {
-                            clearInterval(interval);
                             updateChatMessage(msgId, '❌ ' + (statusData.message || 'Task failed'), true);
                             state.isProcessing = false;
                             sendBtn.disabled = false;
+                        } else {
+                            // Continue polling with exponential backoff
+                            pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+                            timeoutId = setTimeout(poll, pollInterval);
                         }
                     })
                     .catch(err => {
                         console.error('Polling error:', err);
+                        // Retry with exponential backoff on error
+                        pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+                        timeoutId = setTimeout(poll, pollInterval);
                     });
-            }, 1500);
+            };
+
+            // Start polling
+            poll();
         }
 
         function handleTaskCompletion(statusData, msgId) {
@@ -2056,6 +2081,11 @@
             sheet.querySelector('.btn-generate').disabled = true;
             sheet.querySelector('.btn-delete').disabled = true;
 
+            // Check if progress bar already exists to prevent duplicates
+            if (sheet.querySelector('.progress-section')) {
+                return;
+            }
+
             // Add progress bar
             const progressHTML = `
                 <div class="progress-section">
@@ -2076,24 +2106,44 @@
         }
 
         function pollPlanSheetStatus(taskId, sheet) {
-            const interval = setInterval(() => {
+            let pollInterval = 2000; // Start at 2 seconds
+            const maxInterval = 10000; // Max 10 seconds
+            const maxDuration = 20 * 60 * 1000; // 20 minutes timeout
+            const startTime = Date.now();
+            let timeoutId = null;
+
+            const poll = () => {
+                // Check for timeout
+                if (Date.now() - startTime > maxDuration) {
+                    console.warn('Plan sheet polling timeout reached (20 minutes)');
+                    showSheetError(sheet, 'Polling timeout - please check task status manually');
+                    return;
+                }
+
                 fetch(`/api/task/${taskId}/status`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.status === 'completed') {
-                            clearInterval(interval);
                             markSheetAsCompleted(sheet, data.output_url);
                         } else if (data.status === 'error') {
-                            clearInterval(interval);
                             showSheetError(sheet, data.error);
                         } else {
                             updateSheetProgress(sheet, data.progress || 0);
+                            // Continue polling with exponential backoff
+                            pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+                            timeoutId = setTimeout(poll, pollInterval);
                         }
                     })
                     .catch(err => {
                         console.error('Polling error:', err);
+                        // Retry with exponential backoff on error
+                        pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+                        timeoutId = setTimeout(poll, pollInterval);
                     });
-            }, 3000);  // Poll every 3 seconds
+            };
+
+            // Start polling
+            poll();
         }
 
         function markSheetAsCompleted(sheet, videoUrl) {
