@@ -143,7 +143,7 @@ def upload_bytes_to_supabase(
         file_options["cache-control"] = cache_control
 
     # Retry logic
-    max_retries = 3
+    max_retries = 5
     last_exception = None
 
     for attempt in range(max_retries):
@@ -187,15 +187,17 @@ def upload_bytes_to_supabase(
             
             # Check if it's a connection/protocol error that is worth retrying
             should_retry = False
+            exc_str = str(exc)
             if httpx and isinstance(exc, (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)):
                 should_retry = True
             elif httpcore and isinstance(exc, (httpcore.RemoteProtocolError, httpcore.ConnectError, httpcore.ReadTimeout, httpcore.WriteTimeout)):
                 should_retry = True
-            elif "Server disconnected" in str(exc) or "Connection refused" in str(exc) or "timed out" in str(exc).lower():
+            elif "Server disconnected" in exc_str or "Connection refused" in exc_str or "timed out" in exc_str.lower():
                 should_retry = True
             
             if should_retry and not is_last_attempt:
-                wait_time = 1 * (attempt + 1)
+                # Exponential backoff: 2, 4, 8, 16... seconds
+                wait_time = 2 ** (attempt + 1)
                 logger.warning(f"Supabase upload failed (attempt {attempt+1}/{max_retries}): {exc}. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
