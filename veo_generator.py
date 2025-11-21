@@ -582,6 +582,15 @@ class VeoVideoGenerator:
             # Method 3: Fall back to HTTP download with retry logic
             if not sdk_download_successful:
                 logger.info("Falling back to HTTP download method...")
+                
+                # Normalize file_uri: if it's a Gemini resource name like "files/abc123",
+                # convert it to a full download URL
+                download_uri = file_uri
+                if not file_uri.startswith("http") and file_uri.startswith("files/"):
+                    logger.info(f"Converting Gemini resource name to download URL: {file_uri}")
+                    download_uri = f"https://generativelanguage.googleapis.com/v1beta/{file_uri}:download?alt=media"
+                    logger.info(f"Normalized to: {download_uri}")
+                
                 max_retries = 2
                 retry_delay = 2  # seconds
                 logger.info(f"Download configured with {max_retries} max retries")
@@ -590,8 +599,8 @@ class VeoVideoGenerator:
                     try:
                         logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
 
-                        # Download from URI
-                        self._download_from_uri(file_uri, output_path, api_key=self.api_key)
+                        # Download from URI (normalized if needed)
+                        self._download_from_uri(download_uri, output_path, api_key=self.api_key)
 
                         # Verify file was written
                         if not os.path.exists(output_path):
