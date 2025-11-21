@@ -908,6 +908,7 @@ def editor_chat():
             provided_session_id = request.form.get('session_id')
             is_agent_mode = request.form.get('agent_mode', '').lower() in ['true', '1', 'yes']
             video_mode = request.form.get('video_mode')
+            extend_metadata = None
             
             # Handle image upload
             image_file = request.files.get('image')
@@ -919,6 +920,14 @@ def editor_chat():
             is_agent_mode = bool(data.get('agent_mode'))
             video_mode = data.get('video_mode')
             image_file = None
+            extend_metadata = data.get('extend_metadata')
+
+        # Validate extend_metadata structure if provided
+        if extend_metadata:
+            required_keys = {'video_slot_id', 'video_path', 'frame_index', 'frame_data'}
+            if not required_keys.issubset(set(extend_metadata.keys())):
+                logger.warning(f"Invalid extend_metadata structure: {extend_metadata.keys()}")
+                extend_metadata = None
 
         if not user_input:
             return jsonify({
@@ -1003,7 +1012,7 @@ def editor_chat():
                 result = _handle_create_video(params, scene_manager, session_id)
 
             elif intent == CommandIntent.EXTEND:
-                result = _handle_extend_scene(params, scene_manager, session_id)
+                result = _handle_extend_scene(params, scene_manager, session_id, extend_metadata)
 
             elif intent == CommandIntent.TRANSITION:
                 result = _handle_merge_scenes(params, scene_manager, session_id)
@@ -2421,20 +2430,116 @@ def _handle_create_video(params: Dict[str, Any], scene_manager: SceneManager, se
         }
 
 
-def _handle_extend_scene(params: Dict[str, Any], scene_manager: SceneManager, session_id: str) -> Dict[str, Any]:
+def _handle_extend_scene(
+    params: Dict[str, Any],
+    scene_manager: SceneManager,
+    session_id: str,
+    extend_metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
-    ② シーン拡張処理
+    ② シーン拡張処理 (v2.0)
 
-    Args:
-        params: コマンドパラメータ
-        scene_manager: SceneManagerインスタンス
-        session_id: セッションID
-
-    Returns:
-        結果辞書
+    Supports frame-based extend when extend_metadata is provided.
+    Falls back to legacy scene-to-scene extend otherwise.
     """
     logger.info(f"Handling EXTEND command: {params}")
+    logger.info(f"Extend metadata: {extend_metadata}")
 
+    if extend_metadata and extend_metadata.get('frame_data'):
+        return _handle_frame_based_extend(params, scene_manager, session_id, extend_metadata)
+
+    return _handle_scene_to_scene_extend(params, scene_manager, session_id)
+
+
+def _handle_frame_based_extend(
+    params: Dict[str, Any],
+    scene_manager: SceneManager,
+    session_id: str,
+    extend_metadata: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Frame-based extend handler (v2.0)
+    """
+    try:
+        video_slot_id = extend_metadata.get('video_slot_id')
+        video_path = extend_metadata.get('video_path')
+        frame_index = extend_metadata.get('frame_index')
+        frame_data = extend_metadata.get('frame_data') or {}
+        custom_prompt = extend_metadata.get('custom_prompt') or params.get('prompt', 'Continue the smooth camera movement')
+
+        if video_path is None or frame_index is None or not frame_data:
+            raise ValueError("Invalid extend metadata")
+
+        scene_id = scene_manager.generate_next_scene_id()
+
+        from tasks import frame_based_extend_task
+
+        task = frame_based_extend_task.delay(
+            session_id=session_id,
+            scene_id=scene_id,
+            source_video_path=video_path,
+            frame_timestamp=frame_data.get('seconds'),
+            frame_path=frame_data.get('path'),
+            prompt=custom_prompt,
+            duration=params.get('duration', '8s'),
+            aspect_ratio=params.get('aspect_ratio', '16:9'),
+            resolution=params.get('resolution', '720p')
+        )
+
+        duration_str = params.get('duration', '8s')
+        duration_value = int(duration_str.rstrip('s')) if isinstance(duration_str, str) else int(duration_str)
+
+        plan_sheet = {
+            "mode": "Extend",
+            "duration": duration_value,
+            "prompt": custom_prompt,
+            "pic": "yes",
+            "task_id": task.id,
+            "source_video": {
+                "slot_id": video_slot_id,
+                "video_path": video_path,
+                "video_url": extend_metadata.get('video_url'),
+                "thumbnail": extend_metadata.get('video_thumbnail')
+            },
+            "selected_frame": {
+                "frame_id": frame_index,
+                "timestamp": frame_data.get('timestamp'),
+                "seconds": frame_data.get('seconds'),
+                "thumbnail": frame_data.get('base64'),
+                "frame_path": frame_data.get('path')
+            }
+        }
+
+        return {
+            "status": "processing",
+            "task_id": task.id,
+            "scene_id": scene_id,
+            "message": f"Extending video from frame {frame_index + 1} at {frame_data.get('timestamp')}...",
+            "intent": "extend",
+            "data": {
+                "task_id": task.id,
+                "video_id": session_id,
+                "plan_sheet": plan_sheet
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Frame-based extend error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Failed to start frame-based extend: {str(e)}",
+            "intent": "extend"
+        }
+
+
+def _handle_scene_to_scene_extend(
+    params: Dict[str, Any],
+    scene_manager: SceneManager,
+    session_id: str
+) -> Dict[str, Any]:
+    """
+    既存のシーン拡張（画像指定）フロー
+    """
     # 最後のシーンを取得
     last_scene = scene_manager.get_last_scene()
 

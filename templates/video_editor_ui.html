@@ -932,6 +932,16 @@
                         </div>
                     </div>
 
+                    <!-- Extend mode: explicit frame selection button -->
+                    <div class="chat-controls-row flex items-center gap-2 px-4 pb-4">
+                        <button id="select-frame-btn"
+                            class="hidden flex items-center gap-2 px-4 py-2 bg-primary text-black rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Select video frame to extend">
+                            <span class="material-symbols-outlined !text-base">video_library</span>
+                            <span class="text-sm font-medium">Select Video Frame</span>
+                        </button>
+                    </div>
+
                     <div class="relative flex gap-2">
                         <input type="file" id="attach-image-input" accept="image/*" class="hidden">
                         <button id="attach-image-btn"
@@ -984,6 +994,17 @@
             selectedFrame: null,
             editedFrames: {},
 
+            // Extend mode (frame-based) state
+            extendMode: {
+                enabled: false,
+                selectedVideoSlot: null,
+                selectedFrameIndex: null,
+                selectionMetadata: null,
+                isModalOpen: false,
+                modalStep: null,
+                extractionPromise: null
+            },
+
             // その他
             isProcessing: false,
             uploadedImage: null,
@@ -1023,6 +1044,7 @@
         const attachedImagePreview = document.getElementById('attached-image-preview');
         const previewImg = document.getElementById('preview-img');
         const removeImageBtn = document.getElementById('remove-image-btn');
+        const selectFrameBtn = document.getElementById('select-frame-btn');
         const dragOverlay = document.getElementById('drag-overlay');
         const videoModeBtn = document.getElementById('video-mode-btn');
         const videoModePopup = document.getElementById('video-mode-popup');
@@ -1374,6 +1396,261 @@
             attachImageInput.value = '';
         });
 
+        // ==================== Extend Mode (Frame-Based) ====================
+        selectFrameBtn.addEventListener('click', () => {
+            if (state.extendMode.enabled) {
+                openVideoFrameSelector();
+            }
+        });
+
+        function openVideoFrameSelector() {
+            if (state.extendMode.isModalOpen) return;
+
+            state.extendMode.isModalOpen = true;
+            state.extendMode.modalStep = 'select-video';
+
+            const modal = document.createElement('div');
+            modal.id = 'video-frame-selector-modal';
+            modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+            modal.innerHTML = generateVideoSelectorHTML();
+
+            document.body.appendChild(modal);
+            setupModalEventHandlers(modal);
+        }
+
+        function generateVideoSelectorHTML() {
+            return `
+                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-4xl w-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-white">Select Video to Extend</h3>
+                        <button class="close-modal text-gray-400 hover:text-white">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <!-- Video slot grid -->
+                    <div id="modal-content-area">
+                        <div class="grid grid-cols-3 gap-4" id="video-slot-grid">
+                            ${generateVideoSlotCards()}
+                        </div>
+                        <p class="mt-4 text-sm text-gray-400 text-center">
+                            Select a video to see its frames
+                        </p>
+                    </div>
+
+                    <!-- Loading state (hidden initially) -->
+                    <div id="extraction-loading" class="hidden flex flex-col items-center justify-center py-8">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+                        <p class="text-white">Extracting frames...</p>
+                        <p class="text-gray-400 text-sm mt-2">This may take a few seconds</p>
+                    </div>
+
+                    <!-- Frame grid (hidden initially) -->
+                    <div id="frame-grid-container" class="hidden">
+                        <div class="flex items-center justify-between mb-4">
+                            <button class="back-to-videos text-primary hover:underline flex items-center gap-1">
+                                <span class="material-symbols-outlined !text-base">arrow_back</span>
+                                <span>Back to videos</span>
+                            </button>
+                            <span class="text-gray-400 text-sm" id="selected-video-label"></span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4" id="frame-grid"></div>
+                        <p class="mt-4 text-sm text-gray-400 text-center">
+                            Select a frame to extend from
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateVideoSlotCards() {
+            let html = '';
+            for (let i = 0; i < 6; i++) {
+                const frameData = state.videoFrames[i];
+                const hasVideo = frameData?.videoPath;
+                const isDisabled = !hasVideo;
+
+                html += `
+                    <div class="video-slot-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent
+                                ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-primary transition-colors'}"
+                         data-slot-id="${i}"
+                         ${isDisabled ? 'style="pointer-events: none;"' : ''}>
+                        ${hasVideo ? `
+                            <img src="${frameData.thumbnail}" class="w-full h-full object-cover" />
+                            <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                <span class="text-white font-bold text-lg">Select</span>
+                            </div>
+                            <div class="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
+                                Video ${i + 1}
+                            </div>
+                        ` : `
+                            <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                <span class="material-symbols-outlined text-gray-500 !text-3xl">videocam_off</span>
+                                <span class="text-gray-500 text-sm mt-2">Empty Slot</span>
+                            </div>
+                        `}
+                    </div>
+                `;
+            }
+            return html;
+        }
+
+        function setupModalEventHandlers(modal) {
+            modal.querySelector('.close-modal').addEventListener('click', () => {
+                closeVideoFrameModal(modal);
+            });
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeVideoFrameModal(modal);
+                }
+            });
+
+            modal.querySelectorAll('.video-slot-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const slotId = parseInt(card.dataset.slotId);
+                    handleVideoSlotSelection(slotId, modal);
+                });
+            });
+        }
+
+        function handleVideoSlotSelection(slotId, modal) {
+            state.extendMode.selectedVideoSlot = slotId;
+            state.extendMode.modalStep = 'loading';
+
+            modal.querySelector('#video-slot-grid').parentElement.classList.add('hidden');
+            modal.querySelector('#extraction-loading').classList.remove('hidden');
+
+            const frameData = state.videoFrames[slotId];
+            const videoPath = frameData.videoPath?.startsWith('/')
+                ? frameData.videoPath.substring(1)
+                : frameData.videoPath;
+
+            const extractionPromise = fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: videoPath })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        state.frames = data.frames;
+                        state.expandedFrameId = slotId;
+                        showFrameGrid(modal, slotId);
+                    } else {
+                        throw new Error(data.message || 'Frame extraction failed');
+                    }
+                })
+                .catch(err => {
+                    handleExtractionError(err, modal);
+                    state.extendMode.modalStep = 'select-video';
+                });
+
+            state.extendMode.extractionPromise = extractionPromise;
+        }
+
+        function showFrameGrid(modal, slotId) {
+            state.extendMode.modalStep = 'select-frame';
+            modal.querySelector('#extraction-loading').classList.add('hidden');
+
+            const frameGridContainer = modal.querySelector('#frame-grid-container');
+            frameGridContainer.classList.remove('hidden');
+
+            modal.querySelector('#selected-video-label').textContent = `Video ${slotId + 1}`;
+
+            const frameGrid = modal.querySelector('#frame-grid');
+            frameGrid.innerHTML = state.frames.map((frame, index) => `
+                <div class="frame-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
+                     data-frame-id="${index}">
+                    <img src="${frame.base64}" class="w-full h-full object-cover" />
+                    <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <span class="text-white font-bold">Select</span>
+                    </div>
+                    <div class="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
+                        ${frame.timestamp}
+                    </div>
+                </div>
+            `).join('');
+
+            frameGrid.querySelectorAll('.frame-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const frameId = parseInt(card.dataset.frameId);
+                    handleFrameSelection(frameId, modal);
+                });
+            });
+
+            modal.querySelector('.back-to-videos').addEventListener('click', () => {
+                frameGridContainer.classList.add('hidden');
+                modal.querySelector('#video-slot-grid').parentElement.classList.remove('hidden');
+                state.extendMode.modalStep = 'select-video';
+            });
+        }
+
+        function handleFrameSelection(frameId, modal) {
+            const frame = state.frames[frameId];
+            const videoSlot = state.extendMode.selectedVideoSlot;
+            const frameData = state.videoFrames[videoSlot];
+
+            state.extendMode.selectedFrameIndex = frameId;
+            state.extendMode.selectionMetadata = {
+                video_slot_id: videoSlot,
+                video_path: frameData.videoPath,
+                video_url: frameData.videoUrl,
+                video_thumbnail: frameData.thumbnail,
+                frame_index: frameId,
+                frame_data: frame
+            };
+
+            chatInput.value = `Extend from Video ${videoSlot + 1}, Frame ${frameId + 1} (${frame.timestamp})`;
+            chatInput.placeholder = "Add a prompt or press Enter to extend";
+
+            hideExtendFrameButton();
+            closeVideoFrameModal(modal);
+            chatInput.focus();
+        }
+
+        function handleExtractionError(error, modal) {
+            const loadingArea = modal.querySelector('#extraction-loading');
+            loadingArea.innerHTML = `
+                <div class="text-center py-8">
+                    <span class="material-symbols-outlined text-red-500 !text-5xl mb-4">error</span>
+                    <h4 class="text-white font-bold mb-2">Frame Extraction Failed</h4>
+                    <p class="text-gray-400 text-sm mb-4">${error.message}</p>
+                    <button class="retry-extraction px-4 py-2 bg-primary text-black rounded-lg hover:opacity-90">
+                        Try Again
+                    </button>
+                    <button class="back-to-selection px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 ml-2">
+                        Back
+                    </button>
+                </div>
+            `;
+
+            const retryBtn = modal.querySelector('.retry-extraction');
+            const backBtn = modal.querySelector('.back-to-selection');
+
+            retryBtn.addEventListener('click', () => {
+                const slotId = state.extendMode.selectedVideoSlot;
+                loadingArea.innerHTML = `
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+                    <p class="text-white">Extracting frames...</p>
+                    <p class="text-gray-400 text-sm mt-2">This may take a few seconds</p>
+                `;
+                handleVideoSlotSelection(slotId, modal);
+            });
+
+            backBtn.addEventListener('click', () => {
+                loadingArea.classList.add('hidden');
+                modal.querySelector('#video-slot-grid').parentElement.classList.remove('hidden');
+                state.extendMode.modalStep = 'select-video';
+            });
+        }
+
+        function closeVideoFrameModal(modal) {
+            modal.remove();
+            state.extendMode.isModalOpen = false;
+            state.extendMode.modalStep = null;
+        }
+
         // ==================== ビデオモード選択処理 ====================
         // ポップアップの表示/非表示を切り替え
         videoModeBtn.addEventListener('click', (e) => {
@@ -1418,9 +1695,23 @@
                     chatInput.value = "Generate: ";
                     chatInput.placeholder = "(type what you want to make video of)";
                     chatInput.focus();
+                    resetExtendMode();
+                } else if (mode === 'extend') {
+                    resetExtendMode();
+                    state.extendMode.enabled = true;
+                    state.extendMode.selectedVideoSlot = null;
+                    state.extendMode.selectedFrameIndex = null;
+                    state.extendMode.selectionMetadata = null;
+
+                    chatInput.value = "";
+                    chatInput.placeholder = "Click 'Select Video Frame' to choose where to extend";
+
+                    showExtendFrameButton();
                 } else if (mode === 'agent') {
+                    resetExtendMode();
                     chatInput.placeholder = "Agent mode (MCP): describe what you want the agent to do...";
                 } else {
+                    resetExtendMode();
                     chatInput.placeholder = defaultChatPlaceholder;
                 }
 
@@ -1440,6 +1731,30 @@
                 agentIndicator.classList.add('hidden');
                 chatContainer.classList.remove('agent-mode');
                 modeOptions.forEach(opt => opt.classList.remove('muted'));
+            }
+        }
+
+        function showExtendFrameButton() {
+            selectFrameBtn.classList.remove('hidden');
+        }
+
+        function hideExtendFrameButton() {
+            selectFrameBtn.classList.add('hidden');
+        }
+
+        function resetExtendMode() {
+            state.extendMode = {
+                enabled: false,
+                selectedVideoSlot: null,
+                selectedFrameIndex: null,
+                selectionMetadata: null,
+                isModalOpen: false,
+                modalStep: null,
+                extractionPromise: null
+            };
+            hideExtendFrameButton();
+            if (state.selectedVideoMode === 'extend') {
+                chatInput.placeholder = defaultChatPlaceholder;
             }
         }
 
@@ -1632,6 +1947,28 @@
                     agent_mode: state.isAgentMode
                 };
 
+                if (state.selectedVideoMode === 'extend' && state.extendMode.selectionMetadata) {
+                    payload.extend_metadata = state.extendMode.selectionMetadata;
+
+                    const autoPrefix = `Extend from Video ${state.extendMode.selectionMetadata.video_slot_id + 1}, Frame ${state.extendMode.selectionMetadata.frame_index + 1}`;
+                    if (messageText.startsWith(autoPrefix)) {
+                        let customPrompt = messageText.substring(autoPrefix.length).trim();
+
+                        const ts = state.extendMode.selectionMetadata.frame_data?.timestamp;
+                        if (ts) {
+                            const tsPattern = new RegExp(`^\\(${ts}\\)\\s*`);
+                            customPrompt = customPrompt.replace(tsPattern, '').trim();
+                            if (customPrompt === ts) {
+                                customPrompt = '';
+                            }
+                        }
+
+                        payload.extend_metadata.custom_prompt = customPrompt || 'Continue the smooth camera movement';
+                    } else {
+                        payload.extend_metadata.custom_prompt = messageText;
+                    }
+                }
+
                 fetch('/editor/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1640,6 +1977,10 @@
                     .then(res => res.json())
                     .then(data => {
                         handleCommandResponse(data, loadingMsgId);
+
+                        if (state.selectedVideoMode === 'extend') {
+                            resetExtendMode();
+                        }
                     })
                     .catch(err => {
                         updateChatMessage(loadingMsgId, 'Error: ' + err.message, true);
@@ -1911,59 +2252,94 @@
 
         function generatePlanSheetHTML(config) {
             const timestamp = Date.now();
-            const hasPic = config.pic === 'yes';
+            const {
+                mode,
+                duration,
+                prompt,
+                pic,
+                source_video,
+                selected_frame
+            } = config;
+            const hasPic = pic === 'yes';
+            const hasExtendData = mode === 'Extend' && source_video && selected_frame;
+
+            let extendSection = '';
+
+            if (hasExtendData) {
+                extendSection = `
+                    <div class="field" style="flex-direction: column; align-items: flex-start;">
+                        <label>Source Video:</label>
+                        <div class="flex items-center gap-3 mt-2">
+                            <img src="${source_video.thumbnail || '/static/placeholder.png'}"
+                                class="w-24 h-14 object-cover rounded border border-gray-600"
+                                onerror="this.src='/static/placeholder.png'">
+                            <span class="text-gray-300">Video Slot ${source_video.slot_id + 1}</span>
+                        </div>
+                    </div>
+                    <div class="field" style="flex-direction: column; align-items: flex-start;">
+                        <label>Extend from Frame:</label>
+                        <div class="flex items-center gap-3 mt-2">
+                            <img src="${selected_frame.thumbnail}"
+                                class="w-24 h-14 object-cover rounded border border-primary"
+                                onerror="this.style.display='none'">
+                            <div class="flex flex-col">
+                                <span class="text-gray-300">Frame ${selected_frame.frame_id + 1}</span>
+                                <span class="text-xs text-gray-500">at ${selected_frame.timestamp}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
 
             return `
-            <div class="plan-sheet" data-sheet-id="${timestamp}">
-                <!-- Header -->
-                <div class="sheet-header">
-                    <span class="sheet-title">Plan Sheet (Auto Generated)</span>
-                    <button class="edit-btn" onclick="toggleEdit(this)" title="Edit All">
-                        <span class="material-symbols-outlined" style="font-size: 16px;">edit</span>
-                    </button>
-                </div>
-                
-                <!-- Body -->
-                <div class="sheet-body">
-                    <!-- Mode (non-editable) -->
-                    <div class="field">
-                        <label>Mode:</label>
-                        <span class="non-editable">${config.mode}</span>
+                <div class="plan-sheet" data-sheet-id="${timestamp}">
+                    <!-- Header -->
+                    <div class="sheet-header">
+                        <span class="sheet-title">Plan Sheet (Auto Generated)</span>
+                        <button class="edit-btn" onclick="toggleEdit(this)" title="Edit All">
+                            <span class="material-symbols-outlined" style="font-size: 16px;">edit</span>
+                        </button>
                     </div>
                     
-                    <!-- Duration (editable) -->
-                    <div class="field">
-                        <label>Duration:</label>
-                        <span class="editable-value cursor-pointer hover:text-white transition-colors" 
-                              onclick="activateFieldEdit(this, 'number')"
-                              title="Click to edit">${config.duration} sec</span>
-                        <input type="number" class="edit-input hidden" value="${config.duration}" min="4" max="20" 
-                               onblur="saveFieldEdit(this, 'sec')" onkeypress="handleEditKeypress(event, this, 'sec')">
+                    <!-- Body -->
+                    <div class="sheet-body">
+                        <div class="field">
+                            <label>Mode:</label>
+                            <span class="non-editable">${mode}</span>
+                        </div>
+                        
+                        <div class="field">
+                            <label>Duration:</label>
+                            <span class="editable-value cursor-pointer hover:text-white transition-colors" 
+                                  onclick="activateFieldEdit(this, 'number')"
+                                  title="Click to edit">${duration} sec</span>
+                            <input type="number" class="edit-input hidden" value="${duration}" min="4" max="20" 
+                                   onblur="saveFieldEdit(this, 'sec')" onkeypress="handleEditKeypress(event, this, 'sec')">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Prompt:</label>
+                            <span class="editable-value cursor-pointer hover:text-white transition-colors" 
+                                  onclick="activateFieldEdit(this, 'text')"
+                                  title="Click to edit">${prompt}</span>
+                            <input type="text" class="edit-input hidden w-full" value="${prompt}"
+                                   onblur="saveFieldEdit(this)" onkeypress="handleEditKeypress(event, this)">
+                        </div>
+                        
+                        <div class="field">
+                            <label>pic:</label>
+                            <span class="non-editable">${hasPic ? 'yes' : 'no'}</span>
+                        </div>
+
+                        ${extendSection}
                     </div>
                     
-                    <!-- Prompt (editable) -->
-                    <div class="field">
-                        <label>Prompt:</label>
-                        <span class="editable-value cursor-pointer hover:text-white transition-colors" 
-                              onclick="activateFieldEdit(this, 'text')"
-                              title="Click to edit">${config.prompt}</span>
-                        <input type="text" class="edit-input hidden w-full" value="${config.prompt}"
-                               onblur="saveFieldEdit(this)" onkeypress="handleEditKeypress(event, this)">
-                    </div>
-                    
-                    <!-- pic (non-editable) -->
-                    <div class="field">
-                        <label>pic:</label>
-                        <span class="non-editable">${hasPic ? 'yes' : 'no'}</span>
+                    <!-- Actions -->
+                    <div class="sheet-actions">
+                        <button class="btn-generate" onclick="executeGenerate(this)">Generate</button>
+                        <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
                     </div>
                 </div>
-                
-                <!-- Actions -->
-                <div class="sheet-actions">
-                    <button class="btn-generate" onclick="executeGenerate(this)">Generate</button>
-                    <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
-                </div>
-            </div>
             `;
         }
 

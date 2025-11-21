@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
@@ -633,6 +635,279 @@ def extend_scene_task(
                 pass
 
         return error_result
+
+
+@celery.task(bind=True, name="tasks.frame_based_extend_task")
+def frame_based_extend_task(
+    self,
+    session_id: str,
+    scene_id: str,
+    source_video_path: str,
+    frame_timestamp: float,
+    frame_path: Optional[str],
+    prompt: str,
+    duration: str = "8s",
+    aspect_ratio: str = "16:9",
+    resolution: str = "720p"
+) -> Dict[str, Any]:
+    """
+    Frame-based video extension task (v2.0)
+    """
+    logger.info(
+        f"[v2.0] Starting frame-based extend: session_id={session_id}, "
+        f"scene_id={scene_id}, frame_timestamp={frame_timestamp}s"
+    )
+
+    temp_dir = None
+
+    try:
+        frame_ts_value = float(frame_timestamp)
+        if frame_ts_value <= 0:
+            raise ValueError(f"Invalid frame_timestamp: {frame_timestamp}")
+
+        normalized_source = source_video_path
+        if not os.path.isabs(normalized_source):
+            normalized_source = os.path.join(LOCAL_UPLOAD_ROOT, source_video_path)
+
+        if not os.path.exists(normalized_source):
+            raise FileNotFoundError(f"Source video not found: {normalized_source}")
+
+        temp_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "temp", scene_id)
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # === Step 1: Trim source video ===
+        self.update_state(
+            state="TRIMMING",
+            meta=_task_meta(10, f"Trimming video at {frame_ts_value}s...", "extend", session_id, "TRIMMING")
+        )
+
+        trimmed_video_path = os.path.join(temp_dir, "trimmed_original.mp4")
+        trim_cmd = [
+            "ffmpeg", "-y",
+            "-i", normalized_source,
+            "-ss", "0",
+            "-to", str(frame_ts_value),
+            "-c:v", "libx264",
+            "-c:a", "copy",
+            "-preset", "fast",
+            trimmed_video_path
+        ]
+
+        logger.info(f"[TRIM] Command: {' '.join(trim_cmd)}")
+
+        try:
+            subprocess.run(trim_cmd, capture_output=True, text=True, timeout=120, check=True)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Video trimming timed out (120s)")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"FFmpeg trim failed: {e.stderr}")
+
+        if not os.path.exists(trimmed_video_path) or os.path.getsize(trimmed_video_path) == 0:
+            raise RuntimeError("Trimmed video file invalid or missing")
+
+        # === Step 2: Extract frame ===
+        self.update_state(
+            state="EXTRACTING",
+            meta=_task_meta(20, "Extracting frame as image...", "extend", session_id, "EXTRACTING")
+        )
+
+        if frame_path and os.path.exists(frame_path):
+            extracted_frame_path = frame_path
+            logger.info(f"[EXTRACT] Using provided frame: {frame_path}")
+        else:
+            extracted_frame_path = os.path.join(temp_dir, "extend_frame.png")
+            extract_cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(frame_ts_value),
+                "-i", normalized_source,
+                "-vframes", "1",
+                "-q:v", "2",
+                extracted_frame_path
+            ]
+            logger.info(f"[EXTRACT] Command: {' '.join(extract_cmd)}")
+
+            try:
+                subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30, check=True)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("Frame extraction timed out (30s)")
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"FFmpeg extract failed: {e.stderr}")
+
+        if not os.path.exists(extracted_frame_path):
+            raise RuntimeError("Frame extraction failed - file not created")
+
+        # === Step 3: Generate extension with Veo (with retries) ===
+        self.update_state(
+            state="GENERATING",
+            meta=_task_meta(30, "Generating extended video with Veo API...", "extend", session_id, "GENERATING")
+        )
+
+        veo_config = _configure_veo_auth()
+        veo = VeoVideoGenerator(**veo_config)
+
+        max_retries = 3
+        retry_delay = 5
+        operation = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"[VEO] Attempt {attempt}/{max_retries}")
+                operation = veo.generate_video(
+                    image_path=extracted_frame_path,
+                    prompt=f"{prompt} (extension from selected frame)",
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    generate_audio=False
+                )
+                if operation:
+                    break
+            except Exception as e:
+                logger.warning(f"[VEO] Attempt {attempt} failed: {e}")
+                if attempt < max_retries:
+                    wait_time = retry_delay * (2 ** (attempt - 1))
+                    time.sleep(wait_time)
+                else:
+                    raise
+
+        if not operation:
+            raise RuntimeError("Veo API returned no operation")
+
+        self.update_state(
+            state="GENERATING",
+            meta=_task_meta(60, "Waiting for video generation completion...", "extend", session_id, "WAITING")
+        )
+
+        # === Step 4: Download video (with retries) ===
+        self.update_state(
+            state="DOWNLOADING",
+            meta=_task_meta(70, "Downloading extended video...", "extend", session_id, "DOWNLOADING")
+        )
+
+        extended_video_path = os.path.join(temp_dir, "extended.mp4")
+        downloaded_path = None
+
+        for attempt in range(1, 4):
+            try:
+                downloaded_path = veo.download_video(operation, extended_video_path)
+                if downloaded_path and os.path.exists(downloaded_path) and os.path.getsize(downloaded_path) > 0:
+                    break
+                raise RuntimeError("Downloaded video is invalid")
+            except Exception as e:
+                if attempt < 3:
+                    logger.warning(f"[DOWNLOAD] Attempt {attempt} failed ({e}), retrying...")
+                    time.sleep(2)
+                else:
+                    raise RuntimeError(f"Download failed after 3 attempts: {e}")
+
+        # === Step 5: Concatenate trimmed + extended ===
+        self.update_state(
+            state="MERGING",
+            meta=_task_meta(80, "Merging original and extended videos...", "extend", session_id, "MERGING")
+        )
+
+        composer = VideoComposer()
+        output_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "scenes")
+        os.makedirs(output_dir, exist_ok=True)
+        merged_video_path = os.path.join(output_dir, f"{scene_id}_merged.mp4")
+
+        try:
+            composer.simple_concatenate(
+                video_paths=[trimmed_video_path, downloaded_path],
+                output_path=merged_video_path,
+                resolution="1280x720"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Video concatenation failed: {e}")
+
+        if not os.path.exists(merged_video_path) or os.path.getsize(merged_video_path) == 0:
+            raise RuntimeError("Merged video is invalid")
+
+        final_duration = get_video_duration(merged_video_path)
+
+        # === Step 6: Upload or standardize path ===
+        self.update_state(
+            state="UPLOADING",
+            meta=_task_meta(90, "Uploading merged video...", "extend", session_id, "UPLOADING")
+        )
+
+        timestamp = int(final_duration * 1000)
+        output_filename = f"extended_{scene_id}_{timestamp}.mp4"
+        storage_path = build_storage_path(session_id, "output", output_filename)
+        standardized_local_path = os.path.join(LOCAL_UPLOAD_ROOT, storage_path)
+        os.makedirs(os.path.dirname(standardized_local_path), exist_ok=True)
+
+        if os.path.abspath(merged_video_path) != os.path.abspath(standardized_local_path):
+            shutil.move(merged_video_path, standardized_local_path)
+            merged_video_path = standardized_local_path
+
+        video_url = f"/uploads/local/{storage_path}"
+        if is_supabase_configured():
+            try:
+                video_url_result, upload_error = upload_video_file(
+                    local_path=merged_video_path,
+                    video_id=session_id,
+                    filename=output_filename,
+                    folder="output",
+                )
+                if video_url_result:
+                    video_url = video_url_result
+                elif upload_error:
+                    logger.warning(f"[UPLOAD] Supabase upload failed, using local: {upload_error}")
+            except Exception as e:
+                logger.warning(f"[UPLOAD] Supabase exception, using local: {e}")
+
+        # === Step 7: Save scene ===
+        scene_manager = SceneManager(session_id)
+        scene_manager.add_scene(
+            scene_id=scene_id,
+            video_path=merged_video_path,
+            video_url=video_url,
+            duration=final_duration,
+            prompt=prompt,
+            metadata={
+                "type": "frame_based_extend",
+                "source_video": source_video_path,
+                "frame_timestamp": frame_ts_value,
+                "trimmed_duration": frame_ts_value,
+                "extended_duration": max(final_duration - frame_ts_value, 0),
+                "version": "2.0"
+            }
+        )
+
+        logger.info(
+            f"[COMPLETE] Frame-based extend: scene_id={scene_id}, "
+            f"duration={final_duration}s, url={video_url}"
+        )
+
+        return {
+            "status": "completed",
+            "scene_id": scene_id,
+            "video_path": storage_path,
+            "video_url": video_url,
+            "duration": final_duration,
+            "metadata": {
+                "type": "frame_based_extend",
+                "trimmed_at": frame_ts_value,
+                "final_duration": final_duration,
+                "version": "2.0"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"[ERROR] Frame-based extend failed: {e}", exc_info=True)
+        self.update_state(
+            state="FAILURE",
+            meta=_task_meta(0, f"Error: {str(e)}", "extend", session_id, "ERROR")
+        )
+        raise
+
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as cleanup_error:
+                logger.warning(f"[CLEANUP] Failed to remove temp directory: {cleanup_error}")
 
 
 @celery.task(bind=True, name="tasks.merge_scenes_task")
