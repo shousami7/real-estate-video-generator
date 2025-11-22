@@ -581,6 +581,7 @@ def extend_scene_task(
             stage="extend",
             status="completed",
             output_url=video_url,
+            local_path=downloaded_path,
         )
 
         # Add extra fields
@@ -598,6 +599,7 @@ def extend_scene_task(
                 "stage": result["stage"],
                 "status": result["status"],
                 "output_url": result["output_url"],
+                "local_path": result["local_path"],
                 "frames": result["frames"],
                 "error": result["error"],
             }
@@ -837,11 +839,19 @@ def frame_based_extend_task(
             f"duration={final_duration}s, url={video_url}"
         )
 
-        return {
-            "status": "completed",
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="extend",
+            status="completed",
+            output_url=video_url,
+            local_path=final_video_path,
+        )
+
+        # Add extra fields
+        result.update({
             "scene_id": scene_id,
             "video_path": storage_path,
-            "video_url": video_url,
             "duration": final_duration,
             "metadata": {
                 "type": "frame_based_extend",
@@ -849,7 +859,24 @@ def frame_based_extend_task(
                 "final_duration": final_duration,
                 "version": "2.0"
             }
-        }
+        })
+
+        if is_supabase_configured():
+            unified_log = {
+                "task_id": result["task_id"],
+                "video_id": result["video_id"],
+                "stage": result["stage"],
+                "status": result["status"],
+                "output_url": result["output_url"],
+                "local_path": result["local_path"],
+                "frames": result["frames"],
+                "error": result["error"],
+            }
+            upload_log_file(unified_log, session_id, self.request.id)
+            log_path = build_storage_path(session_id, "logs", f"{self.request.id}.json")
+            logger.info(f"Task log written: {log_path}")
+
+        return result
 
     except Exception as e:
         logger.error(f"[ERROR] Frame-based extend failed: {e}", exc_info=True)

@@ -178,7 +178,7 @@ def _load_task_log(video_id: str, task_id: str) -> Optional[dict]:
 
 
 REQUIRED_TASK_KEYS = {
-    "task_id", "video_id", "stage", "status", "output_url", "frames", "error"
+    "task_id", "video_id", "stage", "status", "output_url", "local_path", "frames", "error"
 }
 
 
@@ -1593,6 +1593,7 @@ def get_task_status(task_id: str):
                 stage=result.get('stage', 'unknown'),
                 status="completed",
                 output_url=result.get('output_url') or result.get('final_video'),
+                local_path=result.get('local_path') or result.get('video_path'),
                 frames=result.get('frames'),
                 error=result.get('error'),
             ))

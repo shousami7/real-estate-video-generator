@@ -970,7 +970,7 @@
         const state = {
             // 複数動画フレーム管理
             videoFrames: {
-                // frameId: { videoPath, videoUrl, thumbnail, isProcessing }
+                // frameId: { videoPath, videoUrl, localPath, thumbnail, isProcessing }
             },
             expandedFrameId: null,  // 現在展開されているフレームID（フレーム分解表示中の場合）
 
@@ -1047,6 +1047,7 @@
                 state.videoFrames[i] = {
                     videoPath: null,
                     videoUrl: null,
+                    localPath: null,
                     thumbnail: null,
                     isProcessing: false
                 };
@@ -1219,6 +1220,7 @@
             const frameData = state.videoFrames[frameId];
             frameData.videoPath = null;
             frameData.videoUrl = null;
+            frameData.localPath = null;
             frameData.thumbnail = null;
             frameData.isProcessing = false;
             renderVideoFrames();
@@ -2191,6 +2193,7 @@
             sendBtn.disabled = false;
 
             const videoUrl = statusData.final_video_url || statusData.output_url;
+            const localPath = statusData.local_path;
 
             let successMsg = 'Task completed successfully!';
             if (statusData.video_id) {
@@ -2200,8 +2203,8 @@
             updateChatMessage(msgId, successMsg, true);
 
             if (videoUrl) {
-                // Append video to the message
-                appendVideoToMessage(msgId, videoUrl);
+                // Append video to the message with both URL and local path
+                appendVideoToMessage(msgId, videoUrl, localPath);
 
                 // Auto-apply to next empty slot? Or let user click apply?
                 // Let's let user click apply like before.
@@ -2610,6 +2613,12 @@
             // Keep Delete button enabled for cancellation
             sheet.querySelector('.btn-delete').disabled = false;
 
+            // If sheet is pending confirmation, don't show progress bar yet
+            const isPendingConfirmation = sheet.dataset.pendingConfirmation === 'true';
+            if (isPendingConfirmation) {
+                return; // Don't add progress bar until user confirms
+            }
+
             // Check if progress bar already exists (from uploading state)
             const progressSection = sheet.querySelector('.progress-section');
             if (progressSection) {
@@ -2760,14 +2769,26 @@
             }
         }
 
-        function appendVideoToMessage(msgId, videoUrl) {
+        function appendVideoToMessage(msgId, videoUrl, localPath) {
             const msgDiv = document.getElementById(msgId);
             if (msgDiv) {
                 const contentDiv = msgDiv.querySelector('.ai-message-content');
+
+                // Show warning if no local path is available
+                let warningHtml = '';
+                if (!localPath) {
+                    warningHtml = `
+                        <div style="margin-top: 8px; padding: 8px; background: #FEF3C7; color: #92400E; border-radius: 6px; font-size: 13px;">
+                            ⚠️ No local path available - thumbnail generation may fail
+                        </div>
+                    `;
+                }
+
                 const videoHtml = `
                     <div class="mt-3 rounded-lg overflow-hidden border border-gray-700">
                         <video controls class="w-full" src="${videoUrl}"></video>
                     </div>
+                    ${warningHtml}
                     <button class=\"apply-btn\" style=\"margin-top: 12px;\">Apply to Frame</button>                `;
                 contentDiv.insertAdjacentHTML('beforeend', videoHtml);
 
@@ -2775,7 +2796,8 @@
                 const btn = contentDiv.querySelector('.apply-btn');
                 btn.addEventListener('click', () => {
                     state.generatedVideo = videoUrl; // Update state so apply works
-                    const frameId = applyGeneratedVideoToFrame(videoUrl);
+                    state.generatedVideoLocalPath = localPath; // Store local path
+                    const frameId = applyGeneratedVideoToFrame(videoUrl, localPath);
                     if (frameId !== -1) {
                         btn.disabled = true;
                         btn.textContent = `✓ Applied to Frame ${frameId + 1}`;
@@ -2789,7 +2811,7 @@
         }
 
         // ==================== Apply Generated Video to Frame ====================
-        function applyGeneratedVideoToFrame(videoUrl) {
+        function applyGeneratedVideoToFrame(videoUrl, localPath) {
             // Find first empty frame slot
             let emptyFrameId = -1;
             for (let i = 0; i < 6; i++) {
@@ -2807,12 +2829,14 @@
 
             // Add video to the empty frame slot
             const frameData = state.videoFrames[emptyFrameId];
-            frameData.videoPath = state.generatedVideo;
+            frameData.videoPath = localPath || state.generatedVideo; // Use local path if available, otherwise URL
             frameData.videoUrl = videoUrl;
+            frameData.localPath = localPath; // Store local path separately
             frameData.isProcessing = false;
 
-            // Generate thumbnail for the frame
-            generateThumbnail(emptyFrameId, state.generatedVideo);
+            // Generate thumbnail for the frame using local path if available
+            const pathForThumbnail = localPath || state.generatedVideo;
+            generateThumbnail(emptyFrameId, pathForThumbnail);
 
             addChatMessage('ai', `✅ Video added to Frame ${emptyFrameId + 1}! Click on it to extract frames for editing.`);
 
