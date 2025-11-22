@@ -391,7 +391,18 @@ def extract_frames():
         data = request.get_json()
         video_path = data.get('video_path')
 
-        if not video_path or not os.path.exists(video_path):
+        if not video_path:
+            return jsonify({
+                "status": "error",
+                "message": "Video path not provided"
+            }), 400
+
+        # Normalize the path: strip leading slash and remove /local/ component if present
+        normalized_path = video_path.lstrip('/')
+        if normalized_path.startswith('uploads/local/'):
+            normalized_path = normalized_path.replace('uploads/local/', 'uploads/', 1)
+
+        if not os.path.exists(normalized_path):
             return jsonify({
                 "status": "error",
                 "message": "Video not found"
@@ -400,7 +411,7 @@ def extract_frames():
         session_id = session.get('session_id', 'default')
         frames_dir = os.path.join('frames', session_id, 'editor')
 
-        editor = FrameEditor(video_path, frames_dir)
+        editor = FrameEditor(normalized_path, frames_dir)
         frames = editor.extract_frames(frame_count=6)
 
         # セッションにはパス情報のみ保存（base64データは除外）
@@ -417,7 +428,7 @@ def extract_frames():
 
         session['editor_frames'] = frames_for_session
         session['editor_frames_dir'] = frames_dir
-        session['editor_video_path'] = video_path  # FrameEditorの再作成用
+        session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
         logger.info(f"Extracted {len(frames)} frames")
 
