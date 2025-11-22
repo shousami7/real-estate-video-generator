@@ -9,3 +9,4 @@ def configure_logging(level: int = logging.INFO) -> None:
         datefmt="%H:%M:%S",
         force=True,
     )
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)

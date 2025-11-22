@@ -69,7 +69,7 @@ class FrameEditor:
         Returns:
             List of frame information (path, timestamp, base64)
         """
-        logger.info(f"Extracting {frame_count} frames from video...")
+        logger.debug(f"Extracting {frame_count} frames from video...")
 
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
@@ -113,13 +113,13 @@ class FrameEditor:
                     "base64": f"data:image/png;base64,{self._image_to_base64(str(frame_path))}"
                 }
                 self.frames.append(frame_info)
-                logger.info(f"Extracted frame {i} at {frame_info['timestamp']}")
+                logger.debug(f"Extracted frame {i} at {frame_info['timestamp']}")
 
             except Exception as e:
                 logger.error(f"Error extracting frame {i}: {e}")
                 raise
 
-        logger.info(f"Successfully extracted {len(self.frames)} frames")
+        logger.debug(f"Successfully extracted {len(self.frames)} frames")
         return self.frames
 
     def get_frame_by_id(self, frame_id: int) -> Optional[Dict[str, Any]]:

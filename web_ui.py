@@ -81,6 +81,40 @@ def _save_bytes_to_local_storage(relative_path: str, file_bytes: bytes) -> str:
     return full_path
 
 
+def _sanitize_extend_metadata_for_log(
+    extend_metadata: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Remove or shorten large base64 payloads before logging extend metadata.
+    """
+    if not extend_metadata:
+        return extend_metadata
+
+    if not isinstance(extend_metadata, dict):
+        return {"type": type(extend_metadata).__name__}
+
+    try:
+        sanitized: Dict[str, Any] = {}
+        for key, value in extend_metadata.items():
+            if key == "frame_data" and isinstance(value, dict):
+                frame_data = value.copy()
+                for payload_key in ("base64", "thumbnail"):
+                    if payload_key in frame_data:
+                        payload = frame_data[payload_key]
+                        if isinstance(payload, str):
+                            frame_data[payload_key] = f"<{payload_key} {len(payload)} chars>"
+                        else:
+                            frame_data[payload_key] = f"<{payload_key} omitted>"
+                sanitized[key] = frame_data
+            elif key in ("video_thumbnail", "thumbnail") and isinstance(value, str):
+                sanitized[key] = f"<{key} {len(value)} chars>"
+            else:
+                sanitized[key] = value
+        return sanitized
+    except Exception:
+        return {"type": type(extend_metadata).__name__}
+
+
 def _ingest_api_image(video_id: str, image_file: Any, stage: str) -> tuple[Optional[str], Optional[tuple]]:
     """
     Helper to process image uploads for API endpoints.
@@ -229,14 +263,24 @@ def get_status():
         session['generation_status'] = 'COMPLETE'
         session['generation_progress'] = 100
         session.modified = True
+
+        final_url = (
+            meta.get('final_video_url')
+            or meta.get('video_url')
+            or meta.get('output_url')
+            or "/download"
+        )
+
         return jsonify({
             "status": "COMPLETE",
-            "message": "Video generation completed successfully!",
+            "message": meta.get('message') or "Video task completed successfully!",
             "progress_percent": 100,
-            "final_video_url": "/download",
+            "final_video_url": final_url,
+            "video_path": meta.get('video_path'),
+            "scene_id": meta.get('scene_id'),
             "editor_url": "/video/editor",
             "video_id": video_id,
-            "stage": meta.get('stage') or stage,
+            "stage": meta.get('stage') or meta.get('status') or stage,
         })
 
     if task_state in {states.FAILURE, states.REVOKED}:
@@ -390,16 +434,36 @@ def extract_frames():
         data = request.get_json()
         video_path = data.get('video_path')
 
-        if not video_path or not os.path.exists(video_path):
+        if not video_path:
             return jsonify({
                 "status": "error",
-                "message": "Video not found"
+                "message": "Video path is required"
+            }), 400
+
+        # Normalize video path to handle URL paths like /uploads/local/...
+        normalized_path = video_path
+
+        # Handle URL paths that start with /uploads/
+        if normalized_path.startswith("uploads/") or normalized_path.startswith("/uploads/"):
+            project_root = os.path.dirname(LOCAL_UPLOAD_ROOT)
+            if normalized_path.startswith("/"):
+                normalized_path = normalized_path[1:]
+            normalized_path = os.path.join(project_root, normalized_path)
+        elif not os.path.isabs(normalized_path):
+            # Relative paths are treated as relative to LOCAL_UPLOAD_ROOT
+            normalized_path = os.path.join(LOCAL_UPLOAD_ROOT, video_path)
+
+        if not os.path.exists(normalized_path):
+            logger.error(f"Video not found: {video_path} -> {normalized_path}")
+            return jsonify({
+                "status": "error",
+                "message": f"Video not found: {video_path}"
             }), 400
 
         session_id = session.get('session_id', 'default')
         frames_dir = os.path.join('frames', session_id, 'editor')
 
-        editor = FrameEditor(video_path, frames_dir)
+        editor = FrameEditor(normalized_path, frames_dir)
         frames = editor.extract_frames(frame_count=6)
 
         # セッションにはパス情報のみ保存（base64データは除外）
@@ -416,7 +480,7 @@ def extract_frames():
 
         session['editor_frames'] = frames_for_session
         session['editor_frames_dir'] = frames_dir
-        session['editor_video_path'] = video_path  # FrameEditorの再作成用
+        session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
         logger.info(f"Extracted {len(frames)} frames")
 
@@ -2024,7 +2088,7 @@ def api_extract_frames():
         # Generate task_id for tracking
         task_id = str(uuid.uuid4())
 
-        logger.info(f"[MCP API] Extracted {len(frames_response)} frames from video_id={video_id}")
+        logger.debug(f"[MCP API] Extracted {len(frames_response)} frames from video_id={video_id}")
 
         # Return unified response
         return jsonify(build_task_response(
@@ -2457,7 +2521,7 @@ def _handle_extend_scene(
     Falls back to legacy scene-to-scene extend otherwise.
     """
     logger.info(f"Handling EXTEND command: {params}")
-    logger.info(f"Extend metadata: {extend_metadata}")
+    logger.info(f"Extend metadata: {_sanitize_extend_metadata_for_log(extend_metadata)}")
 
     if extend_metadata and extend_metadata.get('frame_data'):
         return _handle_frame_based_extend(params, scene_manager, session_id, extend_metadata)

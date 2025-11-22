@@ -483,22 +483,7 @@
             color: black;
         }
 
-        /* Loading Spinner */
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
 
-        .loading-spinner {
-            display: inline-block;
-            width: 24px;
-            height: 24px;
-            border: 3px solid #374151;
-            border-top-color: #34D399;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
 
         /* Plan Sheet Container */
         .plan-sheet {
@@ -1078,7 +1063,7 @@
 
                 const frameSlot = document.createElement('div');
                 // Base classes for the slot
-                let baseClasses = 'aspect-video bg-[#1a1a1a] rounded-lg flex items-center justify-center relative group transition-all duration-200';
+                let baseClasses = 'aspect-video bg-[#1a1a1a] rounded-lg flex items-center justify-center relative group transition-all duration-200 overflow-hidden';
 
                 if (frameData.thumbnail) {
                     // Filled state
@@ -1129,6 +1114,14 @@
                 // Click handler
                 frameSlot.addEventListener('click', () => {
                     if (frameData.videoPath) {
+                        // Update global state to match selected frame's video
+                        state.videoPath = frameData.videoPath;
+                        state.videoUrl = frameData.videoUrl;
+
+                        // Show and play video
+                        showPlayerSection();
+
+                        // Extract frames for this video
                         extractFramesForVideo(frameId);
                     } else {
                         fileInput.click();
@@ -1137,11 +1130,16 @@
 
 
 
-                // ローディング状態の場合、スピナーを表示
+                // Loading state
                 if (frameData.isProcessing) {
-                    const spinner = document.createElement('div');
-                    spinner.className = 'loading-spinner';
-                    frameSlot.appendChild(spinner);
+                    const progressContainer = document.createElement('div');
+                    progressContainer.className = 'absolute bottom-4 left-4 right-4 h-1 bg-gray-700 rounded-full overflow-hidden z-10';
+
+                    const progressBar = document.createElement('div');
+                    progressBar.className = 'h-full bg-primary animate-pulse w-full';
+
+                    progressContainer.appendChild(progressBar);
+                    frameSlot.appendChild(progressContainer);
                 }
                 videoFramesContainer.appendChild(frameSlot);
             }
@@ -1651,6 +1649,38 @@
             state.extendMode.modalStep = null;
         }
 
+        function showToast(message, type = 'info', duration = 3000) {
+            const toast = document.createElement('div');
+            toast.className = `fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-x-0 opacity-100 max-w-md`;
+
+            // Style based on type
+            const styles = {
+                info: 'bg-blue-500/90 text-white',
+                warning: 'bg-yellow-500/90 text-gray-900',
+                error: 'bg-red-500/90 text-white',
+                success: 'bg-green-500/90 text-white'
+            };
+
+            toast.className += ` ${styles[type] || styles.info}`;
+            toast.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-xl">
+                        ${type === 'info' ? 'info' : type === 'warning' ? 'warning' : type === 'error' ? 'error' : 'check_circle'}
+                    </span>
+                    <span class="text-sm font-medium">${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(toast);
+
+            // Animate out and remove
+            setTimeout(() => {
+                toast.style.transform = 'translateX(400px)';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
         // ==================== ビデオモード選択処理 ====================
         // ポップアップの表示/非表示を切り替え
         videoModeBtn.addEventListener('click', (e) => {
@@ -1707,6 +1737,14 @@
                     chatInput.placeholder = "Click 'Select Video Frame' to choose where to extend";
 
                     showExtendFrameButton();
+
+                    // Show helpful hint about needing uploaded videos
+                    const hasVideos = Object.keys(state.videoFrames).length > 0;
+                    if (!hasVideos) {
+                        showToast('Please upload at least one video before selecting a frame to extend.', 'info', 4000);
+                    } else {
+                        showToast('Click "Select Video Frame" to choose where to extend from.', 'info', 3000);
+                    }
                 } else if (mode === 'agent') {
                     resetExtendMode();
                     chatInput.placeholder = "Agent mode (MCP): describe what you want the agent to do...";
@@ -1743,6 +1781,14 @@
         }
 
         function resetExtendMode() {
+            // Close modal if it's open
+            if (state.extendMode.isModalOpen) {
+                const modal = document.getElementById('video-frame-selector-modal');
+                if (modal) {
+                    closeVideoFrameModal(modal);
+                }
+            }
+
             state.extendMode = {
                 enabled: false,
                 selectedVideoSlot: null,
@@ -1803,6 +1849,18 @@
                         setTimeout(() => {
                             showPlayerSection();
                             extractFrames();
+
+                            // Auto-populate first empty frame slot
+                            for (let i = 0; i < 6; i++) {
+                                if (!state.videoFrames[i].videoPath) {
+                                    state.videoFrames[i].videoPath = state.videoPath;
+                                    state.videoFrames[i].videoUrl = state.videoUrl;
+                                    state.videoFrames[i].isProcessing = true;
+                                    renderVideoFrames();
+                                    generateThumbnail(i, state.videoPath);
+                                    break;
+                                }
+                            }
                         }, 500);
                     } else {
                         alert('Upload failed: ' + data.message);
@@ -2039,10 +2097,17 @@
             // If agent mode returned plan_sheet data, create a plan sheet
             if (data.data && data.data.plan_sheet) {
                 const planConfig = data.data.plan_sheet;
+
+                // For extend mode, mark as pending confirmation
+                const isExtendMode = planConfig.mode === 'Extend';
+                if (isExtendMode) {
+                    planConfig.pending_confirmation = true;
+                }
+
                 createPlanSheet(planConfig);
 
-                // If we have a task_id, start polling
-                if (planConfig.task_id) {
+                // If we have a task_id and NOT pending confirmation, start polling
+                if (planConfig.task_id && !isExtendMode) {
                     // Find the newly created plan sheet by task_id
                     const allSheets = document.querySelectorAll('.plan-sheet');
                     const targetSheet = Array.from(allSheets).pop();  // Get the last one (just created)
@@ -2258,10 +2323,13 @@
                 prompt,
                 pic,
                 source_video,
-                selected_frame
+                selected_frame,
+                task_id,
+                pending_confirmation
             } = config;
             const hasPic = pic === 'yes';
             const hasExtendData = mode === 'Extend' && source_video && selected_frame;
+            const isPendingConfirmation = pending_confirmation === true;
 
             let extendSection = '';
 
@@ -2291,8 +2359,24 @@
                 `;
             }
 
+            // Determine which button to show
+            let actionButtons = '';
+            if (isPendingConfirmation) {
+                // Show Confirm button for extend mode awaiting confirmation
+                actionButtons = `
+                    <button class="btn-generate" onclick="confirmExtendPlanSheet(this)">Confirm</button>
+                    <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
+                `;
+            } else {
+                // Show Generate button for normal mode
+                actionButtons = `
+                    <button class="btn-generate" onclick="executeGenerate(this)">Generate</button>
+                    <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
+                `;
+            }
+
             return `
-                <div class="plan-sheet" data-sheet-id="${timestamp}">
+                <div class="plan-sheet" data-sheet-id="${timestamp}" ${task_id ? `data-task-id="${task_id}"` : ''} ${isPendingConfirmation ? 'data-pending-confirmation="true"' : ''}>
                     <!-- Header -->
                     <div class="sheet-header">
                         <span class="sheet-title">Plan Sheet (Auto Generated)</span>
@@ -2336,8 +2420,7 @@
                     
                     <!-- Actions -->
                     <div class="sheet-actions">
-                        <button class="btn-generate" onclick="executeGenerate(this)">Generate</button>
-                        <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
+                        ${actionButtons}
                     </div>
                 </div>
             `;
@@ -2422,6 +2505,27 @@
 
             // Remove from DOM immediately
             sheet.remove();
+        }
+
+        function confirmExtendPlanSheet(btn) {
+            const sheet = btn.closest('.plan-sheet');
+            const taskId = sheet.dataset.taskId;
+
+            if (!taskId) {
+                console.error('No task_id found for extend plan sheet');
+                showSheetError(sheet, 'No task ID found');
+                return;
+            }
+
+            // Remove pending confirmation flag
+            sheet.removeAttribute('data-pending-confirmation');
+
+            // Hide Confirm button, show processing state
+            btn.classList.add('hidden');
+
+            // Mark sheet as processing and start polling
+            markSheetAsProcessing(sheet, taskId);
+            pollPlanSheetStatus(taskId, sheet);
         }
 
         function executeGenerate(btn) {
