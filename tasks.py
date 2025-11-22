@@ -666,7 +666,13 @@ def frame_based_extend_task(
             raise ValueError(f"Invalid frame_timestamp: {frame_timestamp}")
 
         normalized_source = source_video_path
-        if not os.path.isabs(normalized_source):
+        # Fix for double uploads path: if path starts with "uploads/", treat it as relative to project root
+        if normalized_source.startswith("uploads/") or normalized_source.startswith("/uploads/"):
+            project_root = os.path.dirname(LOCAL_UPLOAD_ROOT)
+            if normalized_source.startswith("/"):
+                normalized_source = normalized_source[1:]
+            normalized_source = os.path.join(project_root, normalized_source)
+        elif not os.path.isabs(normalized_source):
             normalized_source = os.path.join(LOCAL_UPLOAD_ROOT, source_video_path)
 
         if not os.path.exists(normalized_source):
@@ -900,7 +906,22 @@ def frame_based_extend_task(
             state="FAILURE",
             meta=_task_meta(0, f"Error: {str(e)}", "extend", session_id, "ERROR")
         )
-        raise
+        
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="extend",
+            status="error",
+            error=str(e),
+        )
+        
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
+
+        return error_result
 
     finally:
         if temp_dir and os.path.exists(temp_dir):

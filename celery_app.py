@@ -1,5 +1,14 @@
 from dotenv import load_dotenv
 import os
+import logging
+from typing import Dict, Optional
+from celery import Celery
+
+from utils.logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
+_TASK_VIDEO_TTL_SECONDS = int(os.getenv("TASK_VIDEO_TTL_SECONDS", "86400"))
+_TASK_VIDEO_MEMORY_CACHE: Dict[str, str] = {}
 
 # Define the base directory of the project
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11,14 +20,8 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 # This ensures that environment variables are loaded even if the worker's CWD is different.
 load_dotenv()
 
-import logging
-from typing import Dict, Optional
-from celery import Celery
-
-logger = logging.getLogger(__name__)
-_TASK_VIDEO_TTL_SECONDS = int(os.getenv("TASK_VIDEO_TTL_SECONDS", "86400"))
-_TASK_VIDEO_MEMORY_CACHE: Dict[str, str] = {}
-
+# Use the same concise log format for workers
+configure_logging()
 
 def check_redis_available(broker_url: str) -> bool:
     """

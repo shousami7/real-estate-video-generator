@@ -1,11 +1,17 @@
 
 from dotenv import load_dotenv
 import os
-
 import secrets
+import logging
+
+from utils.logging_config import configure_logging
 
 # 絶対パスで .env を読み込む（Flask reloader による cwd 変更に対応）
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+# 短縮フォーマットのロギングを初期化（最初に設定しておく）
+configure_logging()
+
 from flask import Flask
 from web_ui import web_ui_blueprint
 

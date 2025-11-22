@@ -32,7 +32,6 @@ from utils.video_duration import probe_video_duration as get_video_duration
 # Cache for Supabase task logs to prevent redundant downloads
 _TASK_LOG_CACHE: Dict[str, dict] = {}
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 web_ui_blueprint = Blueprint('web_ui', __name__, template_folder='templates', static_folder='static')
@@ -1104,6 +1103,45 @@ def clear_chat_history():
         return jsonify({"error": str(e)}), 500
 
 
+def _find_latest_uploaded_image(session_id: str) -> Optional[str]:
+    """
+    Locate the most recently uploaded image for the given session.
+    Prefers session-cached values, then falls back to common upload directories.
+    """
+    latest_map = session.get('latest_uploaded_image') or {}
+    cached_path = latest_map.get(session_id)
+    if cached_path and os.path.exists(cached_path):
+        return cached_path
+
+    search_dirs = [
+        os.path.join(LOCAL_UPLOAD_ROOT, "videos", session_id, "input"),
+        os.path.join(LOCAL_UPLOAD_ROOT, session_id, "input"),
+        os.path.join(LOCAL_UPLOAD_ROOT, session_id, "editor", "generate"),
+    ]
+    image_exts = {".png", ".jpg", ".jpeg", ".webp"}
+    candidates: List[str] = []
+
+    for directory in search_dirs:
+        if not os.path.exists(directory):
+            continue
+        for name in os.listdir(directory):
+            file_path = os.path.join(directory, name)
+            if os.path.isfile(file_path) and os.path.splitext(name)[1].lower() in image_exts:
+                candidates.append(file_path)
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=os.path.getmtime, reverse=True)
+    latest_image = candidates[0]
+
+    if 'latest_uploaded_image' not in session:
+        session['latest_uploaded_image'] = {}
+    session['latest_uploaded_image'][session_id] = latest_image
+
+    return latest_image
+
+
 def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None = None) -> dict:
     """
     Handle Agent (MCP/Gemini) mode.
@@ -1242,28 +1280,10 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
         scene_manager = SceneManager(session_id)
         
         if tool_name == "generate_video":
-            # Check for recently uploaded image in session (from chat upload)
-            latest_image = None
-            
-            # First check if image was uploaded via the chat interface
-            if 'latest_uploaded_image' in session and session_id in session['latest_uploaded_image']:
-                latest_image = session['latest_uploaded_image'][session_id]
-                logger.info(f"Using image from chat upload: {latest_image}")
-            
-            # Fallback: check upload directory for any previously uploaded images
+            latest_image = _find_latest_uploaded_image(session_id)
+
             if not latest_image:
-                # chat_upload_image saves to: videos/{session_id}/input/{filename}
-                # which maps to: uploads/videos/{session_id}/input/{filename}
-                upload_dir = os.path.join('uploads', 'videos', session_id, 'input')
-                if os.path.exists(upload_dir):
-                    files = sorted([os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if not f.startswith('.')], 
-                                   key=os.path.getmtime, reverse=True)
-                    if files:
-                        latest_image = files[0]
-                        logger.info(f"Using latest image from directory: {latest_image}")
-            
-            if not latest_image:
-                 return {
+                return {
                     "status": "error",
                     "message": "I need an image to generate a video. Please upload an image first.",
                     "intent": "error"
@@ -1281,30 +1301,27 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
             task_type = "generate"
 
         elif tool_name == "extend_video":
-            # Need previous scene ID
-            scenes = scene_manager.get_scenes()
-            if not scenes:
+            last_scene = scene_manager.get_last_scene()
+            if not last_scene:
                 return {
                     "status": "error",
                     "message": "No video found to extend. Please generate a video first.",
                     "intent": "error"
                 }
-            last_scene = scenes[-1]
-            
-            # For extension, we ideally need a NEW image (end frame of previous or new upload).
-            # For Veo 3.0, we pass the previous video as context.
-            # The task 'extend_scene_task' signature: (session_id, scene_id, previous_scene_id, new_image_path, prompt, ...)
-            
-            # We'll reuse the last image for now if no new one provided, or rely on the task to handle it.
-            # Actually, extend_scene_task requires a new_image_path. 
-            # We'll use the original image of the last scene as a fallback for this demo logic.
-            image_path = last_scene.get('image_path')
-            
+
+            image_path = _find_latest_uploaded_image(session_id)
+            if not image_path:
+                return {
+                    "status": "error",
+                    "message": "Upload an image to extend the video, then try again.",
+                    "intent": "error"
+                }
+
             task = celery.send_task('tasks.extend_scene_task', args=[
                 session_id,
                 str(uuid.uuid4()), # new scene_id
-                last_scene['id'], # previous_scene_id
-                image_path, # new_image_path (reusing for now)
+                last_scene.scene_id, # previous_scene_id
+                image_path, # new_image_path
                 args.get("prompt", "Continue the video"),
                 args.get("duration", "8s"),
                 args.get("aspect_ratio", "16:9"),
@@ -1313,16 +1330,13 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
             task_type = "extend"
 
         elif tool_name == "extract_frames":
-             # Get latest video
-            scenes = scene_manager.get_scenes()
-            if not scenes:
-                 return {"status": "error", "message": "No video to extract frames from.", "intent": "error"}
-            
-            # We use the session_id as video_id for the task if we want to extract from the 'composed' video,
-            # or the scene id. Let's default to the session context.
+            last_scene = scene_manager.get_last_scene()
+            if not last_scene or not last_scene.video_path:
+                return {"status": "error", "message": "No video to extract frames from.", "intent": "error"}
+
             task = celery.send_task('tasks.extract_frames_task', args=[
                 session_id,
-                None, # video_path (optional, task finds it)
+                last_scene.video_path,
                 args.get("fps", 1)
             ])
             task_type = "extract"
