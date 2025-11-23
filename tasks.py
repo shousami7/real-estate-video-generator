@@ -333,6 +333,7 @@ def generate_video_from_chat_task(
             stage="generate",
             status="completed",
             output_url=video_url,
+            local_path=downloaded_path,
         )
 
         # Add extra fields for compatibility
@@ -892,6 +893,7 @@ def frame_based_extend_task(
             status="error",
             error=str(e),
         )
+        logger.error(f"[EXTEND ERROR] Task {self.request.id} failed: {e}")
         
         if is_supabase_configured():
             try:
@@ -1027,6 +1029,7 @@ def merge_scenes_task(
             stage="stitch",
             status="completed",
             output_url=video_url,
+            local_path=composed_path,
         )
 
         # Add extra fields

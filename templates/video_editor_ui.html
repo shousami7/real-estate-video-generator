@@ -500,7 +500,8 @@
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
-            overflow: hidden;
+            overflow-y: auto;
+            max-height: 80vh;
         }
 
         .plan-sheet::before {
@@ -2118,6 +2119,10 @@
                         pollPlanSheetStatus(planConfig.task_id, targetSheet);
                     }
                 }
+
+                // If we created a plan sheet, we don't want to poll the chat message as well
+                // This prevents duplicate progress bars and premature progress display
+                return;
             }
 
             if (data.status === 'processing' && data.task_id) {
@@ -2367,7 +2372,7 @@
             if (isPendingConfirmation) {
                 // Show Confirm button for extend mode awaiting confirmation
                 actionButtons = `
-                    <button class="btn-generate" onclick="confirmExtendPlanSheet(this)">Confirm</button>
+                    <button class="btn-generate" onclick="confirmExtendPlanSheet(this)">Apply Frame</button>
                     <button class="btn-delete" onclick="deletePlanSheet(this)">Delete</button>
                 `;
             } else {
@@ -2378,8 +2383,21 @@
                 `;
             }
 
+            // Prepare extend params for execution
+            let extendParamsAttr = '';
+            if (hasExtendData) {
+                const extendParams = {
+                    source_video_path: source_video.video_path,
+                    frame_timestamp: selected_frame.seconds,
+                    frame_path: selected_frame.frame_path,
+                    prompt: prompt,
+                    duration: duration
+                };
+                extendParamsAttr = `data-extend-params='${JSON.stringify(extendParams)}'`;
+            }
+
             return `
-                <div class="plan-sheet" data-sheet-id="${timestamp}" ${task_id ? `data-task-id="${task_id}"` : ''} ${isPendingConfirmation ? 'data-pending-confirmation="true"' : ''}>
+                <div class="plan-sheet" data-sheet-id="${timestamp}" ${task_id ? `data-task-id="${task_id}"` : ''} ${isPendingConfirmation ? 'data-pending-confirmation="true"' : ''} ${extendParamsAttr}>
                     <!-- Header -->
                     <div class="sheet-header">
                         <span class="sheet-title">Plan Sheet (Auto Generated)</span>
@@ -2512,23 +2530,83 @@
 
         function confirmExtendPlanSheet(btn) {
             const sheet = btn.closest('.plan-sheet');
-            const taskId = sheet.dataset.taskId;
 
-            if (!taskId) {
-                console.error('No task_id found for extend plan sheet');
-                showSheetError(sheet, 'No task ID found');
+            // Get base params from data attribute
+            const extendParamsStr = sheet.dataset.extendParams;
+            if (!extendParamsStr) {
+                console.error('No extend params found');
+                showSheetError(sheet, 'Missing extend parameters');
                 return;
             }
+            const extendParams = JSON.parse(extendParamsStr);
 
-            // Remove pending confirmation flag
-            sheet.removeAttribute('data-pending-confirmation');
+            // Get current values from UI (in case user edited them)
+            const durationInput = sheet.querySelector('.field:nth-child(2) input');
+            const promptInput = sheet.querySelector('.field:nth-child(3) input');
 
-            // Hide Confirm button, show processing state
+            const currentDuration = parseInt(durationInput.value);
+            const currentPrompt = promptInput.value;
+
+            // Build FormData for execution
+            const formData = new FormData();
+            formData.append('source_video_path', extendParams.source_video_path);
+            formData.append('frame_timestamp', extendParams.frame_timestamp);
+            formData.append('frame_path', extendParams.frame_path);
+            formData.append('prompt', currentPrompt);
+            formData.append('duration', currentDuration);
+
+            if (state.sessionId) {
+                formData.append('session_id', state.sessionId);
+            }
+
+            // Hide Confirm button immediately to prevent double clicks
             btn.classList.add('hidden');
 
-            // Mark sheet as processing and start polling
-            markSheetAsProcessing(sheet, taskId);
-            pollPlanSheetStatus(taskId, sheet);
+            // Show temporary loading state
+            const actionsDiv = sheet.querySelector('.sheet-actions');
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'text-xs text-gray-400 mt-2';
+            loadingMsg.textContent = 'Starting task...';
+            actionsDiv.appendChild(loadingMsg);
+
+            // Call execute endpoint
+            fetch('/api/extend/execute', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    loadingMsg.remove();
+
+                    if (data.status === 'error') {
+                        showSheetError(sheet, data.message || 'Failed to start task');
+                        btn.classList.remove('hidden'); // Show button again on error
+                        return;
+                    }
+
+                    const taskId = data.task_id;
+                    if (!taskId) {
+                        showSheetError(sheet, 'No task ID returned');
+                        btn.classList.remove('hidden');
+                        return;
+                    }
+
+                    // Update sheet with new task ID
+                    sheet.dataset.taskId = taskId;
+
+                    // Remove pending confirmation flag
+                    sheet.removeAttribute('data-pending-confirmation');
+
+                    // Mark sheet as processing and start polling
+                    markSheetAsProcessing(sheet, taskId);
+                    pollPlanSheetStatus(taskId, sheet);
+                })
+                .catch(err => {
+                    loadingMsg.remove();
+                    console.error('Error executing extend task:', err);
+                    showSheetError(sheet, 'Network error starting task');
+                    btn.classList.remove('hidden');
+                });
         }
 
         function executeGenerate(btn) {

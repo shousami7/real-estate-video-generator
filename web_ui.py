@@ -172,7 +172,7 @@ def _load_task_log(video_id: str, task_id: str) -> Optional[dict]:
             _TASK_LOG_CACHE[task_id] = data
             return data
     except Exception as e:
-        logger.warning(f"Could not load task log from Supabase: {e}")
+        logger.warning(f"Could not load task log from Supabase: {e} (video_id={video_id}, task_id={task_id})")
     
     return None
 
@@ -270,6 +270,11 @@ def get_status():
             or meta.get('output_url')
             or "/download"
         )
+        local_path = (
+            meta.get('local_path')
+            or meta.get('video_path')
+            or meta.get('final_video_path')
+        )
 
         return jsonify({
             "status": "COMPLETE",
@@ -277,6 +282,7 @@ def get_status():
             "progress_percent": 100,
             "final_video_url": final_url,
             "video_path": meta.get('video_path'),
+            "local_path": local_path,
             "scene_id": meta.get('scene_id'),
             "editor_url": "/video/editor",
             "video_id": video_id,
@@ -1043,7 +1049,7 @@ def editor_chat():
 
         # Agentモード: MCP/Gemini連携に切り替える場合はここで分岐
         if is_agent_mode:
-            result = _handle_agent_mode(user_input, session_id, video_mode)
+            result = _handle_agent_mode(user_input, session_id, video_mode, extend_metadata)
         else:
             # コマンド解釈
             handler = ChatCommandHandler()
@@ -1206,7 +1212,12 @@ def _find_latest_uploaded_image(session_id: str) -> Optional[str]:
     return latest_image
 
 
-def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None = None) -> dict:
+def _handle_agent_mode(
+    user_input: str,
+    session_id: str,
+    video_mode: str | None = None,
+    extend_metadata: Optional[Dict[str, Any]] = None
+) -> dict:
     """
     Handle Agent (MCP/Gemini) mode.
     Uses Gemini to interpret the user's command and maps it to the appropriate Celery task.
@@ -1365,6 +1376,19 @@ def _handle_agent_mode(user_input: str, session_id: str, video_mode: str | None 
             task_type = "generate"
 
         elif tool_name == "extend_video":
+            # Check if we have frame-based extend metadata
+            if extend_metadata and extend_metadata.get('frame_data'):
+                logger.info("[AgentMode] Using frame-based extend metadata")
+                # Use the existing frame-based extend handler which creates the correct plan sheet
+                # We need to adapt the params to match what _handle_frame_based_extend expects
+                params = {
+                    "prompt": args.get("prompt", user_input),
+                    "duration": args.get("duration", "8s"),
+                    "aspect_ratio": args.get("aspect_ratio", "16:9"),
+                    "resolution": "720p"
+                }
+                return _handle_frame_based_extend(params, scene_manager, session_id, extend_metadata)
+
             last_scene = scene_manager.get_last_scene()
             if not last_scene:
                 return {
@@ -1548,6 +1572,9 @@ def get_task_status(task_id: str):
             logger.warning(f"Task {task_id} result deserialization failed: {e}")
             task_result = None
 
+        # Initialize meta from task_info (used across multiple branches)
+        meta = task_info if isinstance(task_info, dict) else {}
+
         if task_state == states.PENDING:
             # Task not yet started
             return jsonify(build_task_response(
@@ -1559,7 +1586,6 @@ def get_task_status(task_id: str):
 
         elif task_state in {states.STARTED, 'GENERATING_CLIPS', 'COMPOSING', 'GENERATING', 'EXTENDING', 'DOWNLOADING', 'SAVING', 'MERGING', 'UPLOADING'}:
             # Task is running
-            meta = task_info if isinstance(task_info, dict) else {}
             meta_video_id = meta.get('video_id')
             video_id = meta_video_id or get_task_video_mapping(task_id) or video_id or "unknown"
             progress = meta.get("progress", 0)
@@ -1585,15 +1611,49 @@ def get_task_status(task_id: str):
             log_data = _load_task_log(video_id, task_id)
             if log_data and _has_full_payload(log_data):
                 return jsonify(log_data)
+            
+            logger.warning(f"Task {task_id} completed but result/log is incomplete. Result keys: {list(result.keys()) if result else 'None'}")
 
             # 3) Fallback: construct response from task result or defaults
+            # Handle older workers that return video_url/video_path instead of output_url/local_path
+            output_url = (
+                result.get('output_url')
+                or result.get('final_video')
+                or result.get('video_url')
+            )
+            local_path = result.get('local_path') or result.get('video_path')
+            stage_value = (
+                result.get('stage')
+                or meta.get('stage')
+                or meta.get('step')
+                or (result.get('metadata') or {}).get('type')
+                or 'unknown'
+            )
+
+            if not output_url and local_path:
+                try:
+                    rel_path = os.path.relpath(local_path, start=LOCAL_UPLOAD_ROOT)
+                    if not rel_path.startswith(".."):
+                        output_url = f"/uploads/local/{rel_path}"
+                except Exception:
+                    pass
+            
+            if not output_url:
+                return jsonify(build_task_response(
+                    task_id=task_id,
+                    video_id=video_id,
+                    stage=stage_value,
+                    status="error",
+                    error="Task completed but no output URL found. Please check logs.",
+                ))
+
             return jsonify(build_task_response(
                 task_id=task_id,
                 video_id=video_id,
-                stage=result.get('stage', 'unknown'),
+                stage=stage_value,
                 status="completed",
-                output_url=result.get('output_url') or result.get('final_video'),
-                local_path=result.get('local_path') or result.get('video_path'),
+                output_url=output_url,
+                local_path=local_path,
                 frames=result.get('frames'),
                 error=result.get('error'),
             ))
@@ -2551,19 +2611,19 @@ def _handle_frame_based_extend(
 
         scene_id = scene_manager.generate_next_scene_id()
 
-        from tasks import frame_based_extend_task
+        # from tasks import frame_based_extend_task
 
-        task = frame_based_extend_task.delay(
-            session_id=session_id,
-            scene_id=scene_id,
-            source_video_path=video_path,
-            frame_timestamp=frame_data.get('seconds'),
-            frame_path=frame_data.get('path'),
-            prompt=custom_prompt,
-            duration=params.get('duration', '8s'),
-            aspect_ratio=params.get('aspect_ratio', '16:9'),
-            resolution=params.get('resolution', '720p')
-        )
+        # task = frame_based_extend_task.delay(
+        #     session_id=session_id,
+        #     scene_id=scene_id,
+        #     source_video_path=video_path,
+        #     frame_timestamp=frame_data.get('seconds'),
+        #     frame_path=frame_data.get('path'),
+        #     prompt=custom_prompt,
+        #     duration=params.get('duration', '8s'),
+        #     aspect_ratio=params.get('aspect_ratio', '16:9'),
+        #     resolution=params.get('resolution', '720p')
+        # )
 
         duration_str = params.get('duration', '8s')
         duration_value = int(duration_str.rstrip('s')) if isinstance(duration_str, str) else int(duration_str)
@@ -2573,7 +2633,7 @@ def _handle_frame_based_extend(
             "duration": duration_value,
             "prompt": custom_prompt,
             "pic": "yes",
-            "task_id": task.id,
+            "task_id": None,  # Task not started yet
             "source_video": {
                 "slot_id": video_slot_id,
                 "video_path": video_path,
@@ -2586,17 +2646,18 @@ def _handle_frame_based_extend(
                 "seconds": frame_data.get('seconds'),
                 "thumbnail": frame_data.get('base64'),
                 "frame_path": frame_data.get('path')
-            }
+            },
+            "pending_confirmation": True
         }
 
         return {
-            "status": "processing",
-            "task_id": task.id,
+            "status": "pending_confirmation",  # Changed from processing
+            "task_id": None,
             "scene_id": scene_id,
             "message": f"Extending video from frame {frame_index + 1} at {frame_data.get('timestamp')}...",
             "intent": "extend",
             "data": {
-                "task_id": task.id,
+                "task_id": None,
                 "video_id": session_id,
                 "plan_sheet": plan_sheet
             }
@@ -2609,6 +2670,49 @@ def _handle_frame_based_extend(
             "message": f"Failed to start frame-based extend: {str(e)}",
             "intent": "extend"
         }
+
+
+@web_ui_blueprint.route('/api/extend/execute', methods=['POST'])
+def execute_extend_task():
+    """
+    Execute the extend task after user confirmation.
+    """
+    try:
+        params = request.form
+        session_id = params.get('session_id') or session.get('editor_session_id')
+        
+        if not session_id:
+            return jsonify({"error": "Session ID missing"}), 400
+
+        scene_manager = SceneManager(session_id)
+        scene_id = scene_manager.generate_next_scene_id()
+
+        from tasks import frame_based_extend_task
+
+        task = frame_based_extend_task.delay(
+            session_id=session_id,
+            scene_id=scene_id,
+            source_video_path=params.get('source_video_path'),
+            frame_timestamp=float(params.get('frame_timestamp')),
+            frame_path=params.get('frame_path'),
+            prompt=params.get('prompt'),
+            duration=params.get('duration', '8s'),
+            aspect_ratio=params.get('aspect_ratio', '16:9'),
+            resolution=params.get('resolution', '720p')
+        )
+
+        logger.info(f"Extend task executed: task_id={task.id}, scene_id={scene_id}")
+
+        return jsonify({
+            "status": "processing",
+            "task_id": task.id,
+            "scene_id": scene_id,
+            "message": "Extension task started"
+        })
+
+    except Exception as e:
+        logger.error(f"Execute extend task error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 def _handle_scene_to_scene_extend(

@@ -34,5 +34,11 @@ def create_app():
     return app
 
 if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Run the Real Estate Video Generator web app.')
+    parser.add_argument('--port', type=int, default=5001, help='Port to run the application on (default: 5001)')
+    args = parser.parse_args()
+
     app = create_app()
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=args.port)
