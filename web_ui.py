@@ -1275,119 +1275,152 @@ def _handle_agent_mode(
         }
 
     try:
-        # 1. Initialize Gemini Client
-        client = genai.Client(api_key=api_key)
+        # 0. Fast-path: Try regex parsing first to avoid unnecessary API calls
+        # This reduces latency and cost for standard commands
+        handler = ChatCommandHandler()
+        command = handler.parse_command(user_input)
+        is_valid, _ = handler.validate_command(command)
         
-        # 2. Define Tools (Schema)
-        tools = [
-            {
-                "name": "generate_video",
-                "description": "Generate a new video from a text prompt. Use this when the user wants to create a new video from scratch or from an uploaded image.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {"type": "string", "description": "Text description of the video to generate"},
-                        "duration": {"type": "string", "description": "Duration of the video (e.g. '8s')"},
-                        "aspect_ratio": {"type": "string", "description": "Aspect ratio (e.g. '16:9')"}
-                    },
-                    "required": ["prompt"]
+        tool_name = None
+        args = {}
+        reply_message = "Processing your request..."
+        
+        if is_valid and command['intent'] != CommandIntent.UNKNOWN:
+            intent = command['intent']
+            params = command['params']
+            
+            if intent == CommandIntent.CREATE:
+                tool_name = "generate_video"
+                args = {
+                    "prompt": params.get("prompt", user_input),
+                    "duration": params.get("duration", "8s"),
+                    "aspect_ratio": params.get("aspect_ratio", "16:9")
                 }
-            },
-            {
-                "name": "extend_video",
-                "description": "Extend the current or specified video. Use this when the user wants to make the video longer or add a scene.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {"type": "string", "description": "Description of the extension/next scene"},
-                        "duration": {"type": "string", "description": "Duration to add (e.g. '8s')"}
-                    },
-                    "required": ["prompt"]
+                logger.info(f"[AgentMode] Fast-path matched CREATE: {args}")
+                
+            elif intent == CommandIntent.EXTEND:
+                tool_name = "extend_video"
+                args = {
+                    "prompt": params.get("prompt", user_input),
+                    "duration": params.get("duration", "8s")
                 }
-            },
-            {
-                "name": "extract_frames",
-                "description": "Extract frames from a video. Use this when the user wants to see specific frames or images from the video.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "fps": {"type": "integer", "description": "Frames per second to extract"}
-                    }
-                }
-            },
-            {
-                "name": "edit_frame",
-                "description": "Edit a specific frame using AI. Use this when the user wants to modify an image or frame.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "frame_index": {"type": "integer", "description": "Index of the frame to edit"},
-                        "instruction": {"type": "string", "description": "Instruction for editing"}
-                    },
-                    "required": ["frame_index", "instruction"]
-                }
-            },
-            {
-                "name": "stitch_videos",
-                "description": "Stitch/Merge multiple scenes together. Use this when the user wants to combine clips into a final video.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "transition_type": {"type": "string", "description": "Transition type (cut, fade)"}
-                    }
-                }
-            }
-        ]
+                logger.info(f"[AgentMode] Fast-path matched EXTEND: {args}")
 
-        # 3. Call Gemini to decide intent
-        # We use a simplified prompt approach since we are inside the backend
-        prompt = f"""
-        You are an AI video production assistant. Your job is to interpret the user's request and select the best tool to execute it.
-        
-        User Request: "{user_input}"
-        
-        Available Tools:
-        {json.dumps(tools, indent=2)}
-        
-        Respond ONLY with a valid JSON object in this format:
-        {{
-            "tool": "tool_name",
-            "arguments": {{ ... }},
-            "reply": "A brief, friendly message to the user confirming what you are doing."
-        }}
-        
-        If the request is unclear or not related to video production, respond with:
-        {{
-            "tool": null,
-            "reply": "I can help you generate, extend, edit, and stitch videos. Could you please clarify your request?"
-        }}
-        """
-
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
-        )
-        
-        try:
-            result = json.loads(response.text)
-        except json.JSONDecodeError:
-            # Fallback cleanup if model returns markdown code blocks
-            text = response.text.strip()
-            if text.startswith("```json"):
-                text = text[7:-3]
-            result = json.loads(text)
-
-        tool_name = result.get("tool")
-        args = result.get("arguments", {})
-        reply_message = result.get("reply", "Processing your request...")
-
+        # If fast-path didn't find a tool, use Gemini
         if not tool_name:
-            return {
-                "status": "success",
-                "message": reply_message,
-                "intent": "chat"
-            }
+            # 1. Initialize Gemini Client
+            client = genai.Client(api_key=api_key)
+            
+            # 2. Define Tools (Schema)
+            tools = [
+                {
+                    "name": "generate_video",
+                    "description": "Generate a new video from a text prompt. Use this when the user wants to create a new video from scratch or from an uploaded image.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string", "description": "Text description of the video to generate"},
+                            "duration": {"type": "string", "description": "Duration of the video (e.g. '8s')"},
+                            "aspect_ratio": {"type": "string", "description": "Aspect ratio (e.g. '16:9')"}
+                        },
+                        "required": ["prompt"]
+                    }
+                },
+                {
+                    "name": "extend_video",
+                    "description": "Extend the current or specified video. Use this when the user wants to make the video longer or add a scene.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string", "description": "Description of the extension/next scene"},
+                            "duration": {"type": "string", "description": "Duration to add (e.g. '8s')"}
+                        },
+                        "required": ["prompt"]
+                    }
+                },
+                {
+                    "name": "extract_frames",
+                    "description": "Extract frames from a video. Use this when the user wants to see specific frames or images from the video.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "fps": {"type": "integer", "description": "Frames per second to extract"}
+                        }
+                    }
+                },
+                {
+                    "name": "edit_frame",
+                    "description": "Edit a specific frame using AI. Use this when the user wants to modify an image or frame.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "frame_index": {"type": "integer", "description": "Index of the frame to edit"},
+                            "instruction": {"type": "string", "description": "Instruction for editing"}
+                        },
+                        "required": ["frame_index", "instruction"]
+                    }
+                },
+                {
+                    "name": "stitch_videos",
+                    "description": "Stitch/Merge multiple scenes together. Use this when the user wants to combine clips into a final video.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "transition_type": {"type": "string", "description": "Transition type (cut, fade)"}
+                        }
+                    }
+                }
+            ]
+
+            # 3. Call Gemini to decide intent
+            # We use a simplified prompt approach since we are inside the backend
+            prompt = f"""
+            You are an AI video production assistant. Your job is to interpret the user's request and select the best tool to execute it.
+            
+            User Request: "{user_input}"
+            
+            Available Tools:
+            {json.dumps(tools, indent=2)}
+            
+            Respond ONLY with a valid JSON object in this format:
+            {{
+                "tool": "tool_name",
+                "arguments": {{ ... }},
+                "reply": "A brief, friendly message to the user confirming what you are doing."
+            }}
+            
+            If the request is unclear or not related to video production, respond with:
+            {{
+                "tool": null,
+                "reply": "I can help you generate, extend, edit, and stitch videos. Could you please clarify your request?"
+            }}
+            """
+
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=prompt,
+                config={"response_mime_type": "application/json"}
+            )
+            
+            try:
+                result = json.loads(response.text)
+            except json.JSONDecodeError:
+                # Fallback cleanup if model returns markdown code blocks
+                text = response.text.strip()
+                if text.startswith("```json"):
+                    text = text[7:-3]
+                result = json.loads(text)
+
+            tool_name = result.get("tool")
+            args = result.get("arguments", {})
+            reply_message = result.get("reply", "Processing your request...")
+
+            if not tool_name:
+                return {
+                    "status": "success",
+                    "message": reply_message,
+                    "intent": "chat"
+                }
 
         # 4. Execute the selected tool (Map to Celery Tasks)
         task = None
