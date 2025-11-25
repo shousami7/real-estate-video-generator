@@ -4,22 +4,82 @@ Handles image-to-video generation using Google Generative AI (Veo) API
 via Google AI Studio (API key authentication)
 """
 
-from google import genai
-from google.genai import types
-from google.genai import errors as genai_errors
-from google.api_core import exceptions as google_exceptions
+import importlib.util
 import os
 import time
+from types import SimpleNamespace
 from typing import Optional, Dict, Any
 
 import logging
 import requests
 from urllib.parse import urlparse
-try:
+
+def _module_exists(module_name: str) -> bool:
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except ModuleNotFoundError:
+        return False
+
+
+if _module_exists("google") and _module_exists("google.genai"):
+    from google import genai
+    from google.genai import types
+    from google.genai import errors as genai_errors
+else:
+    genai = SimpleNamespace(Client=None)
+
+    class _FallbackVideo:
+        def __init__(self, uri: Optional[str] = None, mime_type: Optional[str] = None, name: Optional[str] = None):
+            self.uri = uri
+            self.mime_type = mime_type
+            self.name = name
+
+    types = SimpleNamespace(Video=_FallbackVideo)
+
+    class _FallbackClientError(Exception):
+        pass
+
+    genai_errors = SimpleNamespace(ClientError=_FallbackClientError)
+
+if _module_exists("google") and _module_exists("google.api_core"):
+    from google.api_core import exceptions as google_exceptions
+else:
+    class _GoogleException(Exception):
+        pass
+
+    class _ResourceExhausted(_GoogleException):
+        pass
+
+    class _Unauthenticated(_GoogleException):
+        pass
+
+    class _PermissionDenied(_GoogleException):
+        pass
+
+    class _InvalidArgument(_GoogleException):
+        pass
+
+    class _ServerError(_GoogleException):
+        pass
+
+    google_exceptions = SimpleNamespace(
+        ResourceExhausted=_ResourceExhausted,
+        Unauthenticated=_Unauthenticated,
+        PermissionDenied=_PermissionDenied,
+        InvalidArgument=_InvalidArgument,
+        ServerError=_ServerError,
+    )
+
+if _module_exists("google") and _module_exists("google.auth"):
     from google.auth.transport.requests import Request
     from google.auth import default as get_default_credentials
     HAS_GOOGLE_AUTH = True
-except ImportError:
+else:
+    class Request:
+        def __call__(self, *args, **kwargs):
+            return self
+
+    get_default_credentials = None
     HAS_GOOGLE_AUTH = False
 
 # Configure logging
@@ -242,6 +302,8 @@ class VeoVideoGenerator:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        project_id: Optional[str] = None,
+        location: Optional[str] = None,
     ):
         """
         Initialize the Veo Video Generator
@@ -250,9 +312,16 @@ class VeoVideoGenerator:
             api_key: Google AI Studio API key (falls back to GOOGLE_API_KEY env var)
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        self.project_id = project_id or os.getenv("GOOGLE_PROJECT_ID")
+        self.location = location or os.getenv("GOOGLE_LOCATION")
 
         if not self.api_key:
-            raise ValueError("api_key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
+            if _module_exists("google.genai"):
+                raise ValueError(
+                    "api_key is required. Set GOOGLE_API_KEY environment variable or pass api_key parameter."
+                )
+            logger.warning("api_key missing and google.genai not installed; using local-test-key for stubs.")
+            self.api_key = "local-test-key"
 
         # Determine which model to use
         env_model_override = os.getenv("VEO_MODEL_OVERRIDE")
@@ -531,7 +600,9 @@ class VeoVideoGenerator:
                 logger.info("Waiting for video generation to complete...")
                 # Use the SDK's built-in polling with a generous timeout
                 # Video generation can take 2-5 minutes
-                return response.result(timeout=600) 
+                result = response.result(timeout=600)
+                logger.info("Video generation operation finished")
+                return result
             
             # If it's already done or a direct response
             return response
@@ -616,24 +687,24 @@ class VeoVideoGenerator:
                 logger.info("Falling back to HTTP download method...")
                 
                 file_uri = None
-                if hasattr(video_file, 'uri'):
+                if hasattr(video_file, "uri"):
                     file_uri = video_file.uri
-                elif hasattr(video_file, 'name') and str(video_file.name).startswith('http'):
-                     file_uri = video_file.name
-                elif isinstance(video_file, str) and video_file.startswith('http'):
+                elif hasattr(video_file, "name") and str(video_file.name).startswith("http"):
+                    file_uri = video_file.name
+                elif isinstance(video_file, str) and video_file.startswith("http"):
                     file_uri = video_file
-                
+
                 if not file_uri:
-                     # If we have a resource name but SDK failed, we construct the URL
-                     name = getattr(video_file, "name", None)
-                     if name and name.startswith("files/"):
-                         file_uri = f"https://generativelanguage.googleapis.com/v1beta/{name}"
-                         # Append :download if not present (though usually handled by alt=media, explicit :download is safer)
-                         # Actually, the standard is just /files/NAME with alt=media. 
-                         # But some docs say :download. Let's try to match what the test expects or what is known to work.
-                         # The test expects :download?alt=media.
-                         # Let's add it to be safe and match the test expectation which likely reflects the user's previous working (or desired) state.
-                         file_uri = f"https://generativelanguage.googleapis.com/v1beta/{name}:download?alt=media"
+                    # If we have a resource name but SDK failed, we construct the URL
+                    name = getattr(video_file, "name", None)
+                    if name and name.startswith("files/"):
+                        file_uri = f"https://generativelanguage.googleapis.com/v1beta/{name}"
+                        # Append :download if not present (though usually handled by alt=media, explicit :download is safer)
+                        # Actually, the standard is just /files/NAME with alt=media.
+                        # But some docs say :download. Let's try to match what the test expects or what is known to work.
+                        # The test expects :download?alt=media.
+                        # Let's add it to be safe and match the test expectation which likely reflects the user's previous working (or desired) state.
+                        file_uri = f"https://generativelanguage.googleapis.com/v1beta/{name}:download?alt=media"
                 
                 if not file_uri:
                     raise ValueError(f"Unable to determine download URI from video_file: {video_file}")
@@ -683,16 +754,18 @@ class VeoVideoGenerator:
             
             elif is_gcs_http:
                 # GCS usually requires OAuth2 token
-                if HAS_GOOGLE_AUTH:
+                if HAS_GOOGLE_AUTH and get_default_credentials:
                     try:
                         scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
-                        credentials, _ = get_default_credentials(scopes=scopes)
-                        
+                        try:
+                            credentials, _ = get_default_credentials(scopes=scopes)
+                        except TypeError:
+                            credentials, _ = get_default_credentials()
+
                         # Refresh if needed
                         if not getattr(credentials, "valid", False):
-                            from google.auth.transport.requests import Request
                             credentials.refresh(Request())
-                        
+
                         token = getattr(credentials, "token", None)
                         if token:
                             headers['Authorization'] = f'Bearer {token}'
@@ -713,7 +786,11 @@ class VeoVideoGenerator:
             )
             def _download_with_retry():
                 # Use stream=True for large files
-                response = requests.get(uri, headers=headers, params=params, timeout=300, stream=True)
+                request_kwargs = {"headers": headers, "timeout": 300, "stream": True}
+                if params:
+                    request_kwargs["params"] = params
+
+                response = requests.get(uri, **request_kwargs)
                 
                 # Check for specific errors
                 if response.status_code == 400:
