@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, Any
 from urllib.parse import urlparse
 from urllib.parse import urlparse
 from datetime import datetime
@@ -118,6 +118,65 @@ def is_supabase_required() -> bool:
 def get_initialization_error() -> Optional[str]:
     """Return the reason why Supabase client initialization failed, if any."""
     return _INIT_ERROR
+
+
+def get_supabase_status() -> Dict[str, Any]:
+    """
+    Get current Supabase configuration status with user-friendly messages.
+    
+    Returns:
+        {
+            "configured": bool,  # Whether Supabase client is available
+            "required": bool,  # Whether SUPABASE_REQUIRED=1
+            "mode": str,  # "supabase" | "local" | "error"
+            "message": str,  # User-friendly message
+            "details": str | None,  # Technical details (error message)
+        }
+    """
+    configured = is_supabase_configured()
+    required = is_supabase_required()
+    
+    # Determine mode and message
+    if configured:
+        return {
+            "configured": True,
+            "required": required,
+            "mode": "supabase",
+            "message": "Cloud storage is active. Files are automatically backed up.",
+            "details": None,
+        }
+    
+    # Not configured - determine why
+    if _SUPABASE_DISABLED_REASON:
+        # Supabase was disabled due to repeated failures
+        return {
+            "configured": False,
+            "required": required,
+            "mode": "local",
+            "message": "Cloud storage temporarily disabled due to connection issues",
+            "details": _SUPABASE_DISABLED_REASON,
+        }
+    
+    init_error = get_initialization_error()
+    
+    if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+        # Credentials not configured
+        return {
+            "configured": False,
+            "required": required,
+            "mode": "local",
+            "message": "Cloud storage not configured",
+            "details": "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables are not set",
+        }
+    
+    # Credentials exist but initialization failed (connection error, invalid URL, etc.)
+    return {
+        "configured": False,
+        "required": required,
+        "mode": "error",
+        "message": "Unable to connect to cloud storage",
+        "details": init_error or "Unknown initialization error",
+    }
 
 
 def upload_bytes_to_supabase(

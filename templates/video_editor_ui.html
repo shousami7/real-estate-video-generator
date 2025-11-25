@@ -775,6 +775,111 @@
             color: #93c5fd;
             border-bottom-color: #60a5fa;
         }
+
+        /* Storage Status Banner */
+        .storage-banner {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 4px solid #f59e0b;
+            padding: 16px 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+            display: none;
+        }
+
+        .storage-banner.show {
+            display: block;
+        }
+
+        .storage-banner.error {
+            background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+            border-left-color: #ef4444;
+        }
+
+        .banner-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .banner-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .banner-message {
+            flex: 1;
+        }
+
+        .banner-message strong {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 4px;
+            color: #92400e;
+        }
+
+        .storage-banner.error .banner-message strong {
+            color: #7f1d1d;
+        }
+
+        .banner-message p {
+            margin: 0;
+            font-size: 14px;
+            color: #78350f;
+        }
+
+        .storage-banner.error .banner-message p {
+            color: #7f1d1d;
+        }
+
+        .banner-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .banner-link {
+            color: #92400e;
+            text-decoration: underline;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .storage-banner.error .banner-link {
+            color: #7f1d1d;
+        }
+
+        .banner-dismiss-btn {
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #92400e;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            padding: 4px 8px;
+        }
+
+        .storage-banner.error .banner-dismiss-btn {
+            color: #7f1d1d;
+        }
+
+        .banner-dismiss-btn:hover {
+            opacity: 1;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 
@@ -813,6 +918,22 @@
                 </button>
             </div>
         </header>
+
+        <!-- Storage Status Banner -->
+        <div id="storage-status-banner" class="storage-banner">
+            <div class="banner-content">
+                <div class="banner-icon">⚠️</div>
+                <div class="banner-message">
+                    <strong id="banner-title">Local-Only Mode</strong>
+                    <p id="banner-description"></p>
+                </div>
+                <div class="banner-actions">
+                    <a href="https://github.com/yourusername/real-estate-video-generator#supabase-setup"
+                        id="banner-setup-link" class="banner-link" target="_blank">Setup Instructions</a>
+                    <button id="banner-dismiss" class="banner-dismiss-btn" title="Dismiss">✕</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Main Content -->
         <main class="flex flex-1 overflow-hidden">
@@ -1040,6 +1161,346 @@
         // Allow chat input from the start (no frame selection required)
         chatInput.disabled = false;
         sendBtn.disabled = false;
+
+        // ==================== SESSION PERSISTENCE & AUTO-SAVE ====================
+        /**
+         * StatePersistence - Saves/loads editor state to localStorage
+         */
+        class StatePersistence {
+            constructor(storageKey = 'video-editor-state-v1') {
+                this.storageKey = storageKey;
+                this.lastSaveTime = null;
+            }
+
+            saveState(editorState) {
+                try {
+                    const stateToSave = {
+                        version: '1.0',
+                        timestamp: Date.now(),
+                        sessionId: editorState.sessionId,
+                        videoFrames: editorState.videoFrames,
+                        isAgentMode: editorState.isAgentMode
+                    };
+
+                    const serialized = JSON.stringify(stateToSave);
+                    localStorage.setItem(this.storageKey, serialized);
+                    this.lastSaveTime = Date.now();
+                    return true;
+                } catch (error) {
+                    console.error('Failed to save state:', error);
+                    if (error.name === 'QuotaExceededError') {
+                        this.handleQuotaExceeded();
+                    }
+                    return false;
+                }
+            }
+
+            loadState() {
+                try {
+                    const serialized = localStorage.getItem(this.storageKey);
+                    if (!serialized) return null;
+
+                    const loadedState = JSON.parse(serialized);
+                    console.log('✓ Restored session from', new Date(loadedState.timestamp));
+                    return loadedState;
+                } catch (error) {
+                    console.error('Failed to load state:', error);
+                    return null;
+                }
+            }
+
+            clearState() {
+                localStorage.removeItem(this.storageKey);
+                this.lastSaveTime = null;
+            }
+
+            handleQuotaExceeded() {
+                console.warn('Storage quota exceeded, clearing old data');
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('video-editor-state-old-')) {
+                        localStorage.removeItem(key);
+                    }
+                }
+            }
+        }
+
+        /**
+         * AutoSave - Auto-saves state with visual feedback
+         */
+        class AutoSave {
+            constructor(persistence, saveInterval = 30000) {
+                this.persistence = persistence;
+                this.saveInterval = saveInterval;
+                this.hasUnsavedChanges = false;
+                this.intervalId = null;
+                this.saveTimeout = null;
+            }
+
+            start() {
+                // Periodic auto-save
+                this.intervalId = setInterval(() => {
+                    if (this.hasUnsavedChanges) {
+                        this.save();
+                    }
+                }, this.saveInterval);
+
+                // Save on page unload
+                window.addEventListener('beforeunload', (e) => {
+                    if (this.hasUnsavedChanges) {
+                        this.save();
+                    }
+                });
+
+                // Save on visibility change (tab switch)
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden && this.hasUnsavedChanges) {
+                        this.save();
+                    }
+                });
+
+                console.log('✓ Auto-save started (every 30s)');
+            }
+
+            markChanged() {
+                if (!this.hasUnsavedChanges) {
+                    this.hasUnsavedChanges = true;
+                    this.updateIndicator('unsaved');
+                }
+
+                // Debounced save after 2s of no changes
+                clearTimeout(this.saveTimeout);
+                this.saveTimeout = setTimeout(() => {
+                    this.save();
+                }, 2000);
+            }
+
+            save() {
+                this.updateIndicator('saving');
+
+                const success = this.persistence.saveState(state);
+
+                if (success) {
+                    this.hasUnsavedChanges = false;
+                    this.updateIndicator('saved');
+                } else {
+                    this.updateIndicator('error');
+                }
+            }
+
+            updateIndicator(status) {
+                // Visual feedback would go here
+                // For now, just log
+                const messages = {
+                    'saved': '✓ Saved',
+                    'saving': '⏳ Saving...',
+                    'unsaved': '⚠ Unsaved changes',
+                    'error': '❌ Save failed'
+                };
+                console.log(messages[status] || status);
+            }
+
+            stop() {
+                if (this.intervalId) {
+                    clearInterval(this.intervalId);
+                    this.intervalId = null;
+                }
+                clearTimeout(this.saveTimeout);
+            }
+        }
+
+        // ==================== UNDO/REDO SYSTEM ====================
+        /**
+         * Command base class for undo/redo
+         */
+        class Command {
+            execute() {
+                throw new Error('execute() must be implemented');
+            }
+
+            undo() {
+                throw new Error('undo() must be implemented');
+            }
+
+            getDescription() {
+                return 'Unknown action';
+            }
+        }
+
+        /**
+         * Command for adding/updating a video frame
+         */
+        class UpdateVideoFrameCommand extends Command {
+            constructor(frameId, newData, previousData) {
+                super();
+                this.frameId = frameId;
+                this.newData = JSON.parse(JSON.stringify(newData));
+                this.previousData = JSON.parse(JSON.stringify(previousData));
+            }
+
+            execute() {
+                state.videoFrames[this.frameId] = JSON.parse(JSON.stringify(this.newData));
+                renderVideoFrames();
+                return true;
+            }
+
+            undo() {
+                state.videoFrames[this.frameId] = JSON.parse(JSON.stringify(this.previousData));
+                renderVideoFrames();
+                return true;
+            }
+
+            getDescription() {
+                if (!this.previousData.videoPath && this.newData.videoPath) {
+                    return `Add video to slot ${this.frameId + 1}`;
+                } else if (this.previousData.videoPath && !this.newData.videoPath) {
+                    return `Delete video from slot ${this.frameId + 1}`;
+                } else {
+                    return `Update slot ${this.frameId + 1}`;
+                }
+            }
+        }
+
+        /**
+         * UndoRedoManager - Manages undo/redo stacks
+         */
+        class UndoRedoManager {
+            constructor(maxStackSize = 50) {
+                this.undoStack = [];
+                this.redoStack = [];
+                this.maxStackSize = maxStackSize;
+                this.setupKeyboardShortcuts();
+            }
+
+            executeCommand(command) {
+                const success = command.execute();
+
+                if (success) {
+                    this.undoStack.push(command);
+                    this.redoStack = []; // Clear redo stack on new action
+
+                    // Limit stack size
+                    if (this.undoStack.length > this.maxStackSize) {
+                        this.undoStack.shift();
+                    }
+
+                    this.updateUI();
+
+                    // Trigger auto-save
+                    if (window.autoSave) {
+                        window.autoSave.markChanged();
+                    }
+                }
+
+                return success;
+            }
+
+            undo() {
+                if (this.undoStack.length === 0) {
+                    console.log('Nothing to undo');
+                    return false;
+                }
+
+                const command = this.undoStack.pop();
+                const success = command.undo();
+
+                if (success) {
+                    this.redoStack.push(command);
+                    this.updateUI();
+                    console.log(`Undone: ${command.getDescription()}`);
+
+                    // Trigger auto-save
+                    if (window.autoSave) {
+                        window.autoSave.markChanged();
+                    }
+                }
+
+                return success;
+            }
+
+            redo() {
+                if (this.redoStack.length === 0) {
+                    console.log('Nothing to redo');
+                    return false;
+                }
+
+                const command = this.redoStack.pop();
+                const success = command.execute();
+
+                if (success) {
+                    this.undoStack.push(command);
+                    this.updateUI();
+                    console.log(`Redone: ${command.getDescription()}`);
+
+                    // Trigger auto-save
+                    if (window.autoSave) {
+                        window.autoSave.markChanged();
+                    }
+                }
+
+                return success;
+            }
+
+            setupKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    // Don't trigger if typing in input
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                        return;
+                    }
+
+                    // Ctrl+Z or Cmd+Z (Undo)
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.undo();
+                    }
+
+                    // Ctrl+Shift+Z or Cmd+Shift+Z or Ctrl+Y (Redo)
+                    if (((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) ||
+                        (e.ctrlKey && e.key === 'y')) {
+                        e.preventDefault();
+                        this.redo();
+                    }
+                });
+            }
+
+            updateUI() {
+                // Update UI buttons if they exist
+                // For now just log stack sizes
+                console.log(`Undo stack: ${this.undoStack.length}, Redo stack: ${this.redoStack.length}`);
+            }
+
+            clear() {
+                this.undoStack = [];
+                this.redoStack = [];
+                this.updateUI();
+            }
+        }
+
+        // ==================== Initialize Systems ====================
+        const persistence = new StatePersistence();
+        const undoRedo = new UndoRedoManager();
+        const autoSave = new AutoSave(persistence);
+
+        // Make available globally
+        window.persistence = persistence;
+        window.undoRedo = undoRedo;
+        window.autoSave = autoSave;
+
+        // Try to restore state on page load
+        const savedState = persistence.loadState();
+        if (savedState && savedState.videoFrames) {
+            // Restore video frames
+            Object.assign(state.videoFrames, savedState.videoFrames);
+            if (savedState.sessionId) {
+                state.sessionId = savedState.sessionId;
+            }
+            if (typeof savedState.isAgentMode !== 'undefined') {
+                state.isAgentMode = savedState.isAgentMode;
+            }
+        }
+
+        // Start auto-save
+        autoSave.start();
 
         // ==================== 初期化 ====================
         function initializeVideoFrames() {
@@ -2986,6 +3447,79 @@
             });
         } else {
             initializeVideoFrames();
+        }
+
+        // ==================== Storage Status Banner ====================
+        async function checkStorageStatus() {
+            try {
+                const response = await fetch('/api/storage/status');
+                if (!response.ok) {
+                    console.error('Failed to fetch storage status:', response.status);
+                    return;
+                }
+
+                const status = await response.json();
+
+                // Only show banner if not using Supabase and not dismissed
+                if (!status.configured && sessionStorage.getItem('storage-banner-dismissed') !== 'true') {
+                    showStorageBanner(status);
+                }
+            } catch (error) {
+                console.error('Failed to check storage status:', error);
+            }
+        }
+
+        function showStorageBanner(status) {
+            const banner = document.getElementById('storage-status-banner');
+            const title = document.getElementById('banner-title');
+            const description = document.getElementById('banner-description');
+            const setupLink = document.getElementById('banner-setup-link');
+            const icon = banner.querySelector('.banner-icon');
+
+            // Set banner content based on mode
+            if (status.mode === 'local') {
+                icon.textContent = '⚠️';
+                title.textContent = 'Local-Only Mode';
+
+                let message = status.message + '.';
+                if (!status.details || !status.details.includes('not set')) {
+                    message += ' Files are stored locally and won\'t be accessible from other devices.';
+                }
+                description.textContent = message;
+
+                setupLink.textContent = 'Enable Cloud Storage';
+                setupLink.href = 'https://github.com/yourusername/real-estate-video-generator#supabase-setup';
+                banner.classList.remove('error');
+            } else if (status.mode === 'error') {
+                icon.textContent = '🔴';
+                title.textContent = 'Cloud Storage Unavailable';
+
+                let message = status.message + '.';
+                if (status.details) {
+                    message += ' Using local storage temporarily.';
+                }
+                description.textContent = message;
+
+                setupLink.textContent = 'Troubleshoot';
+                setupLink.href = 'https://github.com/yourusername/real-estate-video-generator#troubleshooting';
+                banner.classList.add('error');
+            }
+
+            // Show banner
+            banner.classList.add('show');
+
+            // Setup dismiss button
+            document.getElementById('banner-dismiss').onclick = () => {
+                banner.classList.remove('show');
+                sessionStorage.setItem('storage-banner-dismissed', 'true');
+            };
+        }
+
+        // Run storage status check on page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkStorageStatus);
+        } else {
+            checkStorageStatus();
         }
     </script>
 </body>

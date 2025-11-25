@@ -13,17 +13,23 @@ from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
     get_initialization_error,
-    upload_file_to_supabase,
     upload_video_file,
+    upload_frame_file,
     upload_log_file,
+    get_latest_input_video,
     build_storage_path,
-    get_public_url,
 )
 from veo_generator import VeoVideoGenerator
 from frame_editor import FrameEditor, AIFrameEditor
 from video_composer import VideoComposer
 from scene_manager import SceneManager
 from utils.video_duration import probe_video_duration as get_video_duration
+from utils.input_validator import (
+    ValidationError,
+    validate_image_for_veo,
+    validate_video_for_processing
+)
+from task_checkpointing import get_checkpoint_manager
 import uuid
 
 logger = get_task_logger(__name__)
@@ -192,6 +198,55 @@ def generate_video_from_chat_task(
     )
 
     try:
+        # ========== INPUT VALIDATION ==========
+        # Validate image before any API calls
+        try:
+            logger.info(f"Validating input image: {image_path}")
+            image_metadata = validate_image_for_veo(image_path, aspect_ratio=aspect_ratio)
+            logger.info(
+                f"Image validation passed: {image_metadata['width']}x{image_metadata['height']}, "
+                f"{image_metadata['size_mb']}MB, {image_metadata.get('format', 'unknown')}"
+            )
+        except ValidationError as ve:
+            logger.error(f"Input validation failed: {ve}")
+            # Return user-friendly error immediately
+            return build_task_response(
+                task_id=self.request.id,
+                video_id=session_id,
+                stage="generate",
+                status="error",
+                error=str(ve)
+            )
+        except Exception as e:
+            logger.error(f"Unexpected validation error: {e}")
+            return build_task_response(
+                task_id=self.request.id,
+                video_id=session_id,
+                stage="generate",
+                status="error",
+                error=f"Failed to validate image: {e}"
+            )
+        
+        # ========== TASK CHECKPOINTING ==========
+        # Initialize checkpointing system
+        checkpoint = get_checkpoint_manager()
+        task_id = self.request.id
+        
+        # Initialize task checkpoint
+        checkpoint.initialize_task(
+            task_id=task_id,
+            task_name="generate_video_from_chat_task",
+            session_id=session_id,
+            scene_id=scene_id,
+            input_params={
+                "image_path": image_path,
+                "prompt": prompt,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution
+            }
+        )
+        
         # タスクステータス更新
         self.update_state(
             state="GENERATING",

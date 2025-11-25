@@ -19,6 +19,7 @@ from supabase_storage import (
     is_supabase_configured,
     is_supabase_required,
     get_initialization_error,
+    get_supabase_status,
     upload_bytes_to_supabase,
     build_storage_path,
     SUPABASE_CLIENT,
@@ -190,6 +191,47 @@ def index():
     """Redirect to video editor (legacy UI has been removed)."""
     return redirect(url_for('web_ui.video_editor'))
 
+
+@web_ui_blueprint.route('/api/storage/status')
+def storage_status():
+    """
+    Get storage backend status (Supabase vs local-only mode).
+    
+    Returns:
+        JSON with storage configuration status and user-friendly messages
+    """
+    return jsonify(get_supabase_status())
+
+
+@web_ui_blueprint.route('/task/stream/<task_id>')
+def stream_task_progress(task_id: str):
+    """
+    Stream real-time task progress updates via Server-Sent Events (SSE).
+    
+    This provides real-time push updates instead of HTTP polling,
+    significantly reducing server load and improving responsiveness.
+    
+    Args:
+        task_id: Celery task ID to monitor
+        
+    Returns:
+        SSE stream with task progress updates
+        
+    Example client usage:
+        const eventSource = new EventSource('/task/stream/{task_id}');
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            updateProgressUI(data);
+        };
+        eventSource.addEventListener('error', () => {
+            eventSource.close();
+            fallbackToPolling();
+        });
+    """
+    from utils.progress_streaming import create_sse_response, task_progress_stream
+    
+    logger.info(f"SSE stream requested for task {task_id}")
+    return create_sse_response(task_progress_stream(task_id))
 
 
 @web_ui_blueprint.route('/status')

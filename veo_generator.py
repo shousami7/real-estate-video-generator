@@ -27,6 +27,206 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+# -----------------------------------------------------------------------------
+# Retry Configuration and Infrastructure
+# -----------------------------------------------------------------------------
+
+# Retry configuration for different operation types
+RETRY_CONFIG = {
+    "file_upload": {
+        "max_retries": int(os.getenv("VEO_FILE_UPLOAD_MAX_RETRIES", "3")),
+        "initial_delay": float(os.getenv("VEO_FILE_UPLOAD_INITIAL_DELAY", "2.0")),
+        "max_delay": float(os.getenv("VEO_FILE_UPLOAD_MAX_DELAY", "16.0")),
+    },
+    "api_call": {
+        "max_retries": int(os.getenv("VEO_API_CALL_MAX_RETRIES", "3")),
+        "initial_delay": float(os.getenv("VEO_API_CALL_INITIAL_DELAY", "5.0")),
+        "max_delay": float(os.getenv("VEO_API_CALL_MAX_DELAY", "30.0")),
+    },
+    "download": {
+        "max_retries": int(os.getenv("VEO_DOWNLOAD_MAX_RETRIES", "3")),
+        "initial_delay": float(os.getenv("VEO_DOWNLOAD_INITIAL_DELAY", "2.0")),
+        "max_delay": float(os.getenv("VEO_DOWNLOAD_MAX_DELAY", "16.0")),
+    },
+}
+
+
+def retry_with_exponential_backoff(
+    max_retries: int = 3,
+    initial_delay: float = 2.0,
+    max_delay: float = 30.0,
+    exponential_base: float = 2.0,
+    retriable_exceptions: Optional[tuple] = None,
+):
+    """
+    Decorator for retrying functions with exponential backoff.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds
+        max_delay: Maximum delay between retries
+        exponential_base: Base for exponential backoff calculation
+        retriable_exceptions: Tuple of exceptions to retry on (None = all exceptions)
+    
+    Returns:
+        Decorated function with retry logic
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    
+                    # Check if this exception should be retried
+                    if retriable_exceptions and not isinstance(e, retriable_exceptions):
+                        # Non-retriable exception, raise immediately
+                        raise
+                    
+                    # Check if this is a non-retriable error type
+                    if _is_non_retriable_error(e):
+                        logger.error(f"Non-retriable error in {func.__name__}: {e}")
+                        raise
+                    
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"{func.__name__} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                            f"Retrying in {delay:.1f}s..."
+                        )
+                        time.sleep(delay)
+                        delay = min(delay * exponential_base, max_delay)
+                    else:
+                        logger.error(
+                            f"{func.__name__} failed after {max_retries + 1} attempts: {e}"
+                        )
+            
+            # All retries exhausted
+            raise last_exception
+        
+        return wrapper
+    return decorator
+
+
+def _is_non_retriable_error(error: Exception) -> bool:
+    """
+    Determine if an error should not be retried.
+    
+    Non-retriable errors include:
+    - Authentication errors
+    - Quota exhausted errors
+    - Invalid request errors (400)
+    - Not found errors (404)
+    
+    Args:
+        error: The exception to check
+    
+    Returns:
+        True if error should not be retried, False otherwise
+    """
+    error_str = str(error).lower()
+    error_type = type(error).__name__
+    
+    # Check for quota exhausted
+    if isinstance(error, google_exceptions.ResourceExhausted):
+        return True
+    if "resource_exhausted" in error_str or "quota" in error_str:
+        return True
+    
+    # Check for authentication errors
+    if isinstance(error, (google_exceptions.Unauthenticated, google_exceptions.PermissionDenied)):
+        return True
+    if "unauthenticated" in error_str or "permission denied" in error_str:
+        return True
+    if "invalid api key" in error_str or "api key not valid" in error_str:
+        return True
+    
+    # Check for bad request errors (but allow feature unsupported to be handled by fallback)
+    if isinstance(error, google_exceptions.InvalidArgument):
+        # Allow "unsupported feature" errors to be handled by the fallback logic
+        if "unsupported" not in error_str:
+            return True
+    
+    # Check HTTP error codes
+    if hasattr(error, 'response') and hasattr(error.response, 'status_code'):
+        status_code = error.response.status_code
+        # 4xx errors (except 429 rate limit) are generally not retriable
+        if 400 <= status_code < 500 and status_code != 429:
+            return True
+    
+    # Check for 400/404 in error message
+    if "400" in error_str and "bad request" in error_str:
+        if "unsupported" not in error_str:
+            return True
+    if "404" in error_str or "not found" in error_str:
+        return True
+    
+    return False
+
+
+def _format_user_error(error: Exception, context: str, attempts: int) -> str:
+    """
+    Format technical errors into user-friendly messages.
+    
+    Args:
+        error: The exception that occurred
+        context: Context description (e.g., "video generation", "file upload")
+        attempts: Number of attempts made
+    
+    Returns:
+        User-friendly error message
+    """
+    error_str = str(error).lower()
+    
+    # Network/connection errors
+    if isinstance(error, (ConnectionError, requests.exceptions.ConnectionError)):
+        return (
+            f"Connection failed during {context}. "
+            f"Please check your internet connection and try again."
+        )
+    
+    if isinstance(error, requests.exceptions.Timeout):
+        return (
+            f"Request timed out during {context}. "
+            f"The server is taking too long to respond. Please try again later."
+        )
+    
+    # Quota errors (check before rate limiting)
+    if "quota" in error_str or "resource_exhausted" in error_str:
+        return (
+            f"API quota limit reached. Failed after {attempts} attempt(s).\n\n"
+            f"Please check your quota at: https://aistudio.google.com/apikey\n"
+            f"See rate limits: https://ai.google.dev/gemini-api/docs/rate-limits"
+        )
+    
+    # Rate limiting (check after quota errors)
+    if isinstance(error, google_exceptions.ResourceExhausted) or "429" in error_str:
+        return (
+            f"API rate limit reached during {context}. "
+            f"Please wait a moment before trying again."
+        )
+    
+    # Authentication errors
+    if "unauthenticated" in error_str or "invalid api key" in error_str:
+        return (
+            f"Authentication failed during {context}. "
+            f"Please check your API key configuration."
+        )
+    
+    # Server errors
+    if isinstance(error, google_exceptions.ServerError) or "503" in error_str or "500" in error_str:
+        return (
+            f"Google's servers are temporarily unavailable during {context}. "
+            f"Failed after {attempts} attempt(s). Please try again later."
+        )
+    
+    # Generic error with retry context
+    return f"{context.capitalize()} failed after {attempts} attempt(s): {error}"
+
+
 class VeoVideoGenerator:
     """
     Manages video generation using Google Generative AI Veo Image-to-Video API
@@ -87,15 +287,33 @@ class VeoVideoGenerator:
         logger.info(f"Uploading image: {image_path}")
 
         try:
-            # Upload file to Google AI
-            uploaded_file = self.client.files.upload(file=image_path)
+            # Upload file to Google AI with retry logic
+            config = RETRY_CONFIG["file_upload"]
+            
+            @retry_with_exponential_backoff(
+                max_retries=config["max_retries"],
+                initial_delay=config["initial_delay"],
+                max_delay=config["max_delay"],
+            )
+            def _upload_with_retry():
+                return self.client.files.upload(file=image_path)
+            
+            uploaded_file = _upload_with_retry()
             logger.info(f"Image uploaded successfully: {uploaded_file.name}")
 
-            # Wait for file to be processed with timeout
+            # Wait for file to be processed with timeout and retry logic
             logger.info("Waiting for image to be processed...")
             poll_start = time.time()
             max_wait = 60  # 60 second timeout
             poll_interval = 10  # 10 second polling interval (reduced API calls)
+
+            @retry_with_exponential_backoff(
+                max_retries=config["max_retries"],
+                initial_delay=2.0,
+                max_delay=8.0,
+            )
+            def _get_file_status():
+                return self.client.files.get(uploaded_file.name)
 
             while uploaded_file.state == "PROCESSING":
                 if time.time() - poll_start > max_wait:
@@ -103,7 +321,7 @@ class VeoVideoGenerator:
 
                 logger.info(f"Image still processing... (polling every {poll_interval}s)")
                 time.sleep(poll_interval)
-                uploaded_file = self.client.files.get(uploaded_file.name)
+                uploaded_file = _get_file_status()
 
             if uploaded_file.state == "FAILED":
                 raise ValueError(f"Image processing failed")
@@ -112,8 +330,14 @@ class VeoVideoGenerator:
             return uploaded_file
 
         except Exception as e:
-            logger.error(f"Failed to upload image: {e}")
-            raise
+            # Format user-friendly error message
+            user_error = _format_user_error(
+                e, 
+                "image upload",
+                RETRY_CONFIG["file_upload"]["max_retries"] + 1
+            )
+            logger.error(f"Failed to upload image: {user_error}")
+            raise ValueError(user_error) from e
 
     def _select_model(self, needs_reference_input: bool) -> str:
         """Return the best model for the current request."""
@@ -158,9 +382,19 @@ class VeoVideoGenerator:
         needs_reference: bool,
     ) -> Any:
         """Call the API and retry with the fallback model when needed."""
+        
+        config = RETRY_CONFIG["api_call"]
+        
+        @retry_with_exponential_backoff(
+            max_retries=config["max_retries"],
+            initial_delay=config["initial_delay"],
+            max_delay=config["max_delay"],
+        )
+        def _call_api_with_retry():
+            return self.client.models.generate_videos(**request_kwargs)
 
         try:
-            return self.client.models.generate_videos(**request_kwargs)
+            return _call_api_with_retry()
         except genai_errors.ClientError as error:
             should_retry = (
                 needs_reference and
@@ -179,7 +413,8 @@ class VeoVideoGenerator:
             )
 
             request_kwargs["model"] = fallback_model
-            return self.client.models.generate_videos(**request_kwargs)
+            # Retry with fallback model, also with exponential backoff
+            return _call_api_with_retry()
 
     def _extract_operation_error_message(self, operation_error: Any) -> str:
         """Return a readable error message from a long-running operation."""
@@ -285,13 +520,23 @@ class VeoVideoGenerator:
                 max_interval = 90  # Max 90 seconds
                 poll_count = 0
                 max_polls = 20  # Reduced from 30, still allows 15+ minutes with exponential backoff
+                
+                # Create retry wrapper for operation polling
+                config = RETRY_CONFIG["api_call"]
+                @retry_with_exponential_backoff(
+                    max_retries=config["max_retries"],
+                    initial_delay=2.0,
+                    max_delay=8.0,
+                )
+                def _get_operation_status():
+                    return self.client.operations.get(operation)
 
                 while not operation.done:
                     time.sleep(poll_interval)
                     poll_count += 1
 
-                    # Get updated operation status
-                    operation = self.client.operations.get(operation)
+                    # Get updated operation status with retry
+                    operation = _get_operation_status()
 
                     if poll_count % 2 == 0:  # Log every other poll
                         elapsed = poll_count * poll_interval
@@ -442,18 +687,27 @@ class VeoVideoGenerator:
 
             logger.info("Making request to download video...")
 
-            # Download using requests with authentication
-            response = requests.get(uri, headers=headers, params=params, timeout=300, stream=True)
-
-            logger.info(f"Response status code: {response.status_code}")
-            response.raise_for_status()
-
-            # Write to file in chunks
-            with open(output_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
+            # Download using requests with authentication and retry logic
+            config = RETRY_CONFIG["download"]
+            
+            @retry_with_exponential_backoff(
+                max_retries=config["max_retries"],
+                initial_delay=config["initial_delay"],
+                max_delay=config["max_delay"],
+            )
+            def _download_with_retry():
+                response = requests.get(uri, headers=headers, params=params, timeout=300, stream=True)
+                logger.info(f"Response status code: {response.status_code}")
+                response.raise_for_status()
+                
+                # Write to file in chunks
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                return response
+            
+            _download_with_retry()
             logger.info(f"File downloaded successfully from URI")
 
         except requests.exceptions.HTTPError as e:
@@ -462,11 +716,13 @@ class VeoVideoGenerator:
                 logger.error(f"Response body: {e.response.text}")
             except:
                 pass
-            logger.error(f"Failed to download from URI {uri}: {e}")
-            raise
+            user_error = _format_user_error(e, "video download", config["max_retries"] + 1)
+            logger.error(f"Failed to download from URI {uri}: {user_error}")
+            raise RuntimeError(user_error) from e
         except Exception as e:
-            logger.error(f"Failed to download from URI {uri}: {e}")
-            raise
+            user_error = _format_user_error(e, "video download", config["max_retries"] + 1)
+            logger.error(f"Failed to download from URI {uri}: {user_error}")
+            raise RuntimeError(user_error) from e
 
     def download_video(self, operation, output_path: str) -> str:
         """
@@ -531,16 +787,23 @@ class VeoVideoGenerator:
             #   vid.video.save("out.mp4")
             # so we follow the same pattern here.
             sdk_download_successful = False
+            config = RETRY_CONFIG["download"]
 
-            try:
+            # Wrap SDK download methods with retry logic
+            @retry_with_exponential_backoff(
+                max_retries=config["max_retries"],
+                initial_delay=config["initial_delay"],
+                max_delay=config["max_delay"],
+            )
+            def _sdk_download_with_retry():
                 if hasattr(self.client, "files") and hasattr(self.client.files, "download"):
                     if hasattr(video_file, "save"):
                         logger.info("Using genai SDK download with file object + save()")
                         # This will populate the file object with bytes.
                         self.client.files.download(file=video_file)
                         video_file.save(output_path)
-                        sdk_download_successful = True
                         logger.info("Successfully downloaded using SDK file.save() flow")
+                        return True
                     else:
                         # Fallback: try passing a resource name (e.g. 'files/xyz') if present.
                         file_name = getattr(video_file, "name", None) or file_uri
@@ -553,10 +816,14 @@ class VeoVideoGenerator:
                                 data = downloaded_content
                             with open(output_path, "wb") as f:
                                 f.write(data)
-                            sdk_download_successful = True
                             logger.info("Successfully downloaded using SDK name-based flow")
+                            return True
+                return False
+
+            try:
+                sdk_download_successful = _sdk_download_with_retry()
             except Exception as sdk_error:
-                logger.warning(f"SDK native download failed: {sdk_error}")
+                logger.warning(f"SDK native download failed after retries: {sdk_error}")
 
             # Method 2: Check if video_file has video data directly
             if not sdk_download_successful and hasattr(video_file, 'video_data'):
@@ -591,45 +858,31 @@ class VeoVideoGenerator:
                     download_uri = f"https://generativelanguage.googleapis.com/v1beta/{file_uri}:download?alt=media"
                     logger.info(f"Normalized to: {download_uri}")
                 
-                max_retries = 2
-                retry_delay = 2  # seconds
-                logger.info(f"Download configured with {max_retries} max retries")
-
-                for attempt in range(max_retries):
-                    try:
-                        logger.info(f"Download attempt {attempt + 1}/{max_retries}...")
-
-                        # Download from URI (normalized if needed)
-                        self._download_from_uri(download_uri, output_path, api_key=self.api_key)
-
-                        # Verify file was written
-                        if not os.path.exists(output_path):
-                            raise IOError(f"Failed to write file: {output_path}")
-
-                        file_size = os.path.getsize(output_path)
-                        if file_size == 0:
-                            raise IOError(f"Downloaded file is empty: {output_path}")
-
-                        logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
-                        return output_path
-
-                    except (BrokenPipeError, ConnectionError, IOError, requests.exceptions.RequestException) as e:
-                        logger.warning(f"Download attempt {attempt + 1} failed: {type(e).__name__}: {e}")
-
-                        # Clean up partial file if it exists
-                        if os.path.exists(output_path):
-                            try:
-                                os.remove(output_path)
-                                logger.info(f"Removed partial file: {output_path}")
-                            except Exception as cleanup_error:
-                                logger.warning(f"Failed to remove partial file: {cleanup_error}")
-
-                        if attempt < max_retries - 1:
-                            logger.info(f"Retrying in {retry_delay} seconds...")
-                            time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
-                        else:
-                            raise RuntimeError(f"Failed to download video after {max_retries} attempts") from e
+                # Use consistent retry configuration from RETRY_CONFIG
+                logger.info(f"Download configured with {config['max_retries']} max retries")
+                
+                try:
+                    # Download from URI (normalized if needed) - already has retry logic in _download_from_uri
+                    self._download_from_uri(download_uri, output_path, api_key=self.api_key)
+                    
+                    # Verify file was written
+                    if not os.path.exists(output_path):
+                        raise IOError(f"Failed to write file: {output_path}")
+                    
+                    file_size = os.path.getsize(output_path)
+                    if file_size == 0:
+                        raise IOError(f"Downloaded file is empty: {output_path}")
+                    
+                    logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
+                    return output_path
+                except Exception as download_error:
+                    user_error = _format_user_error(
+                        download_error,
+                        "video download",
+                        config["max_retries"] + 1
+                    )
+                    logger.error(f"HTTP download failed: {user_error}")
+                    raise RuntimeError(user_error) from download_error
 
         except Exception as e:
             logger.error(f"Failed to download video: {e}")
