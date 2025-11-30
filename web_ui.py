@@ -21,6 +21,7 @@ from supabase_storage import (
     get_initialization_error,
     get_supabase_status,
     upload_bytes_to_supabase,
+    upload_file_to_supabase,
     build_storage_path,
     SUPABASE_CLIENT,
     SUPABASE_BUCKET_NAME,
@@ -43,6 +44,9 @@ LOCAL_UPLOAD_ROOT = os.path.abspath(os.environ.get("LOCAL_UPLOAD_ROOT", "uploads
 os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 
 SUPABASE_REQUIRED = is_supabase_required()
+ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
+ALLOWED_VIDEO_MIME_PREFIXES = ("video/",)
+MAX_VIDEO_UPLOAD_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(500 * 1024 * 1024)))  # 500MB default
 
 if is_supabase_configured():
     logger.info("✓ Supabase client ready (web process)")
@@ -386,6 +390,24 @@ def upload_video():
                 "message": "No file selected"
             }), 400
 
+        # Validate size (best-effort; Flask may also enforce MAX_CONTENT_LENGTH)
+        content_length = request.content_length or video_file.content_length
+        if content_length and content_length > MAX_VIDEO_UPLOAD_BYTES:
+            return jsonify({
+                "status": "error",
+                "message": f"File too large (>{MAX_VIDEO_UPLOAD_BYTES // (1024*1024)}MB limit)"
+            }), 400
+
+        # Validate extension and MIME
+        _, ext = os.path.splitext(video_file.filename)
+        ext = ext.lower()
+        mimetype = (video_file.mimetype or "").lower()
+        if ext not in ALLOWED_VIDEO_EXTS and not mimetype.startswith(ALLOWED_VIDEO_MIME_PREFIXES):
+            return jsonify({
+                "status": "error",
+                "message": "Unsupported file type. Allowed: mp4, mov, avi, mkv"
+            }), 400
+
         if 'session_id' not in session:
             session['session_id'] = str(uuid.uuid4())
 
@@ -398,17 +420,38 @@ def upload_video():
         video_file.save(video_path)
 
         normalized_video_path = video_path.replace('\\', '/')
-        public_url = f"/uploads/{session_id}/editor/{filename}"
+        local_url = f"/uploads/{session_id}/editor/{filename}"
 
         session['editor_video'] = normalized_video_path
 
-        logger.info(f"Video uploaded: {video_path}")
+        # Optionally upload to Supabase
+        supabase_url = None
+        if is_supabase_configured():
+            storage_path = build_storage_path(session_id, "input", filename)
+            supabase_url, upload_error = upload_file_to_supabase(
+                storage_path=storage_path,
+                local_file_path=normalized_video_path,
+                content_type=mimetype or "video/mp4"
+            )
+            if upload_error:
+                logger.warning(f"Supabase video upload failed (session {session_id}): {upload_error}")
+            else:
+                logger.info(f"Video uploaded to Supabase: {storage_path}")
+
+        logger.info(
+            "Video uploaded: %s (storage=%s)",
+            video_path,
+            "supabase" if supabase_url else "local"
+        )
 
         return jsonify({
             "status": "success",
             "message": "Video uploaded successfully",
             "video_path": normalized_video_path,
-            "video_url": public_url
+            "video_url": supabase_url or local_url,
+            "local_url": local_url,
+            "supabase_url": supabase_url,
+            "storage": "supabase" if supabase_url else "local"
         })
 
     except Exception as e:

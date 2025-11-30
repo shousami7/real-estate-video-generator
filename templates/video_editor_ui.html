@@ -1661,7 +1661,9 @@
                     if (data.status === 'success') {
                         const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
                         frameData.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
-                        frameData.videoUrl = data.video_url || `/${frameData.videoPath}`;
+                        frameData.videoUrl = data.local_url || data.video_url || `/${frameData.videoPath}`;
+                        frameData.videoSupabaseUrl = data.supabase_url || null;
+                        frameData.videoLocalUrl = data.local_url || null;
 
                         // サムネイル画像を取得（フレーム0）
                         generateThumbnail(frameId, frameData.videoPath);
@@ -2304,8 +2306,11 @@
                         const normalizedPath = (data.video_path || '').replace(/\\/g, '/');
                         state.videoPath = normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath;
 
-                        const playbackUrl = data.video_url || `/${state.videoPath}`;
+                        // Prefer local playback to avoid any remote dependency/cost
+                        const playbackUrl = data.local_url || data.video_url || `/${state.videoPath}`;
                         state.videoUrl = playbackUrl;
+                        state.videoSupabaseUrl = data.supabase_url || null;
+                        state.videoLocalUrl = data.local_url || null;
 
                         videoSource.src = playbackUrl;
                         videoPlayer.load();

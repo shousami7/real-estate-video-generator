@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the video editing functionality integration that allows users to edit generated videos frame-by-frame using AI-powered image generation.
+This document describes the video editing functionality integration that allows users to edit uploaded or generated videos frame-by-frame using AI-powered image generation.
 
 ## Features Implemented
 
@@ -40,80 +40,68 @@ This document describes the video editing functionality integration that allows 
 
 ### Modified Files
 
-1. **web_ui.py** - Added frame editor endpoints
+1. **web_ui.py** - Added/updated frame editor endpoints
+   - `/video/upload` - Upload video (POST)
    - `/frames/extract` - Extract frames from video (POST)
-   - `/frames/list` - List all extracted frames (GET)
-   - `/frames/select/<frame_id>` - Get specific frame data (GET)
    - `/frames/image/<frame_id>` - Serve frame image (GET)
    - `/frames/edit` - Generate AI variations (POST)
    - `/frames/apply` - Apply edited frame (POST)
-   - `/video/editor` - Display editor UI (GET)
+   - `/video/editor` - Display editor UI (GET, default redirect target)
    - `/video/export` - Export edited video (POST)
-   - `/download/edited` - Download edited video (GET)
+   - `/download/editor` - Download edited video (GET)
 
-2. **templates/luxury_video_ui.html** - Added "Edit Frames" button
-   - Added button in completion screen
-   - Added click handler to extract frames and redirect to editor
-   - Integrated with existing UI flow
+2. **templates/video_editor_ui.html** - Video editor UI
+   - Upload zone for videos (drag & drop + picker)
+   - Frame grid (6 frames) with preview
+   - AI chat panel for edit prompts and variations
 
 ## User Workflow
 
 ### Complete Video Editing Flow
 
 ```
-1. Generate Video (existing flow)
+1. Open /video/editor (root redirects here)
    ↓
-2. Video Generation Complete
+2. Upload a video via drag & drop or file picker
    ↓
-3. Click "Edit Frames" button
+3. System extracts 6 frames from video
    ↓
-4. System extracts 6 frames from video
+4. User selects a frame to edit
    ↓
-5. Redirects to Video Editor UI
+5. User types prompt: "Make sunset more vibrant"
    ↓
-6. User selects a frame to edit
+6. AI generates 4 variations
    ↓
-7. User types prompt: "Make sunset more vibrant"
+7. User selects preferred variation
    ↓
-8. AI generates 4 variations
+8. Frame is updated
    ↓
-9. User selects preferred variation
+9. Repeat steps 4-8 for other frames
    ↓
-10. Frame is updated
+10. Click "Export Video"
    ↓
-11. Repeat steps 6-10 for other frames
+11. System rebuilds video with edited frames
    ↓
-12. Click "Export Video"
-   ↓
-13. System rebuilds video with edited frames
-   ↓
-14. Download edited video
+12. Download edited video
 ```
 
 ## API Endpoints
 
+### Video Upload
+```
+POST /video/upload
+FormData: { "video": <file> }
+Response: { "status": "success", "video_path": "uploads/.../file.mp4" }
+```
+
 ### Frame Extraction
 ```
 POST /frames/extract
-Body: { "num_frames": 6 }
+Body: { "video_path": "uploads/.../file.mp4", "num_frames": 6 }
 Response: {
   "status": "success",
   "frames": [...],
   "frames_dir": "frames/session_id/..."
-}
-```
-
-### List Frames
-```
-GET /frames/list
-Response: {
-  "status": "success",
-  "frames": {
-    "frame_000": {...},
-    "frame_001": {...},
-    ...
-  },
-  "video_info": {...}
 }
 ```
 
@@ -127,44 +115,27 @@ Response: PNG image file
 ```
 POST /frames/edit
 Body: {
-  "frame_id": "frame_000",
+  "frame_id": 0,
   "prompt": "Make the sunset more vibrant"
 }
-Response: {
-  "status": "success",
-  "variations": [
-    {
-      "variation_id": "var_0",
-      "image_base64": "data:image/png;base64,...",
-      "description": "...",
-      ...
-    },
-    ...
-  ]
-}
+Response: { "status": "success", "variations": ["data:image/png;base64,...", ...] }
 ```
 
 ### Apply Frame Edit
 ```
 POST /frames/apply
 Body: {
-  "frame_id": "frame_000",
-  "variation_image": "data:image/png;base64,...",
-  "prompt": "Make the sunset more vibrant"
+  "frame_id": 0,
+  "edited_image_url": "data:image/png;base64,..."
 }
-Response: {
-  "status": "success",
-  "frame": {...}
-}
+Response: { "status": "success", "file_path": "frames/.../frame_0_edited.png" }
 ```
 
 ### Export Video
 ```
 POST /video/export
-Response: {
-  "status": "success",
-  "video_url": "/download/edited"
-}
+Body: {}
+Response: { "status": "success", "download_url": "/download/editor?path=..." }
 ```
 
 ## Technical Details
@@ -330,43 +301,43 @@ output_video = frame_editor.rebuild_video()
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      Web Browser                             │
-│  ┌────────────────┐              ┌──────────────────────┐  │
-│  │ luxury_video_  │              │  video_editor_ui.    │  │
-│  │ ui.html        │─────────────>│  html                │  │
-│  │                │  Edit Frames │                      │  │
-│  └────────────────┘              └──────────────────────┘  │
+│  ┌──────────────────────────────┐                           │
+│  │  video_editor_ui.html        │                           │
+│  │  (upload → frame select → AI │                           │
+│  │   chat → export)             │                           │
+│  └──────────────────────────────┘                           │
 └─────────────────────────────────────────────────────────────┘
-                           │                    │
-                           ▼                    ▼
+                           │
+                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Flask Web Server                          │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │                 web_ui.py                             │  │
+│  │  - /video/upload                                      │  │
 │  │  - /frames/extract                                    │  │
-│  │  - /frames/list                                       │  │
+│  │  - /frames/image/<id>                                 │  │
 │  │  - /frames/edit                                       │  │
 │  │  - /frames/apply                                      │  │
 │  │  - /video/export                                      │  │
 │  └──────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
-                           │                    │
-                           ▼                    ▼
+                           │
+                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  Backend Services                            │
 │  ┌────────────────┐              ┌──────────────────────┐  │
 │  │ FrameEditor    │              │  AIFrameEditor       │  │
-│  │                │              │                      │  │
-│  │ - extract      │              │ - generate_          │  │
-│  │   _frames()    │              │   variations()       │  │
+│  │ - extract_     │              │ - generate_          │  │
+│  │   frames()     │              │   variations()       │  │
 │  │ - apply_edited │              │                      │  │
 │  │   _frame()     │              └──────────────────────┘  │
-│  │ - rebuild      │                       │               │
-│  │   _video()     │                       │               │
-│  └────────────────┘                       ▼               │
+│  │ - rebuild_     │                      │                 │
+│  │   video()      │                      │                 │
+│  └────────────────┘                      ▼                 │
 │         │                      ┌──────────────────────┐   │
-│         │                      │  Google Gemini API   │   │
-│         │                      └──────────────────────┘   │
-│         ▼                                                   │
+│         ▼                      │  Google Gemini API   │   │
+│                                └──────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 │  ┌────────────────┐                                        │
 │  │    FFmpeg      │                                        │
 │  └────────────────┘                                        │
