@@ -530,9 +530,9 @@ class VeoVideoGenerator:
             The completed operation object
         """
         logger.info(f"Generating video with prompt: {prompt}")
-        
+
         # Upload image
-        file_obj = self._upload_file(image_path)
+        file_obj = self.upload_image(image_path)
         
         # Prepare generation config
         # Note: The SDK might use different parameter names depending on version
@@ -558,7 +558,6 @@ class VeoVideoGenerator:
                         model=self.model,
                         contents=[file_obj, prompt],
                         config=types.GenerateContentConfig(
-                            service_mode="use_media_generation_service",
                             grounding_config=types.GroundingConfig(
                                 grounding_source=previous_video
                             )
@@ -570,9 +569,7 @@ class VeoVideoGenerator:
                     return self.client.models.generate_content(
                         model=self.model,
                         contents=[file_obj, prompt],
-                        config=types.GenerateContentConfig(
-                            service_mode="use_media_generation_service"
-                        )
+                        config=types.GenerateContentConfig()
                     )
             except Exception as e:
                 # Wrap in a way that the retry decorator understands

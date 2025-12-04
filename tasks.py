@@ -203,10 +203,17 @@ def generate_video_from_chat_task(
         try:
             logger.info(f"Validating input image: {image_path}")
             image_metadata = validate_image_for_veo(image_path, aspect_ratio=aspect_ratio)
+            image_path = image_metadata.get("path", image_path)
+            original_image_path = image_metadata.get("original_path", image_path)
             logger.info(
                 f"Image validation passed: {image_metadata['width']}x{image_metadata['height']}, "
                 f"{image_metadata['size_mb']}MB, {image_metadata.get('format', 'unknown')}"
             )
+            if image_metadata.get("auto_fixed"):
+                logger.info(
+                    f"Auto-adjusted image to {aspect_ratio} aspect ratio: {image_path} "
+                    f"(original: {original_image_path})"
+                )
         except ValidationError as ve:
             logger.error(f"Input validation failed: {ve}")
             # Return user-friendly error immediately
@@ -240,6 +247,7 @@ def generate_video_from_chat_task(
             scene_id=scene_id,
             input_params={
                 "image_path": image_path,
+                "original_image_path": original_image_path,
                 "prompt": prompt,
                 "duration": duration,
                 "aspect_ratio": aspect_ratio,

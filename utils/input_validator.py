@@ -57,7 +57,8 @@ class ImageValidator:
         cls,
         image_path: str,
         required_aspect_ratio: Optional[str] = None,
-        check_dimensions: bool = True
+        check_dimensions: bool = True,
+        auto_fix_aspect_ratio: bool = False,
     ) -> Dict[str, Any]:
         """
         Validate image file and return metadata.
@@ -66,6 +67,7 @@ class ImageValidator:
             image_path: Path to image file
             required_aspect_ratio: Optional aspect ratio requirement (e.g., "16:9")
             check_dimensions: Whether to check image dimensions (requires PIL)
+            auto_fix_aspect_ratio: Whether to auto-crop the image to the required aspect ratio
             
         Returns:
             Dictionary with image metadata (width, height, format, size_mb)
@@ -147,7 +149,31 @@ class ImageValidator:
                     
                     # Check aspect ratio if required
                     if required_aspect_ratio:
-                        cls._validate_aspect_ratio(width, height, required_aspect_ratio)
+                        try:
+                            cls._validate_aspect_ratio(width, height, required_aspect_ratio)
+                        except ValidationError as ve:
+                            if auto_fix_aspect_ratio and HAS_PIL:
+                                fixed_path = cls._fix_aspect_ratio(
+                                    image_path=image_path,
+                                    image=img,
+                                    required=required_aspect_ratio
+                                )
+                                
+                                if fixed_path:
+                                    fixed_metadata = cls.validate_image(
+                                        fixed_path,
+                                        required_aspect_ratio=required_aspect_ratio,
+                                        check_dimensions=check_dimensions,
+                                        auto_fix_aspect_ratio=False
+                                    )
+                                    fixed_metadata.update({
+                                        'auto_fixed': True,
+                                        'original_path': image_path,
+                                        'fixed_path': fixed_path
+                                    })
+                                    return fixed_metadata
+                            # If auto-fix disabled or failed, re-raise original error
+                            raise ve
                     
             except IOError as e:
                 if isinstance(e, ValidationError):
@@ -176,6 +202,64 @@ class ImageValidator:
                 f"expected {required} ({expected_ratio:.2f}).",
                 f"Crop or resize the image to {required} aspect ratio."
             )
+
+    @classmethod
+    def _fix_aspect_ratio(cls, image_path: str, image: "Image.Image", required: str) -> Optional[str]:
+        """Attempt to auto-crop the image to the required aspect ratio."""
+        if required not in cls.ASPECT_RATIOS:
+            return None
+        
+        target_ratio = cls.ASPECT_RATIOS[required]
+        width, height = image.size
+        current_ratio = width / height
+        
+        # If already within tolerance, nothing to do
+        if abs(current_ratio - target_ratio) <= cls.ASPECT_RATIO_TOLERANCE:
+            return None
+        
+        # Decide whether to trim width or height to reach the target ratio
+        if current_ratio > target_ratio:
+            # Too wide: trim the sides
+            target_width = int(round(height * target_ratio))
+            target_height = height
+        else:
+            # Too tall: trim top/bottom
+            target_width = width
+            target_height = int(round(width / target_ratio))
+        
+        # Center-crop the image
+        left = max(0, (width - target_width) // 2)
+        top = max(0, (height - target_height) // 2)
+        right = left + target_width
+        bottom = top + target_height
+        
+        try:
+            cropped = image.copy().crop((left, top, right, bottom))
+        except Exception:
+            return None
+        
+        # Build output path next to the original file
+        ext = Path(image_path).suffix
+        suffix = required.replace(":", "x")
+        output_path = str(Path(image_path).with_name(f"{Path(image_path).stem}_{suffix}{ext}"))
+        
+        try:
+            format_hint = image.format or cls._format_from_extension(ext)
+            cropped.save(output_path, format=format_hint)
+        except Exception:
+            return None
+        
+        return output_path
+
+    @staticmethod
+    def _format_from_extension(ext: str) -> str:
+        """Infer a Pillow save format from a file extension."""
+        return {
+            '.jpg': 'JPEG',
+            '.jpeg': 'JPEG',
+            '.png': 'PNG',
+            '.webp': 'WEBP'
+        }.get(ext.lower(), 'JPEG')
 
 
 class VideoValidator:
@@ -320,13 +404,18 @@ class VideoValidator:
 
 
 # Convenience functions
-def validate_image_for_veo(image_path: str, aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
+def validate_image_for_veo(
+    image_path: str,
+    aspect_ratio: Optional[str] = None,
+    auto_fix_aspect_ratio: bool = True
+) -> Dict[str, Any]:
     """
     Validate image for Veo API.
     
     Args:
         image_path: Path to image file
         aspect_ratio: Required aspect ratio (e.g., "16:9")
+        auto_fix_aspect_ratio: Whether to auto-crop to the required aspect ratio
         
     Returns:
         Image metadata dictionary
@@ -337,7 +426,8 @@ def validate_image_for_veo(image_path: str, aspect_ratio: Optional[str] = None) 
     return ImageValidator.validate_image(
         image_path,
         required_aspect_ratio=aspect_ratio,
-        check_dimensions=True
+        check_dimensions=True,
+        auto_fix_aspect_ratio=auto_fix_aspect_ratio
     )
 
 

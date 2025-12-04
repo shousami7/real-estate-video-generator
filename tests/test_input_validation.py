@@ -99,6 +99,29 @@ class TestImageValidator:
             ImageValidator.validate_image(temp_image, required_aspect_ratio="1:1")
         
         assert "aspect ratio" in str(exc_info.value).lower()
+
+    @pytest.mark.skipif(not HAS_PIL, reason="PIL not available")
+    def test_aspect_ratio_auto_fix(self, tmp_path):
+        """Test auto-cropping when aspect ratio mismatches"""
+        square_path = tmp_path / "square.jpg"
+        img = Image.new('RGB', (1000, 1000), color='green')
+        img.save(square_path, 'JPEG')
+
+        metadata = ImageValidator.validate_image(
+            str(square_path),
+            required_aspect_ratio="16:9",
+            auto_fix_aspect_ratio=True
+        )
+
+        assert metadata["auto_fixed"] is True
+        assert metadata["original_path"] == str(square_path)
+        assert metadata["path"] != str(square_path)
+        ratio = metadata["width"] / metadata["height"]
+        assert ratio == pytest.approx(
+            ImageValidator.ASPECT_RATIOS["16:9"],
+            rel=0,
+            abs=ImageValidator.ASPECT_RATIO_TOLERANCE
+        )
     
     @pytest.mark.skipif(not HAS_PIL, reason="PIL not available")
     def test_too_small_image(self):
