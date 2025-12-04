@@ -60,13 +60,14 @@ class VideoComposer:
 
         Returns:
             Duration in seconds
+
+        Raises:
+            FileNotFoundError: If the video file does not exist.
+            RuntimeError: If duration cannot be determined (e.g., FFmpeg unavailable).
         """
-        try:
-            return probe_video_duration(video_path, ffmpeg_path=self.ffmpeg_path)
-        except Exception as e:
-            logger.error(f"Error getting video duration: {e}")
-            # Return default duration
-            return 8.0
+        # Let exceptions propagate - silent fallback to 8.0s causes downstream
+        # xfade timing errors and "non-monotonous DTS" issues in FFmpeg
+        return probe_video_duration(video_path, ffmpeg_path=self.ffmpeg_path)
 
     def compose_with_transitions(
         self,
@@ -218,10 +219,9 @@ class VideoComposer:
                 # First transition: starts at (duration of clip 1 - transition_duration)
                 accumulated_offset = video_durations[0] - transition_duration
             else:
-                # FIX: The previous segment's duration already includes the required overlap from the *previous* transition.
-                # We only need to add the full duration of the video just added at the previous step.
-                # The total elapsed time up to the start of the current transition is the previous offset plus the full clip duration.
-                accumulated_offset += video_durations[i-1]
+                # Subsequent transitions: add the duration of the previous clip minus the overlap
+                # Each xfade overlaps by transition_duration, so we subtract it from each clip's contribution
+                accumulated_offset += video_durations[i-1] - transition_duration
 
             transition_filter = f"[{current_input}][v{i}]xfade=transition={transition_type}:duration={transition_duration}:offset={accumulated_offset}[{output_label}]"
             transition_filters.append(transition_filter)

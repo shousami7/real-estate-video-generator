@@ -333,6 +333,14 @@ class VeoVideoGenerator:
             "VEO_IMAGE_MODEL_OVERRIDE", self.VEO_IMAGE_CONDITIONING_FALLBACK
         )
 
+        # Verify Google SDK is available before attempting to create client
+        if genai.Client is None:
+            raise RuntimeError(
+                "Google Generative AI SDK is not installed. "
+                "Please install it with: pip install google-genai\n"
+                "See: https://ai.google.dev/gemini-api/docs/quickstart?lang=python"
+            )
+
         logger.info("Initializing Google AI Studio client")
         self.client = genai.Client(api_key=self.api_key)
         logger.info("✓ Google AI Studio Mode - Using API key authentication")
@@ -506,8 +514,8 @@ class VeoVideoGenerator:
 
     def generate_video(
         self,
-        image_path: str,
-        prompt: str,
+        image_path: Optional[str] = None,
+        prompt: str = "",
         duration: str = "8s",
         aspect_ratio: str = "16:9",
         resolution: str = "720p",
@@ -515,96 +523,120 @@ class VeoVideoGenerator:
         previous_video: Optional[Any] = None
     ) -> Any:
         """
-        Generate a video from an image using the Veo model.
-        
+        Generate a video from an image using the Veo model via generate_videos API.
+
         Args:
-            image_path: Path to the input image
+            image_path: Path to the input image (None for scene extension with previous_video)
             prompt: Text prompt for generation
             duration: Video duration ("4s" or "8s")
             aspect_ratio: Aspect ratio (e.g., "16:9")
             resolution: Resolution (e.g., "720p")
-            generate_audio: Whether to generate audio (not yet supported)
-            previous_video: Optional previous video object for extension
-            
+            generate_audio: Whether to generate audio
+            previous_video: Optional previous video object for scene extension
+
         Returns:
-            The completed operation object
+            The completed operation/response object
         """
         logger.info(f"Generating video with prompt: {prompt}")
 
-        # Upload image
-        file_obj = self.upload_image(image_path)
-        
-        # Prepare generation config
-        # Note: The SDK might use different parameter names depending on version
-        # We'll stick to the standard ones for now
-        
-        # Call the API with retry logic
-        config = RETRY_CONFIG["api_call"]
-        
-        @retry_with_exponential_backoff(
-            max_retries=config["max_retries"],
-            initial_delay=config["initial_delay"],
-            max_delay=config["max_delay"],
-        )
-        def _generate_with_retry():
-            try:
-                if previous_video:
-                    # Scene extension
-                    logger.info("Requesting video extension...")
-                    # Note: This is a placeholder for the actual extension API call
-                    # The current SDK might not fully support this yet in the high-level client
-                    # We'll assume a standard generation for now if extension isn't available
-                    return self.client.models.generate_content(
-                        model=self.model,
-                        contents=[file_obj, prompt],
-                        config=types.GenerateContentConfig(
-                            grounding_config=types.GroundingConfig(
-                                grounding_source=previous_video
-                            )
-                        ) if hasattr(types, "GroundingConfig") else None
-                    )
-                else:
-                    # New generation
-                    logger.info("Requesting new video generation...")
-                    return self.client.models.generate_content(
-                        model=self.model,
-                        contents=[file_obj, prompt],
-                        config=types.GenerateContentConfig()
-                    )
-            except Exception as e:
-                # Wrap in a way that the retry decorator understands
-                raise e
+        # Determine if we need image conditioning
+        file_obj = None
+        needs_reference = False
 
-        # Start the operation
-        # Note: generate_content for video usually returns an operation or a response waiting for polling
-        # In the new SDK, it might return a generated_content object directly if synchronous, 
-        # or we might need to use a specific method for async video generation.
-        # Assuming standard generate_content for now, but for Veo it's often async.
-        
-        # If the SDK returns an operation-like object, we wait for it.
-        # If it returns a response immediately, we wrap it.
-        
+        if image_path is not None:
+            file_obj = self.upload_image(image_path)
+            needs_reference = True
+
+        if previous_video is not None:
+            needs_reference = True
+
+        # Select the appropriate model
+        selected_model = self._select_model(needs_reference)
+
+        # Build the request kwargs for generate_videos
+        request_kwargs: Dict[str, Any] = {
+            "model": selected_model,
+            "prompt": prompt,
+        }
+
+        # Add image reference if provided
+        if file_obj is not None:
+            request_kwargs["image"] = file_obj
+
+        # Add previous video for scene extension
+        if previous_video is not None:
+            # Normalize to types.Video if needed
+            video_ref = self._normalize_video_reference(previous_video)
+            request_kwargs["reference_video"] = video_ref
+
+        # Add generation config if supported
+        if hasattr(types, "GenerateVideoConfig"):
+            config_kwargs = {}
+            if aspect_ratio:
+                config_kwargs["aspect_ratio"] = aspect_ratio
+            if generate_audio:
+                config_kwargs["include_audio"] = generate_audio
+            if config_kwargs:
+                request_kwargs["config"] = types.GenerateVideoConfig(**config_kwargs)
+
         try:
-            # For Veo/Video, we typically expect a long-running operation
-            # However, the Python SDK's generate_content might block or return a response
-            # If we need async, we might need to use the async client or specific calls
-            
-            # Let's assume standard behavior for now
-            response = _generate_with_retry()
-            
-            # If it's an operation (has .result()), wait for it
-            if hasattr(response, "result"):
-                logger.info("Waiting for video generation to complete...")
-                # Use the SDK's built-in polling with a generous timeout
-                # Video generation can take 2-5 minutes
-                result = response.result(timeout=600)
+            logger.info(f"Calling generate_videos API with model: {selected_model}")
+
+            # Use _generate_with_fallback which handles retries and model fallback
+            operation = self._generate_with_fallback(
+                request_kwargs=request_kwargs,
+                selected_model=selected_model,
+                needs_reference=needs_reference,
+            )
+
+            # The generate_videos API returns a long-running operation
+            # Wait for completion with polling
+            logger.info("Waiting for video generation to complete...")
+
+            # Poll for completion - video generation can take 2-5 minutes
+            poll_start = time.time()
+            max_wait = 600  # 10 minute timeout
+            poll_interval = 10  # Check every 10 seconds
+
+            while True:
+                # Check if operation is done
+                if hasattr(operation, "done") and operation.done:
+                    break
+                if hasattr(operation, "result") and callable(operation.result):
+                    # Try to get result (may block or return immediately if done)
+                    try:
+                        result = operation.result(timeout=1)
+                        logger.info("Video generation operation finished")
+                        return result
+                    except Exception:
+                        pass  # Not ready yet, continue polling
+
+                # Check timeout
+                if time.time() - poll_start > max_wait:
+                    raise TimeoutError(f"Video generation timed out after {max_wait} seconds")
+
+                logger.info(f"Video generation in progress... (elapsed: {int(time.time() - poll_start)}s)")
+                time.sleep(poll_interval)
+
+            # Check for errors in the completed operation
+            if hasattr(operation, "error") and operation.error:
+                error_msg = self._extract_operation_error_message(operation.error)
+                raise RuntimeError(f"Video generation failed: {error_msg}")
+
+            # Extract result
+            if hasattr(operation, "result"):
+                if callable(operation.result):
+                    result = operation.result()
+                else:
+                    result = operation.result
                 logger.info("Video generation operation finished")
                 return result
-            
-            # If it's already done or a direct response
-            return response
-            
+
+            # Return operation itself if it's already the final response
+            return operation
+
         except Exception as e:
+            config = RETRY_CONFIG["api_call"]
             user_error = _format_user_error(e, "video generation", config["max_retries"] + 1)
             logger.error(f"Video generation failed: {user_error}")
             raise RuntimeError(user_error) from e
@@ -822,6 +854,80 @@ class VeoVideoGenerator:
                 pass
             user_error = _format_user_error(e, "video download", config["max_retries"] + 1)
 
+    def _extract_generated_video(self, response: Any) -> Optional[Any]:
+        """
+        Extract the video file/object from a generation response.
+
+        The response structure varies depending on the API version and whether
+        this is a synchronous response or the result of a long-running operation.
+
+        Args:
+            response: The API response object (GenerateContentResponse, Operation result, etc.)
+
+        Returns:
+            The video file object (with uri, name, mime_type attributes) or None if not found.
+        """
+        if response is None:
+            return None
+
+        # Direct video attribute
+        if hasattr(response, "video") and response.video:
+            return response.video
+
+        # generated_videos list (from generate_videos API)
+        if hasattr(response, "generated_videos") and response.generated_videos:
+            videos = response.generated_videos
+            if len(videos) > 0:
+                video = videos[0]
+                # Some responses wrap video in a .video attribute
+                if hasattr(video, "video") and video.video:
+                    return video.video
+                return video
+
+        # candidates list (from generate_content API)
+        if hasattr(response, "candidates") and response.candidates:
+            for candidate in response.candidates:
+                content = getattr(candidate, "content", None)
+                if content and hasattr(content, "parts"):
+                    for part in content.parts:
+                        # Check for video in part
+                        if hasattr(part, "video") and part.video:
+                            return part.video
+                        # Check for file_data
+                        if hasattr(part, "file_data") and part.file_data:
+                            return part.file_data
+                        # Check for inline_data with video mime type
+                        if hasattr(part, "inline_data") and part.inline_data:
+                            mime = getattr(part.inline_data, "mime_type", "")
+                            if mime.startswith("video/"):
+                                return part.inline_data
+
+        # result attribute (from Operation.result())
+        if hasattr(response, "result"):
+            result = response.result
+            if callable(result):
+                try:
+                    return self._extract_generated_video(result())
+                except Exception:
+                    pass
+            else:
+                return self._extract_generated_video(result)
+
+        # response attribute (sometimes used for nested responses)
+        if hasattr(response, "response") and response.response:
+            return self._extract_generated_video(response.response)
+
+        # If response is a dict, try common keys
+        if isinstance(response, dict):
+            for key in ["video", "generated_videos", "videos", "file", "result"]:
+                if key in response and response[key]:
+                    val = response[key]
+                    if isinstance(val, list) and len(val) > 0:
+                        return val[0]
+                    return val
+
+        logger.debug(f"Could not extract video from response type: {type(response)}")
+        return None
 
     def _normalize_video_reference(self, video_source: Any) -> types.Video:
         """

@@ -30,21 +30,47 @@ class FrameEditor:
     Manages video frame extraction and AI editing
     """
 
-    def __init__(self, video_path: str, output_dir: str = "frames"):
+    def __init__(self, video_path: str, output_dir: str = "frames", ffmpeg_path: str = "ffmpeg"):
         """
         Initialize Frame Editor
 
         Args:
             video_path: Path to the video file
             output_dir: Directory to store extracted frames
+            ffmpeg_path: Path to the FFmpeg executable
+
+        Raises:
+            RuntimeError: If FFmpeg is not installed or accessible.
         """
         self.video_path = video_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.frames = []
-        self.ffmpeg_path = "ffmpeg"
+        self.ffmpeg_path = ffmpeg_path
+
+        # Verify FFmpeg availability upfront to provide clear error messages
+        self._verify_ffmpeg()
 
         logger.info(f"Initialized FrameEditor for: {video_path}")
+
+    def _verify_ffmpeg(self):
+        """Verify that FFmpeg is installed and accessible."""
+        try:
+            subprocess.run(
+                [self.ffmpeg_path, "-version"],
+                capture_output=True,
+                check=True,
+                timeout=10
+            )
+        except FileNotFoundError:
+            raise RuntimeError(
+                "FFmpeg not found. Please install FFmpeg and ensure it's in your PATH.\n"
+                "Installation: https://ffmpeg.org/download.html"
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"FFmpeg verification failed: {e}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("FFmpeg verification timed out")
 
     def get_video_duration(self) -> float:
         """
@@ -52,12 +78,13 @@ class FrameEditor:
 
         Returns:
             Duration in seconds
+
+        Raises:
+            FileNotFoundError: If the video file does not exist.
+            RuntimeError: If duration cannot be determined.
         """
-        try:
-            return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
-        except Exception as e:
-            logger.error(f"Error getting video duration: {e}")
-            return 0.0
+        # Let exceptions propagate - returning 0.0 causes confusing errors downstream
+        return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
 
     def extract_frames(self, frame_count: int = 6) -> List[Dict[str, Any]]:
         """
@@ -74,9 +101,8 @@ class FrameEditor:
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
 
+        # get_video_duration raises FileNotFoundError or RuntimeError if it fails
         duration = self.get_video_duration()
-        if duration == 0:
-            raise ValueError("Could not determine video duration")
 
         interval = duration / (frame_count + 1)
         self.frames = []
