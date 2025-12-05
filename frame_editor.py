@@ -104,12 +104,19 @@ class FrameEditor:
         # get_video_duration raises FileNotFoundError or RuntimeError if it fails
         duration = self.get_video_duration()
 
-        interval = duration / (frame_count + 1)
+        if duration <= 0:
+            raise RuntimeError(f"Invalid video duration: {duration}")
+
+        frame_count = max(1, int(frame_count))
+        interval = duration / frame_count
         self.frames = []
 
         for i in range(frame_count):
             timestamp = interval * (i + 1)
-            frame_path = self.output_dir / f"frame_{i:03d}.png"
+            # Avoid requesting a frame exactly at the video end when using integer math
+            if timestamp >= duration:
+                timestamp = max(duration - 0.001, 0)
+            frame_path = self.output_dir / f"extracted_frame_{i + 1:03d}.png"
 
             # FFmpegでフレームを抽出
             cmd = [
@@ -133,6 +140,7 @@ class FrameEditor:
                 # フレーム情報を保存
                 frame_info = {
                     "frame_id": i,
+                    "name": f"extracted frame {i + 1}",
                     "path": str(frame_path),
                     "timestamp": self._format_timestamp(timestamp),
                     "seconds": timestamp,

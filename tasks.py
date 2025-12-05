@@ -1275,7 +1275,7 @@ def extract_frames_task(
         
         # Calculate frame count
         video_duration = get_video_duration(video_path)
-        frame_count = min(int(video_duration * fps), 100)
+        frame_count = max(1, min(int(video_duration * fps), 100))
         
         self.update_state(state="EXTRACTING", meta={"progress": 30, "message": f"Extracting {frame_count} frames..."})
         
@@ -1294,6 +1294,7 @@ def extract_frames_task(
             
             frames_response.append({
                 "index": frame['frame_id'],
+                "name": frame.get('name', f"extracted frame {frame['frame_id'] + 1}"),
                 "timestamp": frame['seconds'],
                 "url": frame_url,
                 "path": frame['path']

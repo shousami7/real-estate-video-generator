@@ -900,6 +900,170 @@
                 opacity: 1;
             }
         }
+
+        /* Liquid Glass Frame Timeline Styles */
+        .liquid-glass-timeline-container {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .liquid-glass-timeline {
+            display: flex;
+            gap: 24px;
+            padding: 20px 50%;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .liquid-glass-timeline::-webkit-scrollbar {
+            display: none;
+        }
+
+        .liquid-frame {
+            flex-shrink: 0;
+            width: 180px;
+            aspect-ratio: 16 / 9;
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-origin: center;
+        }
+
+        .liquid-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: filter 0.4s ease;
+        }
+
+        .liquid-frame::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg,
+                rgba(255, 255, 255, 0.1) 0%,
+                rgba(255, 255, 255, 0.05) 50%,
+                rgba(0, 0, 0, 0.1) 100%);
+            border-radius: 16px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .liquid-frame::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .liquid-frame.focused {
+            transform: scale(1.15);
+            box-shadow:
+                0 0 40px rgba(6, 182, 212, 0.4),
+                0 0 80px rgba(168, 85, 247, 0.2),
+                0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .liquid-frame.focused::after {
+            border: 2px solid rgba(6, 182, 212, 0.6);
+            box-shadow: inset 0 0 20px rgba(6, 182, 212, 0.1);
+        }
+
+        .liquid-frame:not(.focused) {
+            opacity: 0.6;
+            filter: blur(1px);
+        }
+
+        .liquid-frame:not(.focused) img {
+            filter: brightness(0.7) saturate(0.8);
+        }
+
+        .liquid-frame-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 8px 12px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+            z-index: 3;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .liquid-frame-index {
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(6, 182, 212, 0.3);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .liquid-frame-timestamp {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        .timeline-fade-left,
+        .timeline-fade-right {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .timeline-fade-left {
+            left: 0;
+            background: linear-gradient(to right, #111827 0%, transparent 100%);
+        }
+
+        .timeline-fade-right {
+            right: 0;
+            background: linear-gradient(to left, #111827 0%, transparent 100%);
+        }
+
+        .timeline-center-indicator {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 60%;
+            background: linear-gradient(to bottom,
+                transparent 0%,
+                rgba(6, 182, 212, 0.5) 30%,
+                rgba(168, 85, 247, 0.5) 70%,
+                transparent 100%);
+            border-radius: 2px;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* Extract button loading state */
+        #extract-all-frames-btn.loading {
+            pointer-events: none;
+        }
+
+        #extract-all-frames-btn.loading span:first-child {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
@@ -1075,7 +1239,15 @@
 
                 <!-- Video Frames Section (Initial State) -->
                 <div class="w-full shrink-0" id="video-frames-section">
-                    <h3 class="text-white text-lg font-bold mb-4">Upload Videos</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-white text-lg font-bold">Upload Videos</h3>
+                        <button id="extract-all-frames-btn"
+                            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Extract frames from uploaded videos">
+                            <span class="material-symbols-outlined !text-base">auto_awesome</span>
+                            <span class="text-sm font-medium">Extract Frames</span>
+                        </button>
+                    </div>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
                         <!-- 6 video frame slots will be inserted here by JS -->
                     </div>
@@ -1087,6 +1259,32 @@
                     <div class="grid grid-cols-6 gap-3" id="frames-container">
                         <!-- Frames will be inserted here by JS -->
                     </div>
+                </div>
+
+                <!-- Liquid Glass Frame Timeline (New) -->
+                <div class="w-full relative hidden shrink-0" id="liquid-glass-timeline-section">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-white text-lg font-bold">Frame Timeline</h3>
+                        <div class="flex items-center gap-4">
+                            <span id="frame-counter" class="text-gray-400 text-sm">0 frames</span>
+                            <button id="close-timeline-btn"
+                                class="text-gray-400 hover:text-white transition-colors"
+                                title="Close timeline">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Horizontal scrollable timeline -->
+                    <div class="liquid-glass-timeline-container">
+                        <div class="liquid-glass-timeline" id="liquid-glass-timeline">
+                            <!-- Frames will be inserted here by JS -->
+                        </div>
+                        <!-- Gradient overlays for scroll indication -->
+                        <div class="timeline-fade-left"></div>
+                        <div class="timeline-fade-right"></div>
+                    </div>
+                    <!-- Center indicator -->
+                    <div class="timeline-center-indicator"></div>
                 </div>
             </div>
 
@@ -1801,7 +1999,7 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend })
+                body: JSON.stringify({ video_path: videoPathForBackend, frame_count: 1, max_frames: 1 })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -1891,7 +2089,7 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend })
+                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -2177,7 +2375,7 @@
             const extractionPromise = fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPath })
+                body: JSON.stringify({ video_path: videoPath, fps: 1 })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -2548,7 +2746,7 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend })
+                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3632,6 +3830,180 @@
         // ==================== バックボタン ====================
         backBtn.addEventListener('click', () => {
             window.location.href = '/';
+        });
+
+        // ==================== Extract All Frames (Liquid Glass Timeline) ====================
+        const extractAllFramesBtn = document.getElementById('extract-all-frames-btn');
+        const liquidGlassTimelineSection = document.getElementById('liquid-glass-timeline-section');
+        const liquidGlassTimeline = document.getElementById('liquid-glass-timeline');
+        const frameCounter = document.getElementById('frame-counter');
+        const closeTimelineBtn = document.getElementById('close-timeline-btn');
+
+        let allExtractedFrames = [];
+        let currentFocusedFrameIndex = 0;
+
+        extractAllFramesBtn.addEventListener('click', async () => {
+            // Find the first uploaded video
+            const uploadedSlots = Object.entries(state.videoFrames)
+                .filter(([_, data]) => data.videoPath)
+                .map(([slotId, data]) => ({ slotId: parseInt(slotId), ...data }));
+
+            if (uploadedSlots.length === 0) {
+                alert('Please upload a video first');
+                return;
+            }
+
+            // Use the first uploaded video
+            const firstVideo = uploadedSlots[0];
+
+            // Show loading state
+            extractAllFramesBtn.classList.add('loading');
+            extractAllFramesBtn.querySelector('span:first-child').textContent = 'sync';
+            extractAllFramesBtn.querySelector('span:last-child').textContent = 'Extracting...';
+
+            try {
+                // Normalize video path (remove leading slash)
+                let videoPath = firstVideo.videoPath;
+                if (videoPath.startsWith('/')) {
+                    videoPath = videoPath.substring(1);
+                }
+
+                const response = await fetch('/frames/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        fps: 1  // 1-second timeline extraction
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success' && data.frames && data.frames.length > 0) {
+                    allExtractedFrames = data.frames;
+                    renderLiquidGlassTimeline(allExtractedFrames);
+
+                    // Show timeline section
+                    liquidGlassTimelineSection.classList.remove('hidden');
+
+                    // Update frame counter
+                    frameCounter.textContent = `${allExtractedFrames.length} frames`;
+
+                    // Initialize focus on first frame
+                    updateFocusedFrame(0);
+                } else {
+                    throw new Error(data.message || 'Failed to extract frames');
+                }
+            } catch (error) {
+                console.error('Frame extraction error:', error);
+                alert('Failed to extract frames: ' + error.message);
+            } finally {
+                // Reset button state
+                extractAllFramesBtn.classList.remove('loading');
+                extractAllFramesBtn.querySelector('span:first-child').textContent = 'auto_awesome';
+                extractAllFramesBtn.querySelector('span:last-child').textContent = 'Extract Frames';
+            }
+        });
+
+        function renderLiquidGlassTimeline(frames) {
+            liquidGlassTimeline.innerHTML = frames.map((frame, index) => {
+                // base64 already includes "data:image/png;base64," prefix from backend
+                const imgSrc = frame.base64;
+                return `
+                <div class="liquid-frame ${index === 0 ? 'focused' : ''}"
+                     data-index="${index}"
+                     onclick="selectTimelineFrame(${index})">
+                    <img src="${imgSrc}" alt="Frame ${index + 1}">
+                    <div class="liquid-frame-info">
+                        <span class="liquid-frame-index">#${index + 1}</span>
+                        <span class="liquid-frame-timestamp">${frame.timestamp || formatTimestamp(frame.seconds)}</span>
+                    </div>
+                </div>
+            `;
+            }).join('');
+
+            // Add scroll listener for focus detection
+            liquidGlassTimeline.addEventListener('scroll', handleTimelineScroll);
+        }
+
+        function formatTimestamp(seconds) {
+            if (!seconds && seconds !== 0) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function handleTimelineScroll() {
+            const container = liquidGlassTimeline;
+            const containerRect = container.getBoundingClientRect();
+            const containerCenter = containerRect.left + containerRect.width / 2;
+
+            const frames = container.querySelectorAll('.liquid-frame');
+            let closestIndex = 0;
+            let closestDistance = Infinity;
+
+            frames.forEach((frame, index) => {
+                const frameRect = frame.getBoundingClientRect();
+                const frameCenter = frameRect.left + frameRect.width / 2;
+                const distance = Math.abs(frameCenter - containerCenter);
+
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            if (closestIndex !== currentFocusedFrameIndex) {
+                updateFocusedFrame(closestIndex);
+            }
+        }
+
+        function updateFocusedFrame(index) {
+            currentFocusedFrameIndex = index;
+            const frames = liquidGlassTimeline.querySelectorAll('.liquid-frame');
+
+            frames.forEach((frame, i) => {
+                if (i === index) {
+                    frame.classList.add('focused');
+                } else {
+                    frame.classList.remove('focused');
+                }
+            });
+        }
+
+        // Global function for onclick
+        window.selectTimelineFrame = function(index) {
+            const frames = liquidGlassTimeline.querySelectorAll('.liquid-frame');
+            const targetFrame = frames[index];
+
+            if (targetFrame) {
+                // Scroll to center the frame
+                const container = liquidGlassTimeline;
+                const frameRect = targetFrame.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+
+                const scrollOffset = targetFrame.offsetLeft - (containerRect.width / 2) + (frameRect.width / 2);
+                container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+
+                updateFocusedFrame(index);
+
+                // Also set this frame as the selected frame for editing
+                if (allExtractedFrames[index]) {
+                    const frame = allExtractedFrames[index];
+                    state.selectedFrame = {
+                        index: index,
+                        base64: frame.base64,
+                        timestamp: frame.timestamp || formatTimestamp(frame.seconds)
+                    };
+                }
+            }
+        };
+
+        // Close timeline button
+        closeTimelineBtn.addEventListener('click', () => {
+            liquidGlassTimelineSection.classList.add('hidden');
+            allExtractedFrames = [];
+            liquidGlassTimeline.innerHTML = '';
         });
 
         // ==================== ページ初期化 ====================

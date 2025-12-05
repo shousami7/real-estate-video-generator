@@ -539,6 +539,9 @@ def extract_frames():
     try:
         data = request.get_json()
         video_path = data.get('video_path')
+        requested_frame_count = data.get('frame_count')
+        requested_fps = data.get('fps', 1)
+        max_frames = data.get('max_frames', 300)
 
         if not video_path:
             return jsonify({
@@ -570,7 +573,36 @@ def extract_frames():
         frames_dir = os.path.join('frames', session_id, 'editor')
 
         editor = FrameEditor(normalized_path, frames_dir)
-        frames = editor.extract_frames(frame_count=6)
+        video_duration = editor.get_video_duration()
+
+        frame_count = None
+        if requested_frame_count is not None:
+            try:
+                frame_count = int(requested_frame_count)
+            except (TypeError, ValueError):
+                frame_count = None
+
+        if frame_count is None:
+            try:
+                fps_value = float(requested_fps)
+            except (TypeError, ValueError):
+                fps_value = 1.0
+
+            if fps_value <= 0:
+                fps_value = 1.0
+
+            frame_count = int(video_duration * fps_value)
+
+        # Ensure at least one frame and apply safety cap
+        frame_count = max(1, frame_count)
+        try:
+            cap = int(max_frames)
+            if cap > 0:
+                frame_count = min(frame_count, cap)
+        except (TypeError, ValueError):
+            pass
+
+        frames = editor.extract_frames(frame_count=frame_count)
 
         # セッションにはパス情報のみ保存（base64データは除外）
         frames_for_session = [
@@ -578,7 +610,8 @@ def extract_frames():
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
                 "timestamp": frame['timestamp'],
-                "seconds": frame['seconds']
+                "seconds": frame['seconds'],
+                "name": frame.get('name')
                 # base64 は含まない
             }
             for frame in frames
@@ -819,43 +852,62 @@ def generate_video_from_image():
         logger.info(f"Image uploaded: {image_path}")
         logger.info(f"Prompt: {prompt}")
 
-        # Generate video using Demo mode (7 second delay)
+        # Generate video using VeoVideoGenerator
         # Note: AIFrameEditor is currently a demo/placeholder.
         # If it becomes real, pass project_id/location here.
-        ai_editor = AIFrameEditor()
+        
+        # Import veo_generator
+        from veo_generator import VeoVideoGenerator
+        
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "GOOGLE_API_KEY must be configured for Google AI Studio"
+            }), 500
 
-        # This will wait 7 seconds and return pre-saved demo video
-        logger.info("[DEMO] Starting 7-second simulated generation...")
-        demo_video_path = ai_editor.generate_video_from_image(
+        veo = VeoVideoGenerator(api_key=api_key)
+        
+        output_dir = os.path.join('output', session_id, 'generated')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        output_filename = f"generated_{int(datetime.now().timestamp())}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        logger.info(f"Starting video generation for: {image_path}")
+        
+        # Generate video
+        video_path = veo.generate_from_image_file(
             image_path=image_path,
             prompt=prompt,
-            output_path="",  # Not used in demo mode
-            duration=8
+            output_path=output_path,
+            duration="5s" # Default duration
         )
+
+        if not video_path or not os.path.exists(video_path):
+             return jsonify({
+                "status": "error",
+                "message": "Video generation failed"
+            }), 500
 
         # Store in session
         if 'generated_videos' not in session:
             session['generated_videos'] = []
-        session['generated_videos'].append(demo_video_path)
+        session['generated_videos'].append(video_path)
 
-        logger.info(f"[DEMO] Video ready: {demo_video_path}")
+        logger.info(f"Video generated: {video_path}")
 
-        # Return video URL (static file)
-        video_url = f"/{demo_video_path}"
+        # Return video URL
+        normalized_path = video_path.replace('\\', '/')
+        video_url = f"/{normalized_path}"
 
         return jsonify({
             "status": "success",
             "message": "Video generated successfully",
             "video_url": video_url,
-            "video_path": demo_video_path
+            "video_path": video_path
         })
 
-    except FileNotFoundError as e:
-        logger.error(f"Demo video not found: {e}")
-        return jsonify({
-            "status": "error",
-            "message": "Demo video file is missing. Please add parking_lot_demo.mp4 to static/demo_videos/"
-        }), 500
     except Exception as e:
         logger.error(f"Error generating video: {e}", exc_info=True)
         return jsonify({
@@ -869,6 +921,23 @@ def video_editor():
     """
     Load video editor UI
     """
+    # Clear session state on refresh/load to ensure fresh start
+    keys_to_clear = [
+        'editor_video', 
+        'editor_frames', 
+        'generated_videos', 
+        'chat_history', 
+        'latest_uploaded_image', 
+        'edited_frames',
+        'editor_frames_dir',
+        'editor_video_path'
+    ]
+    
+    for key in keys_to_clear:
+        if key in session:
+            session.pop(key)
+            
+    # Always ensure a session ID exists
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
 
@@ -2214,7 +2283,7 @@ def api_extract_frames():
         # Parse request data
         data = request.get_json() or {}
         video_id = data.get('video_id')
-        fps = data.get('fps', 2)
+        fps = data.get('fps', 1)
 
         # Validate video_id
         if not video_id:
@@ -2230,9 +2299,9 @@ def api_extract_frames():
         try:
             fps_value = int(fps)
             if fps_value < 1 or fps_value > 30:
-                fps_value = 2
+                fps_value = 1
         except (ValueError, TypeError):
-            fps_value = 2
+            fps_value = 1
 
         # Get scene manager and last scene
         scene_manager = SceneManager(video_id)
@@ -2265,7 +2334,7 @@ def api_extract_frames():
 
         # Calculate number of frames based on fps
         video_duration = get_video_duration(video_path)
-        frame_count = min(int(video_duration * fps_value), 100)  # Cap at 100 frames
+        frame_count = max(1, min(int(video_duration * fps_value), 100))  # Cap at 100 frames
 
         extracted_frames = frame_editor.extract_frames(frame_count=frame_count)
 
@@ -2275,6 +2344,7 @@ def api_extract_frames():
             frame_url = f"/frames/{video_id}/extracted/{os.path.basename(frame['path'])}"
             frames_response.append({
                 "index": frame['frame_id'],
+                "name": frame.get('name', f"extracted frame {frame['frame_id'] + 1}"),
                 "timestamp": frame['seconds'],
                 "url": frame_url
             })
