@@ -18,6 +18,7 @@ class CommandIntent(Enum):
     EXTEND = "extend"           # シーンを追加
     TRANSITION = "transition"   # 動画を繋げる
     FRAME_EDIT = "frame_edit"   # フレーム編集
+    ADJUST = "adjust"           # 画像をフレームに挿入
     UNKNOWN = "unknown"         # 不明なコマンド
 
 

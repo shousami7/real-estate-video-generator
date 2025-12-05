@@ -1159,6 +1159,7 @@ def editor_chat():
             video_mode = data.get('video_mode')
             image_file = None
             extend_metadata = data.get('extend_metadata')
+            adjust_metadata = data.get('adjust_metadata')
 
         # Validate extend_metadata structure if provided
         if extend_metadata:
@@ -1166,6 +1167,13 @@ def editor_chat():
             if not required_keys.issubset(set(extend_metadata.keys())):
                 logger.warning(f"Invalid extend_metadata structure: {extend_metadata.keys()}")
                 extend_metadata = None
+
+        # Validate adjust_metadata structure if provided
+        if adjust_metadata:
+            required_keys = {'video_slot_id', 'video_path', 'frame_index', 'frame_data', 'insert_image_base64'}
+            if not required_keys.issubset(set(adjust_metadata.keys())):
+                logger.warning(f"Invalid adjust_metadata structure: {adjust_metadata.keys()}")
+                adjust_metadata = None
 
         if not user_input:
             return jsonify({
