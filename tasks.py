@@ -425,7 +425,7 @@ def generate_video_from_chat_task(
     except Exception as exc:
         logger.exception(f"Video generation failed for {scene_id}")
         self.update_state(
-            state="FAILURE",
+            state="GENERATION_FAILED",
             meta={
                 "progress": 0,
                 "message": f"エラー: {str(exc)}",
@@ -676,7 +676,7 @@ def extend_scene_task(
     except Exception as exc:
         logger.exception(f"Scene extension failed for {scene_id}")
         self.update_state(
-            state="FAILURE",
+            state="GENERATION_FAILED",
             meta={
                 "progress": 0,
                 "message": f"エラー: {str(exc)}",
@@ -945,7 +945,7 @@ def frame_based_extend_task(
     except Exception as e:
         logger.error(f"[ERROR] Frame-based extend failed: {e}", exc_info=True)
         self.update_state(
-            state="FAILURE",
+            state="GENERATION_FAILED",
             meta=_task_meta(0, f"Error: {str(e)}", "extend", session_id, "ERROR")
         )
         
@@ -1122,7 +1122,7 @@ def merge_scenes_task(
     except Exception as exc:
         logger.exception(f"Scene merge failed for session {session_id}")
         self.update_state(
-            state="FAILURE",
+            state="GENERATION_FAILED",
             meta={
                 "progress": 0,
                 "message": f"エラー: {str(exc)}",

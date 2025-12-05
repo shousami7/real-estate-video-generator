@@ -303,6 +303,21 @@ def get_status():
         })
 
     if task_state == states.SUCCESS:
+        # Check for soft failure (error returned as result)
+        if meta.get('status') == 'error':
+            error_msg = meta.get('error') or meta.get('message', 'An unknown error occurred.')
+            session['generation_status'] = 'ERROR'
+            session['generation_error'] = error_msg
+            session['generation_progress'] = 0
+            session.modified = True
+            return jsonify({
+                "status": "ERROR",
+                "message": f"ERROR: {error_msg}",
+                "progress_percent": 0,
+                "video_id": video_id,
+                "stage": meta.get('stage') or stage,
+            })
+
         final_video = meta.get('final_video') or session.get('final_video')
         if final_video:
             session['final_video'] = final_video

@@ -628,6 +628,26 @@
             display: none !important;
         }
 
+        /* Payment modal */
+        .payment-overlay {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .payment-card {
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow:
+                0 30px 80px rgba(0, 0, 0, 0.55),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .payment-pill {
+            background: rgba(124, 58, 237, 0.12);
+            border: 1px solid rgba(168, 85, 247, 0.35);
+            color: #c084fc;
+        }
+
         /* Action Buttons */
         .sheet-actions {
             display: flex;
@@ -908,6 +928,11 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
+                <button id="payment-btn" type="button"
+                    class="flex min-w-[108px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gradient-to-r from-[#8b5cf6] via-[#a855f7] to-[#7c3aed] text-white text-sm font-bold leading-normal tracking-[0.015em] shadow-lg shadow-purple-500/30 hover:scale-[1.01] transition-transform">
+                    <span class="material-symbols-outlined mr-2 !text-base">credit_card</span>
+                    <span class="truncate">Payment</span>
+                </button>
                 <button id="export-btn"
                     class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
                     <span class="truncate">Export</span>
@@ -918,6 +943,67 @@
                 </button>
             </div>
         </header>
+
+        <!-- Payment Modal -->
+        <div id="payment-modal"
+            class="payment-overlay hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+                class="payment-card relative w-full max-w-3xl rounded-xl p-6 md:p-8 text-white">
+                <div class="flex items-start justify-between gap-4 mb-6">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.25em] text-gray-400 mb-1">Usage</p>
+                        <h3 class="text-xl font-semibold">Past Generation & Cost</h3>
+                        <p class="text-sm text-gray-400 mt-1">Requests counted on Google API calls</p>
+                    </div>
+                    <button id="close-payment-modal" type="button"
+                        class="size-9 inline-flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-gray-300">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                    <div class="rounded-lg border border-white/5 bg-white/5 p-4">
+                        <p class="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined !text-base text-purple-300">contract</span>
+                            Requests
+                        </p>
+                        <p id="payment-request-count" class="text-3xl font-bold">0</p>
+                        <p class="text-xs text-gray-500 mt-1">Total generation calls</p>
+                    </div>
+                    <div class="rounded-lg border border-white/5 bg-white/5 p-4">
+                        <p class="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined !text-base text-emerald-300">payments</span>
+                            Est. Cost
+                        </p>
+                        <p id="payment-cost-estimate" class="text-3xl font-bold">$0.00</p>
+                        <p class="text-xs text-gray-500 mt-1">Based on Google pricing</p>
+                    </div>
+                    <div class="rounded-lg border border-white/5 bg-white/5 p-4">
+                        <p class="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined !text-base text-blue-300">update</span>
+                            Last request
+                        </p>
+                        <p id="payment-last-request" class="text-lg font-semibold">—</p>
+                        <p class="text-xs text-gray-500 mt-1">Most recent completion</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between mb-3">
+                    <div class="inline-flex items-center gap-2 payment-pill px-3 py-1 rounded-full text-xs font-semibold">
+                        <span class="material-symbols-outlined !text-sm">history</span>
+                        Past generations
+                    </div>
+                    <a href="https://ai.google.dev/pricing" target="_blank"
+                        class="text-xs text-purple-300 hover:text-purple-200 underline decoration-dotted">
+                        View Google pricing
+                    </a>
+                </div>
+                <div id="payment-history-list"
+                    class="max-h-64 overflow-y-auto space-y-2 text-sm text-gray-200 border border-white/5 rounded-lg p-3 bg-black/30">
+                    <div class="text-gray-400 text-sm">No generation history yet.</div>
+                </div>
+            </div>
+        </div>
 
         <!-- Storage Status Banner -->
         <div id="storage-status-banner" class="storage-banner">
@@ -1138,6 +1224,7 @@
         const chatContainer = document.getElementById('chat-container');
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
+        const paymentBtn = document.getElementById('payment-btn');
         const exportBtn = document.getElementById('export-btn');
         const backBtn = document.getElementById('back-btn');
         const videoPlayer = document.getElementById('video-player');
@@ -1152,6 +1239,12 @@
         const previewImg = document.getElementById('preview-img');
         const removeImageBtn = document.getElementById('remove-image-btn');
         const selectFrameBtn = document.getElementById('select-frame-btn');
+        const paymentModal = document.getElementById('payment-modal');
+        const closePaymentModalBtn = document.getElementById('close-payment-modal');
+        const paymentRequestCount = document.getElementById('payment-request-count');
+        const paymentCostEstimate = document.getElementById('payment-cost-estimate');
+        const paymentLastRequest = document.getElementById('payment-last-request');
+        const paymentHistoryList = document.getElementById('payment-history-list');
         const dragOverlay = document.getElementById('drag-overlay');
         const videoModeBtn = document.getElementById('video-mode-btn');
         const videoModePopup = document.getElementById('video-mode-popup');
@@ -1161,6 +1254,97 @@
         // Allow chat input from the start (no frame selection required)
         chatInput.disabled = false;
         sendBtn.disabled = false;
+
+        // ==================== Usage & Payment Tracking ====================
+        const USAGE_STORAGE_KEY = 'veo-request-usage';
+        const COST_PER_REQUEST_USD = 0.45; // Update if Google pricing changes
+        let requestHistory = loadUsageHistory();
+
+        function loadUsageHistory() {
+            try {
+                const raw = localStorage.getItem(USAGE_STORAGE_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (err) {
+                console.warn('Failed to load usage history', err);
+                return [];
+            }
+        }
+
+        function saveUsageHistory(history) {
+            try {
+                localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(history.slice(0, 50)));
+            } catch (err) {
+                console.warn('Failed to save usage history', err);
+            }
+        }
+
+        function addUsageEntry(entry) {
+            requestHistory = [entry, ...requestHistory].slice(0, 50);
+            saveUsageHistory(requestHistory);
+            renderPaymentSummary();
+        }
+
+        function formatTimestamp(ts) {
+            const date = new Date(ts);
+            return date.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+        }
+
+        function renderPaymentSummary() {
+            const count = requestHistory.length;
+            const estCost = (count * COST_PER_REQUEST_USD).toFixed(2);
+            paymentRequestCount.textContent = count.toString();
+            paymentCostEstimate.textContent = `$${estCost}`;
+            paymentLastRequest.textContent = count ? formatTimestamp(requestHistory[0].timestamp) : '—';
+
+            paymentHistoryList.innerHTML = '';
+            if (!count) {
+                paymentHistoryList.innerHTML = '<div class="text-gray-400 text-sm">No generation history yet.</div>';
+                return;
+            }
+
+            requestHistory.forEach((item) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between gap-3 bg-white/5 rounded-lg px-3 py-2';
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined !text-base text-purple-200">${item.mode === 'Extend' ? 'movie_edit' : 'movie'}</span>
+                        <div>
+                            <div class="font-semibold">${item.mode || 'Generate'}</div>
+                            <div class="text-xs text-gray-400">${item.duration || 'N/A'} · ${formatTimestamp(item.timestamp)}</div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-300 payment-pill px-2 py-1 rounded-full border border-purple-500/40">
+                        +1 request
+                    </div>
+                `;
+                paymentHistoryList.appendChild(div);
+            });
+        }
+
+        function recordUsageFromSheet(sheet) {
+            if (!sheet) return;
+            const modeEl = sheet.querySelector('.field:first-child .non-editable');
+            const durationEl = sheet.querySelector('.field:nth-child(2) .editable-value');
+            const mode = modeEl ? modeEl.textContent.trim() : 'Generate';
+            const duration = durationEl ? durationEl.textContent.trim() : '';
+
+            addUsageEntry({
+                timestamp: Date.now(),
+                mode,
+                duration
+            });
+        }
+
+        function openPaymentModal() {
+            renderPaymentSummary();
+            paymentModal.classList.remove('hidden');
+        }
+
+        function closePaymentModal() {
+            paymentModal.classList.add('hidden');
+        }
 
         // ==================== SESSION PERSISTENCE & AUTO-SAVE ====================
         /**
@@ -3236,6 +3420,7 @@
             sheet.querySelector('.progress-section')?.remove();
 
             switchSheetToDownload(sheet, videoUrl);
+            recordUsageFromSheet(sheet);
 
             const completeHTML = `
                 <div class="complete-message">
@@ -3433,6 +3618,15 @@
                     exportBtn.disabled = false;
                     exportBtn.innerHTML = '<span class="truncate">Export</span>';
                 });
+        });
+
+        // ==================== Payment Modal ====================
+        paymentBtn.addEventListener('click', openPaymentModal);
+        closePaymentModalBtn.addEventListener('click', closePaymentModal);
+        paymentModal.addEventListener('click', (e) => {
+            if (e.target === paymentModal) {
+                closePaymentModal();
+            }
         });
 
         // ==================== バックボタン ====================

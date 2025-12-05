@@ -540,11 +540,31 @@ class VeoVideoGenerator:
         logger.info(f"Generating video with prompt: {prompt}")
 
         # Determine if we need image conditioning
-        file_obj = None
+        image_obj = None
         needs_reference = False
 
         if image_path is not None:
-            file_obj = self.upload_image(image_path)
+            # Read image file as bytes and create types.Image with mime_type
+            # generate_videos API requires bytesBase64Encoded and mimeType
+            logger.info(f"Loading image from file: {image_path}")
+            
+            # Determine mime type from file extension
+            ext = os.path.splitext(image_path)[1].lower()
+            mime_type_map = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".gif": "image/gif",
+                ".webp": "image/webp",
+            }
+            mime_type = mime_type_map.get(ext, "image/png")
+            
+            # Read image bytes
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+            
+            # Create types.Image with bytes and mime_type
+            image_obj = types.Image(image_bytes=image_bytes, mime_type=mime_type)
             needs_reference = True
 
         if previous_video is not None:
@@ -560,8 +580,8 @@ class VeoVideoGenerator:
         }
 
         # Add image reference if provided
-        if file_obj is not None:
-            request_kwargs["image"] = file_obj
+        if image_obj is not None:
+            request_kwargs["image"] = image_obj
 
         # Add previous video for scene extension
         if previous_video is not None:
@@ -590,50 +610,57 @@ class VeoVideoGenerator:
             )
 
             # The generate_videos API returns a long-running operation
-            # Wait for completion with polling
+            # Use operation.result() to wait for completion - it handles polling internally
             logger.info("Waiting for video generation to complete...")
 
-            # Poll for completion - video generation can take 2-5 minutes
-            poll_start = time.time()
             max_wait = 600  # 10 minute timeout
-            poll_interval = 10  # Check every 10 seconds
+            poll_start = time.time()
 
-            while True:
-                # Check if operation is done
-                if hasattr(operation, "done") and operation.done:
-                    break
+            try:
+                # operation.result() blocks until the operation is complete
+                # It internally polls the operation status and handles completion
                 if hasattr(operation, "result") and callable(operation.result):
-                    # Try to get result (may block or return immediately if done)
+                    # Log progress periodically using a background approach
+                    import threading
+                    
+                    stop_logging = threading.Event()
+                    
+                    def log_progress():
+                        while not stop_logging.is_set():
+                            elapsed = int(time.time() - poll_start)
+                            logger.info(f"Video generation in progress... (elapsed: {elapsed}s)")
+                            stop_logging.wait(timeout=10)
+                    
+                    # Start progress logging in background
+                    log_thread = threading.Thread(target=log_progress, daemon=True)
+                    log_thread.start()
+                    
                     try:
-                        result = operation.result(timeout=1)
+                        # This blocks until video generation is complete
+                        # The SDK handles all the internal polling
+                        result = operation.result(timeout=max_wait)
                         logger.info("Video generation operation finished")
                         return result
-                    except Exception:
-                        pass  # Not ready yet, continue polling
-
-                # Check timeout
-                if time.time() - poll_start > max_wait:
-                    raise TimeoutError(f"Video generation timed out after {max_wait} seconds")
-
-                logger.info(f"Video generation in progress... (elapsed: {int(time.time() - poll_start)}s)")
-                time.sleep(poll_interval)
-
-            # Check for errors in the completed operation
-            if hasattr(operation, "error") and operation.error:
-                error_msg = self._extract_operation_error_message(operation.error)
-                raise RuntimeError(f"Video generation failed: {error_msg}")
-
-            # Extract result
-            if hasattr(operation, "result"):
-                if callable(operation.result):
-                    result = operation.result()
-                else:
-                    result = operation.result
-                logger.info("Video generation operation finished")
-                return result
-
-            # Return operation itself if it's already the final response
-            return operation
+                    finally:
+                        stop_logging.set()
+                        log_thread.join(timeout=1)
+                
+                # Fallback: check if operation already has result as property
+                if hasattr(operation, "done") and operation.done:
+                    if hasattr(operation, "error") and operation.error:
+                        error_msg = self._extract_operation_error_message(operation.error)
+                        raise RuntimeError(f"Video generation failed: {error_msg}")
+                    
+                    if hasattr(operation, "result"):
+                        result = operation.result() if callable(operation.result) else operation.result
+                        logger.info("Video generation operation finished")
+                        return result
+                
+                # Return operation itself if it's the final response
+                return operation
+                
+            except TimeoutError:
+                raise TimeoutError(f"Video generation timed out after {max_wait} seconds")
 
         except Exception as e:
             config = RETRY_CONFIG["api_call"]
