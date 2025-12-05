@@ -1069,6 +1069,271 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* ===== Fullscreen Frame Timeline Mode ===== */
+        .fullscreen-timeline-mode {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: flex;
+            background: #0a0a0a;
+        }
+
+        .fullscreen-timeline-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .fullscreen-timeline-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid #374151;
+            background: #111827;
+        }
+
+        .fullscreen-timeline-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .fullscreen-timeline-title h2 {
+            color: white;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .fullscreen-timeline-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .fullscreen-frame-counter {
+            color: #9CA3AF;
+            font-size: 0.875rem;
+        }
+
+        .fullscreen-close-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #374151;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .fullscreen-close-btn:hover {
+            background: #4B5563;
+        }
+
+        /* Large preview area */
+        .fullscreen-preview-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            min-height: 0;
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0a 70%);
+        }
+
+        .fullscreen-preview-frame {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 16px;
+            box-shadow:
+                0 0 60px rgba(6, 182, 212, 0.3),
+                0 0 120px rgba(168, 85, 247, 0.15),
+                0 25px 50px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(6, 182, 212, 0.4);
+            transition: all 0.4s ease;
+        }
+
+        .fullscreen-preview-info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 24px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .fullscreen-preview-info span {
+            color: white;
+            font-size: 0.875rem;
+        }
+
+        .fullscreen-preview-info .frame-number {
+            color: #06B6D4;
+            font-weight: 600;
+        }
+
+        .fullscreen-preview-info .timestamp {
+            color: #A855F7;
+            font-family: monospace;
+        }
+
+        /* Bottom timeline strip */
+        .fullscreen-timeline-strip {
+            position: relative;
+            padding: 20px 0;
+            background: linear-gradient(to top, #111827 0%, #0a0a0a 100%);
+            border-top: 1px solid #374151;
+        }
+
+        .fullscreen-timeline-scroll {
+            display: flex;
+            gap: 16px;
+            padding: 0 calc(50% - 80px);
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .fullscreen-timeline-scroll::-webkit-scrollbar {
+            display: none;
+        }
+
+        .fullscreen-thumb {
+            flex-shrink: 0;
+            width: 160px;
+            aspect-ratio: 16 / 9;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            border: 2px solid transparent;
+            opacity: 0.5;
+        }
+
+        .fullscreen-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: filter 0.3s;
+        }
+
+        .fullscreen-thumb:hover {
+            opacity: 0.8;
+            transform: scale(1.05);
+        }
+
+        .fullscreen-thumb.active {
+            opacity: 1;
+            transform: scale(1.1);
+            border-color: #06B6D4;
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+        }
+
+        .fullscreen-thumb.active img {
+            filter: none;
+        }
+
+        .fullscreen-thumb:not(.active) img {
+            filter: brightness(0.7);
+        }
+
+        .fullscreen-thumb-info {
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 6px;
+            font-size: 10px;
+        }
+
+        .fullscreen-thumb-info span {
+            color: white;
+        }
+
+        /* Timeline fade edges */
+        .fullscreen-timeline-strip::before,
+        .fullscreen-timeline-strip::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 150px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .fullscreen-timeline-strip::before {
+            left: 0;
+            background: linear-gradient(to right, #0a0a0a 0%, transparent 100%);
+        }
+
+        .fullscreen-timeline-strip::after {
+            right: 420px;
+            background: linear-gradient(to left, #0a0a0a 0%, transparent 100%);
+        }
+
+        /* Center indicator for timeline */
+        .fullscreen-center-indicator {
+            position: absolute;
+            left: calc(50% - 210px);
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom,
+                transparent 0%,
+                #06B6D4 30%,
+                #A855F7 70%,
+                transparent 100%);
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* Chat panel in fullscreen mode */
+        .fullscreen-chat-panel {
+            width: 420px;
+            flex-shrink: 0;
+            background: #1a1a1a;
+            border-left: 1px solid #374151;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Keyboard navigation hint */
+        .keyboard-hint {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: #9CA3AF;
+        }
+
+        .keyboard-hint kbd {
+            padding: 2px 8px;
+            background: #374151;
+            border-radius: 4px;
+            font-family: monospace;
+            color: white;
+        }
     </style>
 </head>
 
@@ -1372,6 +1637,83 @@
                 </div>
             </aside>
         </main>
+
+        <!-- Fullscreen Frame Timeline Mode -->
+        <div id="fullscreen-timeline-mode" class="fullscreen-timeline-mode hidden">
+            <!-- Left: Main content area -->
+            <div class="fullscreen-timeline-content">
+                <!-- Header -->
+                <div class="fullscreen-timeline-header">
+                    <div class="fullscreen-timeline-title">
+                        <span class="material-symbols-outlined text-primary">auto_awesome</span>
+                        <h2>Frame Timeline</h2>
+                    </div>
+                    <div class="fullscreen-timeline-controls">
+                        <div class="keyboard-hint">
+                            <kbd>←</kbd><kbd>→</kbd> Navigate
+                            <kbd>ESC</kbd> Close
+                        </div>
+                        <span id="fullscreen-frame-counter" class="fullscreen-frame-counter">0 frames</span>
+                        <button id="fullscreen-close-btn" class="fullscreen-close-btn" title="Close (ESC)">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Large preview area -->
+                <div class="fullscreen-preview-area">
+                    <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                        <img id="fullscreen-preview-img" class="fullscreen-preview-frame" src="" alt="Selected Frame">
+                        <div class="fullscreen-preview-info">
+                            <span class="frame-number" id="fullscreen-current-frame">#1</span>
+                            <span class="timestamp" id="fullscreen-current-timestamp">0:00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom timeline strip -->
+                <div class="fullscreen-timeline-strip">
+                    <div class="fullscreen-center-indicator"></div>
+                    <div id="fullscreen-timeline-scroll" class="fullscreen-timeline-scroll">
+                        <!-- Thumbnails will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Chat panel (cloned structure) -->
+            <div class="fullscreen-chat-panel">
+                <!-- Edit Frame Button -->
+                <div class="p-4 border-b border-[#374151]">
+                    <button id="fullscreen-pick-frame-btn"
+                        class="flex w-full min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-primary text-black gap-2 text-base font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
+                        <span class="material-symbols-outlined !text-2xl">check_circle</span>
+                        <span class="truncate">Use This Frame</span>
+                    </button>
+                </div>
+
+                <!-- Chat Messages Area -->
+                <div class="flex-1 flex flex-col p-4 overflow-y-auto" id="fullscreen-chat-container">
+                    <div id="fullscreen-chat-placeholder" class="text-center text-gray-500 py-8">
+                        <span class="material-symbols-outlined text-6xl mb-2">photo_library</span>
+                        <p class="text-sm">Browse frames and select one to edit</p>
+                        <p class="text-xs text-gray-600 mt-2">Use arrow keys or scroll the timeline</p>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="p-4 border-t border-[#374151]">
+                    <div class="relative flex gap-2">
+                        <input id="fullscreen-chat-input"
+                            class="flex-1 h-12 bg-[#374151] text-gray-300 placeholder-gray-500 rounded-lg pl-4 pr-12 border-2 border-transparent focus:border-primary focus:ring-0 transition-colors"
+                            placeholder="Describe the edit for this frame..." type="text" />
+                        <button id="fullscreen-send-btn"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center size-8 bg-primary rounded-md text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span class="material-symbols-outlined !text-xl">arrow_upward</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -4353,8 +4695,21 @@
         const frameCounter = document.getElementById('frame-counter');
         const closeTimelineBtn = document.getElementById('close-timeline-btn');
 
+        // Fullscreen timeline elements
+        const fullscreenTimelineMode = document.getElementById('fullscreen-timeline-mode');
+        const fullscreenPreviewImg = document.getElementById('fullscreen-preview-img');
+        const fullscreenCurrentFrame = document.getElementById('fullscreen-current-frame');
+        const fullscreenCurrentTimestamp = document.getElementById('fullscreen-current-timestamp');
+        const fullscreenTimelineScroll = document.getElementById('fullscreen-timeline-scroll');
+        const fullscreenFrameCounter = document.getElementById('fullscreen-frame-counter');
+        const fullscreenCloseBtn = document.getElementById('fullscreen-close-btn');
+        const fullscreenPickFrameBtn = document.getElementById('fullscreen-pick-frame-btn');
+        const fullscreenChatInput = document.getElementById('fullscreen-chat-input');
+        const fullscreenSendBtn = document.getElementById('fullscreen-send-btn');
+
         let allExtractedFrames = [];
         let currentFocusedFrameIndex = 0;
+        let isFullscreenTimelineOpen = false;
 
         extractAllFramesBtn.addEventListener('click', async () => {
             // Find the first uploaded video
@@ -4395,16 +4750,9 @@
 
                 if (data.status === 'success' && data.frames && data.frames.length > 0) {
                     allExtractedFrames = data.frames;
-                    renderLiquidGlassTimeline(allExtractedFrames);
 
-                    // Show timeline section
-                    liquidGlassTimelineSection.classList.remove('hidden');
-
-                    // Update frame counter
-                    frameCounter.textContent = `${allExtractedFrames.length} frames`;
-
-                    // Initialize focus on first frame
-                    updateFocusedFrame(0);
+                    // Open fullscreen timeline mode instead of inline timeline
+                    openFullscreenTimeline(allExtractedFrames);
                 } else {
                     throw new Error(data.message || 'Failed to extract frames');
                 }
@@ -4416,6 +4764,216 @@
                 extractAllFramesBtn.classList.remove('loading');
                 extractAllFramesBtn.querySelector('span:first-child').textContent = 'auto_awesome';
                 extractAllFramesBtn.querySelector('span:last-child').textContent = 'Extract Frames';
+            }
+        });
+
+        // ==================== Fullscreen Timeline Functions ====================
+        function openFullscreenTimeline(frames) {
+            isFullscreenTimelineOpen = true;
+            currentFocusedFrameIndex = 0;
+
+            // Render thumbnails
+            fullscreenTimelineScroll.innerHTML = frames.map((frame, index) => `
+                <div class="fullscreen-thumb ${index === 0 ? 'active' : ''}"
+                     data-index="${index}"
+                     style="position: relative;"
+                     onclick="selectFullscreenFrame(${index})">
+                    <img src="${frame.base64}" alt="Frame ${index + 1}">
+                    <div class="fullscreen-thumb-info">
+                        <span>#${index + 1}</span>
+                        <span>${frame.timestamp || formatTimestamp(frame.seconds)}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Update frame counter
+            fullscreenFrameCounter.textContent = `${frames.length} frames`;
+
+            // Show first frame in preview
+            updateFullscreenPreview(0);
+
+            // Show fullscreen mode
+            fullscreenTimelineMode.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Add keyboard listener
+            document.addEventListener('keydown', handleFullscreenKeyboard);
+
+            // Add scroll listener for timeline
+            fullscreenTimelineScroll.addEventListener('scroll', handleFullscreenTimelineScroll);
+        }
+
+        function closeFullscreenTimeline() {
+            isFullscreenTimelineOpen = false;
+            fullscreenTimelineMode.classList.add('hidden');
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', handleFullscreenKeyboard);
+            fullscreenTimelineScroll.removeEventListener('scroll', handleFullscreenTimelineScroll);
+        }
+
+        function updateFullscreenPreview(index) {
+            if (!allExtractedFrames[index]) return;
+
+            const frame = allExtractedFrames[index];
+            currentFocusedFrameIndex = index;
+
+            // Update large preview
+            fullscreenPreviewImg.src = frame.base64;
+            fullscreenCurrentFrame.textContent = `#${index + 1}`;
+            fullscreenCurrentTimestamp.textContent = frame.timestamp || formatTimestamp(frame.seconds);
+
+            // Update thumbnail active states
+            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            thumbs.forEach((thumb, i) => {
+                if (i === index) {
+                    thumb.classList.add('active');
+                } else {
+                    thumb.classList.remove('active');
+                }
+            });
+
+            // Update state.selectedFrame for potential editing
+            state.selectedFrame = {
+                index: index,
+                base64: frame.base64,
+                timestamp: frame.timestamp || formatTimestamp(frame.seconds)
+            };
+        }
+
+        function scrollToFullscreenThumb(index) {
+            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            const targetThumb = thumbs[index];
+            if (!targetThumb) return;
+
+            const container = fullscreenTimelineScroll;
+            const containerRect = container.getBoundingClientRect();
+            const thumbRect = targetThumb.getBoundingClientRect();
+
+            const scrollOffset = targetThumb.offsetLeft - (containerRect.width / 2) + (thumbRect.width / 2);
+            container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+        }
+
+        function handleFullscreenKeyboard(e) {
+            if (!isFullscreenTimelineOpen) return;
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    if (currentFocusedFrameIndex > 0) {
+                        updateFullscreenPreview(currentFocusedFrameIndex - 1);
+                        scrollToFullscreenThumb(currentFocusedFrameIndex);
+                    }
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
+                        updateFullscreenPreview(currentFocusedFrameIndex + 1);
+                        scrollToFullscreenThumb(currentFocusedFrameIndex);
+                    }
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    closeFullscreenTimeline();
+                    break;
+                case 'Enter':
+                    if (document.activeElement !== fullscreenChatInput) {
+                        e.preventDefault();
+                        // Use current frame (same as clicking "Use This Frame")
+                        useSelectedFullscreenFrame();
+                    }
+                    break;
+            }
+        }
+
+        function handleFullscreenTimelineScroll() {
+            const container = fullscreenTimelineScroll;
+            const containerRect = container.getBoundingClientRect();
+            const containerCenter = containerRect.left + containerRect.width / 2;
+
+            const thumbs = container.querySelectorAll('.fullscreen-thumb');
+            let closestIndex = 0;
+            let closestDistance = Infinity;
+
+            thumbs.forEach((thumb, index) => {
+                const thumbRect = thumb.getBoundingClientRect();
+                const thumbCenter = thumbRect.left + thumbRect.width / 2;
+                const distance = Math.abs(thumbCenter - containerCenter);
+
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            if (closestIndex !== currentFocusedFrameIndex) {
+                updateFullscreenPreview(closestIndex);
+            }
+        }
+
+        function useSelectedFullscreenFrame() {
+            if (!state.selectedFrame) return;
+
+            // Close fullscreen and set up for editing
+            closeFullscreenTimeline();
+
+            // Enable the edit button in main UI
+            const pickFrameBtn = document.getElementById('pick-frame-btn');
+            if (pickFrameBtn) {
+                pickFrameBtn.disabled = false;
+            }
+
+            // Show selected frame indicator in chat
+            showSelectedFrameInChat(state.selectedFrame);
+        }
+
+        function showSelectedFrameInChat(frame) {
+            const placeholder = document.getElementById('chat-placeholder');
+            if (placeholder) {
+                placeholder.innerHTML = `
+                    <div class="selected-frame-indicator">
+                        <div class="selected-frame-thumbnail" style="background-image: url('${frame.base64}')"></div>
+                        <div class="selected-frame-info">
+                            <div class="selected-frame-title">Frame ${frame.index + 1} Selected</div>
+                            <div class="selected-frame-timestamp">${frame.timestamp}</div>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-400 mt-2">Type a prompt to edit this frame with AI</p>
+                `;
+            }
+        }
+
+        // Global function for onclick
+        window.selectFullscreenFrame = function(index) {
+            updateFullscreenPreview(index);
+            scrollToFullscreenThumb(index);
+        };
+
+        // Close button event
+        fullscreenCloseBtn.addEventListener('click', closeFullscreenTimeline);
+
+        // "Use This Frame" button
+        fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
+
+        // Chat input in fullscreen mode - forward to main chat
+        fullscreenSendBtn.addEventListener('click', () => {
+            const message = fullscreenChatInput.value.trim();
+            if (!message) return;
+
+            // Transfer to main chat input and trigger send
+            chatInput.value = message;
+            fullscreenChatInput.value = '';
+
+            // Close fullscreen first
+            closeFullscreenTimeline();
+
+            // Trigger the main send button
+            sendBtn.click();
+        });
+
+        fullscreenChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                fullscreenSendBtn.click();
             }
         });
 

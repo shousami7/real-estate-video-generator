@@ -1226,6 +1226,288 @@ def merge_scenes_task(
         return error_result
 
 
+@celery.task(bind=True, name="tasks.adjust_video_task")
+def adjust_video_task(
+    self,
+    session_id: str,
+    scene_id: str,
+    source_video_path: str,
+    frame_timestamp: float,
+    insert_image_path: str,
+    insert_duration: float = 3.0
+) -> Dict[str, Any]:
+    """
+    ⑤ Adjust Mode Task - Insert image into video at specified frame
+
+    This task:
+    1. Splits the source video at the frame timestamp
+    2. Creates a video clip from the uploaded image
+    3. Concatenates: part1 + image_video + part2
+
+    Args:
+        session_id: Session ID
+        scene_id: Scene ID for the result
+        source_video_path: Path to the source video file
+        frame_timestamp: Timestamp in seconds where to insert
+        insert_image_path: Path to the image to insert
+        insert_duration: Duration in seconds for the inserted image (default 3s)
+
+    Returns:
+        Task response with adjusted video path and URL
+    """
+    logger.info(
+        f"[ADJUST] Starting adjust task: session_id={session_id}, "
+        f"scene_id={scene_id}, frame_timestamp={frame_timestamp}s"
+    )
+
+    temp_dir = None
+
+    try:
+        # Validate inputs
+        frame_ts_value = float(frame_timestamp)
+        if frame_ts_value < 0:
+            raise ValueError(f"Invalid frame_timestamp: {frame_timestamp}")
+
+        # Normalize source video path
+        normalized_source = source_video_path
+        if normalized_source.startswith("uploads/") or normalized_source.startswith("/uploads/"):
+            project_root = os.path.dirname(LOCAL_UPLOAD_ROOT)
+            if normalized_source.startswith("/"):
+                normalized_source = normalized_source[1:]
+            normalized_source = os.path.join(project_root, normalized_source)
+        elif not os.path.isabs(normalized_source):
+            normalized_source = os.path.join(LOCAL_UPLOAD_ROOT, source_video_path)
+
+        if not os.path.exists(normalized_source):
+            raise FileNotFoundError(f"Source video not found: {normalized_source}")
+
+        if not os.path.exists(insert_image_path):
+            raise FileNotFoundError(f"Insert image not found: {insert_image_path}")
+
+        # Create temp directory
+        temp_dir = os.path.join(LOCAL_UPLOAD_ROOT, session_id, "temp", f"adjust_{scene_id}")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Get source video duration
+        source_duration = get_video_duration(normalized_source)
+        if frame_ts_value >= source_duration:
+            raise ValueError(f"Frame timestamp {frame_ts_value}s exceeds video duration {source_duration}s")
+
+        # === Step 1: Split source video at timestamp ===
+        self.update_state(
+            state="SPLITTING",
+            meta=_task_meta(10, "Splitting video at selected frame...", "adjust", session_id, "SPLITTING")
+        )
+
+        part1_path = os.path.join(temp_dir, "part1.mp4")
+        part2_path = os.path.join(temp_dir, "part2.mp4")
+
+        # Part 1: from start to timestamp
+        if frame_ts_value > 0:
+            split1_cmd = [
+                "ffmpeg", "-y",
+                "-i", normalized_source,
+                "-t", str(frame_ts_value),
+                "-c:v", "libx264", "-c:a", "aac",
+                "-preset", "fast",
+                part1_path
+            ]
+            logger.info(f"[SPLIT1] Command: {' '.join(split1_cmd)}")
+            subprocess.run(split1_cmd, capture_output=True, text=True, timeout=120, check=True)
+
+        # Part 2: from timestamp to end
+        remaining_duration = source_duration - frame_ts_value
+        if remaining_duration > 0.1:  # Only if there's meaningful content after
+            split2_cmd = [
+                "ffmpeg", "-y",
+                "-i", normalized_source,
+                "-ss", str(frame_ts_value),
+                "-c:v", "libx264", "-c:a", "aac",
+                "-preset", "fast",
+                part2_path
+            ]
+            logger.info(f"[SPLIT2] Command: {' '.join(split2_cmd)}")
+            subprocess.run(split2_cmd, capture_output=True, text=True, timeout=120, check=True)
+
+        # === Step 2: Create video from image ===
+        self.update_state(
+            state="CREATING_IMAGE_VIDEO",
+            meta=_task_meta(40, "Creating video clip from image...", "adjust", session_id, "CREATING_IMAGE_VIDEO")
+        )
+
+        image_video_path = os.path.join(temp_dir, "image_video.mp4")
+
+        # Get video resolution from source
+        probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                     normalized_source]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        if probe_result.returncode == 0 and probe_result.stdout.strip():
+            dimensions = probe_result.stdout.strip().split(',')
+            width, height = int(dimensions[0]), int(dimensions[1])
+        else:
+            width, height = 1280, 720  # Default to 720p
+
+        # Create video from image with same resolution
+        image_to_video_cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", insert_image_path,
+            "-c:v", "libx264",
+            "-t", str(insert_duration),
+            "-pix_fmt", "yuv420p",
+            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+            "-preset", "fast",
+            image_video_path
+        ]
+        logger.info(f"[IMAGE_VIDEO] Command: {' '.join(image_to_video_cmd)}")
+        subprocess.run(image_to_video_cmd, capture_output=True, text=True, timeout=60, check=True)
+
+        if not os.path.exists(image_video_path):
+            raise RuntimeError("Failed to create video from image")
+
+        # === Step 3: Concatenate all parts ===
+        self.update_state(
+            state="CONCATENATING",
+            meta=_task_meta(70, "Concatenating video segments...", "adjust", session_id, "CONCATENATING")
+        )
+
+        # Build concat file list
+        concat_list_path = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_list_path, 'w') as f:
+            if frame_ts_value > 0 and os.path.exists(part1_path):
+                f.write(f"file '{part1_path}'\n")
+            f.write(f"file '{image_video_path}'\n")
+            if remaining_duration > 0.1 and os.path.exists(part2_path):
+                f.write(f"file '{part2_path}'\n")
+
+        adjusted_video_path = os.path.join(temp_dir, "adjusted.mp4")
+
+        concat_cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_list_path,
+            "-c:v", "libx264", "-c:a", "aac",
+            "-preset", "fast",
+            adjusted_video_path
+        ]
+        logger.info(f"[CONCAT] Command: {' '.join(concat_cmd)}")
+        subprocess.run(concat_cmd, capture_output=True, text=True, timeout=300, check=True)
+
+        if not os.path.exists(adjusted_video_path):
+            raise RuntimeError("Failed to create adjusted video")
+
+        # === Step 4: Move to final location and upload ===
+        self.update_state(
+            state="UPLOADING",
+            meta=_task_meta(90, "Saving adjusted video...", "adjust", session_id, "UPLOADING")
+        )
+
+        final_duration = get_video_duration(adjusted_video_path)
+        timestamp = int(final_duration * 1000)
+        output_filename = f"adjusted_{scene_id}_{timestamp}.mp4"
+        storage_path = build_storage_path(session_id, "output", output_filename)
+        final_path = os.path.join(LOCAL_UPLOAD_ROOT, storage_path)
+        os.makedirs(os.path.dirname(final_path), exist_ok=True)
+
+        shutil.move(adjusted_video_path, final_path)
+
+        video_url = f"/uploads/local/{storage_path}"
+        if is_supabase_configured():
+            try:
+                video_url_result, upload_error = upload_video_file(
+                    local_path=final_path,
+                    video_id=session_id,
+                    filename=output_filename,
+                    folder="output",
+                )
+                if video_url_result:
+                    video_url = video_url_result
+            except Exception as e:
+                logger.warning(f"[ADJUST] Supabase upload failed, using local: {e}")
+
+        # === Step 5: Save scene ===
+        scene_manager = SceneManager(session_id)
+        scene_manager.add_scene(
+            scene_id=scene_id,
+            video_path=final_path,
+            video_url=video_url,
+            duration=final_duration,
+            prompt=f"Adjusted video with image insert at {frame_ts_value}s",
+            metadata={
+                "type": "adjust",
+                "source_video": source_video_path,
+                "frame_timestamp": frame_ts_value,
+                "insert_duration": insert_duration,
+                "final_duration": final_duration
+            }
+        )
+
+        logger.info(
+            f"[COMPLETE] Adjust task: scene_id={scene_id}, "
+            f"duration={final_duration}s, url={video_url}"
+        )
+
+        result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="adjust",
+            status="completed",
+            output_url=video_url,
+            local_path=final_path,
+        )
+
+        result.update({
+            "scene_id": scene_id,
+            "video_path": storage_path,
+            "duration": final_duration,
+            "metadata": {
+                "type": "adjust",
+                "frame_timestamp": frame_ts_value,
+                "insert_duration": insert_duration,
+                "final_duration": final_duration
+            }
+        })
+
+        if is_supabase_configured():
+            try:
+                upload_log_file(result, session_id, self.request.id)
+            except Exception:
+                pass
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[ADJUST ERROR] Task failed: {e}", exc_info=True)
+        self.update_state(
+            state="GENERATION_FAILED",
+            meta=_task_meta(0, f"Error: {str(e)}", "adjust", session_id, "ERROR")
+        )
+
+        error_result = build_task_response(
+            task_id=self.request.id,
+            video_id=session_id,
+            stage="adjust",
+            status="error",
+            error=str(e),
+        )
+
+        if is_supabase_configured():
+            try:
+                upload_log_file(error_result, session_id, self.request.id)
+            except Exception:
+                pass
+
+        return error_result
+
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as cleanup_error:
+                logger.warning(f"[CLEANUP] Failed to remove temp directory: {cleanup_error}")
+
+
 def _configure_veo_auth() -> Dict[str, Any]:
     """
     Configure Veo authentication (Google AI Studio).
@@ -1433,3 +1715,4 @@ task_extend_video = extend_scene_task
 task_stitch_videos = merge_scenes_task
 task_extract_frames = extract_frames_task
 task_edit_frame = edit_frame_task
+task_adjust_video = adjust_video_task

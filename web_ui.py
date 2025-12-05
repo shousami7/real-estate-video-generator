@@ -1266,6 +1266,9 @@ def editor_chat():
             elif intent == CommandIntent.FRAME_EDIT:
                 result = _handle_frame_edit(params, scene_manager, session_id)
 
+            elif intent == CommandIntent.ADJUST:
+                result = _handle_adjust_video(params, scene_manager, session_id, adjust_metadata)
+
             else:
                 result = {
                     "status": "error",
@@ -3032,6 +3035,118 @@ def _handle_scene_to_scene_extend(
             "status": "error",
             "message": "シーン拡張機能は現在開発中です。tasks.pyにextend_scene_taskを実装してください。",
             "intent": "extend"
+        }
+
+
+def _handle_adjust_video(
+    params: Dict[str, Any],
+    scene_manager: SceneManager,
+    session_id: str,
+    adjust_metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    ⑤ Adjust Mode - Insert image into video at specified frame
+
+    Args:
+        params: コマンドパラメータ
+        scene_manager: SceneManagerインスタンス
+        session_id: セッションID
+        adjust_metadata: Frame selection and image data
+            - video_slot_id: int
+            - video_path: str
+            - frame_index: int
+            - frame_data: dict (timestamp, seconds, base64, path)
+            - insert_image_base64: str
+
+    Returns:
+        処理結果
+    """
+    logger.info(f"Handling ADJUST command: {params}")
+
+    if not adjust_metadata:
+        return {
+            "status": "error",
+            "message": "Adjust mode requires frame selection and image upload. Please use the Adjust mode flow.",
+            "intent": "adjust"
+        }
+
+    try:
+        video_slot_id = adjust_metadata.get('video_slot_id')
+        video_path = adjust_metadata.get('video_path')
+        frame_index = adjust_metadata.get('frame_index')
+        frame_data = adjust_metadata.get('frame_data') or {}
+        insert_image_base64 = adjust_metadata.get('insert_image_base64')
+
+        if video_path is None or frame_index is None or not frame_data or not insert_image_base64:
+            raise ValueError("Invalid adjust metadata - missing required fields")
+
+        # Save the uploaded image to disk
+        import base64
+        upload_dir = os.path.join('uploads', session_id, 'adjust')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        # Extract base64 data (remove data URL prefix if present)
+        if ',' in insert_image_base64:
+            image_data = insert_image_base64.split(',')[1]
+        else:
+            image_data = insert_image_base64
+
+        image_bytes = base64.b64decode(image_data)
+        image_filename = f"insert_image_{int(datetime.now().timestamp())}.jpg"
+        image_path = os.path.join(upload_dir, image_filename)
+
+        with open(image_path, 'wb') as f:
+            f.write(image_bytes)
+
+        logger.info(f"Saved insert image to: {image_path}")
+
+        # Generate scene ID
+        scene_id = scene_manager.generate_next_scene_id()
+
+        # Create plan sheet for UI display
+        plan_sheet = {
+            "mode": "Adjust",
+            "insert_duration": 3,  # Default 3 seconds for inserted image
+            "task_id": None,  # Task not started yet
+            "source_video": {
+                "slot_id": video_slot_id,
+                "video_path": video_path,
+                "video_url": adjust_metadata.get('video_url'),
+                "thumbnail": adjust_metadata.get('video_thumbnail')
+            },
+            "selected_frame": {
+                "frame_id": frame_index,
+                "timestamp": frame_data.get('timestamp'),
+                "seconds": frame_data.get('seconds'),
+                "thumbnail": frame_data.get('base64'),
+                "frame_path": frame_data.get('path')
+            },
+            "insert_image": {
+                "path": image_path,
+                "thumbnail": insert_image_base64[:200] + '...' if len(insert_image_base64) > 200 else insert_image_base64
+            },
+            "pending_confirmation": True
+        }
+
+        return {
+            "status": "pending_confirmation",
+            "task_id": None,
+            "scene_id": scene_id,
+            "message": f"Ready to insert image at frame {frame_index + 1} ({frame_data.get('timestamp')}). Click 'Confirm' to process.",
+            "intent": "adjust",
+            "data": {
+                "task_id": None,
+                "video_id": session_id,
+                "plan_sheet": plan_sheet
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Adjust video error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Failed to process adjust request: {str(e)}",
+            "intent": "adjust"
         }
 
 
