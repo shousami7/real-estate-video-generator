@@ -86,17 +86,18 @@ class FrameEditor:
         # Let exceptions propagate - returning 0.0 causes confusing errors downstream
         return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
 
-    def extract_frames(self, frame_count: int = 6) -> List[Dict[str, Any]]:
+    def extract_frames(self, frame_count: int = None, fps: float = 5.0) -> List[Dict[str, Any]]:
         """
         Extract frames from video at regular intervals
 
         Args:
-            frame_count: Number of frames to extract
+            frame_count: Number of frames to extract (legacy, ignored if fps is set)
+            fps: Frames per second to extract (default: 5.0 for smooth video-like navigation)
 
         Returns:
             List of frame information (path, timestamp, base64)
         """
-        logger.debug(f"Extracting {frame_count} frames from video...")
+        logger.debug(f"Extracting frames at {fps} fps from video...")
 
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
@@ -107,12 +108,13 @@ class FrameEditor:
         if duration <= 0:
             raise RuntimeError(f"Invalid video duration: {duration}")
 
-        frame_count = max(1, int(frame_count))
-        interval = duration / frame_count
+        # Calculate frame count based on fps (3 frames per second)
+        interval = 1.0 / fps  # e.g., 0.333 seconds for 3 fps
+        actual_frame_count = max(1, int(duration * fps))
         self.frames = []
 
-        for i in range(frame_count):
-            timestamp = interval * (i + 1)
+        for i in range(actual_frame_count):
+            timestamp = interval * i  # Start from 0, not interval
             # Avoid requesting a frame exactly at the video end when using integer math
             if timestamp >= duration:
                 timestamp = max(duration - 0.001, 0)
@@ -172,19 +174,17 @@ class FrameEditor:
 
     def _format_timestamp(self, seconds: float) -> str:
         """
-        Format seconds to MM:SS format
+        Format seconds to MM:SS.d format (with tenths for 3fps precision)
 
         Args:
             seconds: Time in seconds
 
         Returns:
-            Formatted timestamp string
+            Formatted timestamp string (e.g., "0:01.3")
         """
-        td = timedelta(seconds=seconds)
-        total_seconds = int(td.total_seconds())
-        minutes = total_seconds // 60
-        secs = total_seconds % 60
-        return f"{minutes}:{secs:02d}"
+        minutes = int(seconds // 60)
+        secs = seconds % 60
+        return f"{minutes}:{secs:04.1f}"
 
     def _image_to_base64(self, image_path: str) -> str:
         """

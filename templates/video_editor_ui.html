@@ -901,21 +901,30 @@
             }
         }
 
-        /* Liquid Glass Frame Timeline Styles */
+        /* Liquid Glass Frame Timeline Styles - Carousel Mode */
         .liquid-glass-timeline-container {
             position: relative;
             width: 100%;
+            height: 70vh;
+            /* Much larger - takes most of screen */
             overflow: hidden;
+            display: flex;
+            align-items: center;
         }
 
         .liquid-glass-timeline {
             display: flex;
-            gap: 24px;
-            padding: 20px 50%;
+            gap: 12px;
+            /* Closer gap for continuous strip feel */
+            padding: 0 50%;
             overflow-x: auto;
             scroll-behavior: smooth;
             scrollbar-width: none;
             -ms-overflow-style: none;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            height: 100%;
+            align-items: center;
         }
 
         .liquid-glass-timeline::-webkit-scrollbar {
@@ -924,21 +933,33 @@
 
         .liquid-frame {
             flex-shrink: 0;
-            width: 180px;
+            width: 240px;
             aspect-ratio: 16 / 9;
             position: relative;
-            border-radius: 16px;
+            border-radius: 12px;
             overflow: hidden;
             cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            transform-origin: center;
+            scroll-snap-align: center;
+            opacity: 0.7;
+            /* More visible */
+            transform: scale(0.9);
+            /* Larger side frames */
+            filter: brightness(0.85);
+            /* Brighter side frames */
+            /* Smooth transitions for focus changes */
+            transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+                filter 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform, opacity;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            /* Add depth */
         }
 
         .liquid-frame img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: filter 0.4s ease;
+            /* NO transitions */
         }
 
         .liquid-frame::before {
@@ -949,7 +970,7 @@
                     rgba(255, 255, 255, 0.1) 0%,
                     rgba(255, 255, 255, 0.05) 50%,
                     rgba(0, 0, 0, 0.1) 100%);
-            border-radius: 16px;
+            border-radius: 12px;
             pointer-events: none;
             z-index: 1;
         }
@@ -958,32 +979,24 @@
             content: '';
             position: absolute;
             inset: 0;
-            border-radius: 16px;
+            border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             pointer-events: none;
             z-index: 2;
         }
 
+        /* FOCUSED FRAME - Large and centered */
         .liquid-frame.focused {
-            transform: scale(1.15);
-            box-shadow:
-                0 0 40px rgba(6, 182, 212, 0.4),
-                0 0 80px rgba(168, 85, 247, 0.2),
-                0 20px 40px rgba(0, 0, 0, 0.4);
+            transform: scale(1.05);
+            opacity: 1;
+            filter: brightness(1);
+            z-index: 10;
         }
 
+        /* Simple focus: just a border, no heavy effects */
         .liquid-frame.focused::after {
-            border: 2px solid rgba(6, 182, 212, 0.6);
-            box-shadow: inset 0 0 20px rgba(6, 182, 212, 0.1);
-        }
-
-        .liquid-frame:not(.focused) {
-            opacity: 0.6;
-            filter: blur(1px);
-        }
-
-        .liquid-frame:not(.focused) img {
-            filter: brightness(0.7) saturate(0.8);
+            border: 3px solid #06B6D4;
+            box-shadow: 0 0 30px rgba(6, 182, 212, 0.5);
         }
 
         .liquid-frame-info {
@@ -991,27 +1004,25 @@
             bottom: 0;
             left: 0;
             right: 0;
-            padding: 8px 12px;
-            background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+            padding: 4px 8px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, transparent 100%);
             z-index: 3;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
         }
 
         .liquid-frame-index {
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
-            background: rgba(6, 182, 212, 0.3);
-            padding: 2px 8px;
-            border-radius: 4px;
+            display: none;
+            /* Hide index for dense 3fps frames */
         }
 
         .liquid-frame-timestamp {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 11px;
-            font-family: monospace;
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 10px;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-weight: 500;
+            letter-spacing: 0.5px;
         }
 
         .timeline-fade-left,
@@ -1019,7 +1030,8 @@
             position: absolute;
             top: 0;
             bottom: 0;
-            width: 100px;
+            width: 80px;
+            /* Reduced from 100px to show more side frames */
             pointer-events: none;
             z-index: 10;
         }
@@ -1156,7 +1168,14 @@
                 0 0 120px rgba(168, 85, 247, 0.15),
                 0 25px 50px rgba(0, 0, 0, 0.5);
             border: 2px solid rgba(6, 182, 212, 0.4);
-            transition: all 0.4s ease;
+            opacity: 1;
+            transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease;
+        }
+
+        .fullscreen-preview-frame.is-updating {
+            opacity: 0.35;
+            transform: scale(0.985);
+            filter: blur(0.4px);
         }
 
         .fullscreen-preview-info {
@@ -1191,10 +1210,8 @@
 
         /* Bottom timeline strip */
         .fullscreen-timeline-strip {
-            position: relative;
-            padding: 20px 0;
-            background: linear-gradient(to top, #111827 0%, #0a0a0a 100%);
-            border-top: 1px solid #374151;
+            display: none;
+            /* Hidden per user request */
         }
 
         .fullscreen-timeline-scroll {
@@ -1205,6 +1222,9 @@
             scroll-behavior: smooth;
             scrollbar-width: none;
             -ms-overflow-style: none;
+            scroll-snap-type: x mandatory;
+            scroll-padding-left: calc(50% - 80px);
+            scroll-padding-right: calc(50% - 80px);
         }
 
         .fullscreen-timeline-scroll::-webkit-scrollbar {
@@ -1221,6 +1241,8 @@
             transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
             border: 2px solid transparent;
             opacity: 0.5;
+            scroll-snap-align: center;
+            scroll-snap-stop: always;
         }
 
         .fullscreen-thumb img {
@@ -1292,15 +1314,16 @@
         /* Center indicator for timeline */
         .fullscreen-center-indicator {
             position: absolute;
-            left: calc(50% - 210px);
+            left: 50%;
             top: 0;
             bottom: 0;
             width: 3px;
+            transform: translateX(-50%);
             background: linear-gradient(to bottom,
-                transparent 0%,
-                #06B6D4 30%,
-                #A855F7 70%,
-                transparent 100%);
+                    transparent 0%,
+                    #06B6D4 30%,
+                    #A855F7 70%,
+                    transparent 100%);
             z-index: 5;
             pointer-events: none;
         }
@@ -1544,6 +1567,14 @@
                     </div>
                     <!-- Horizontal scrollable timeline -->
                     <div class="liquid-glass-timeline-container">
+                        <!-- Frame counter badge (top-left) -->
+                        <div id="current-frame-badge"
+                            class="absolute top-4 left-4 z-20 px-4 py-2 bg-black/70 backdrop-blur-sm rounded-lg border border-cyan-500/30">
+                            <span class="text-cyan-400 font-bold text-lg" id="current-frame-number">#1</span>
+                            <span class="text-gray-400 text-sm ml-1">/</span>
+                            <span class="text-gray-400 text-sm ml-1" id="total-frames-count">0</span>
+                        </div>
+
                         <div class="liquid-glass-timeline" id="liquid-glass-timeline">
                             <!-- Frames will be inserted here by JS -->
                         </div>
@@ -1662,7 +1693,8 @@
 
                 <!-- Large preview area -->
                 <div class="fullscreen-preview-area">
-                    <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                    <div
+                        style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
                         <img id="fullscreen-preview-img" class="fullscreen-preview-frame" src="" alt="Selected Frame">
                         <div class="fullscreen-preview-info">
                             <span class="frame-number" id="fullscreen-current-frame">#1</span>
@@ -4710,6 +4742,10 @@
         let allExtractedFrames = [];
         let currentFocusedFrameIndex = 0;
         let isFullscreenTimelineOpen = false;
+        let fullscreenScrollRaf = null;
+        let fullscreenScrollSettleTimeout = null;
+        let pendingScrollIndex = null;
+        let previewSwapToken = 0;
 
         extractAllFramesBtn.addEventListener('click', async () => {
             // Find the first uploaded video
@@ -4809,35 +4845,60 @@
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleFullscreenKeyboard);
             fullscreenTimelineScroll.removeEventListener('scroll', handleFullscreenTimelineScroll);
+            if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
+            if (fullscreenScrollSettleTimeout) clearTimeout(fullscreenScrollSettleTimeout);
+            fullscreenScrollRaf = null;
+            fullscreenScrollSettleTimeout = null;
+            pendingScrollIndex = null;
         }
 
         function updateFullscreenPreview(index) {
             if (!allExtractedFrames[index]) return;
 
             const frame = allExtractedFrames[index];
+            const alreadyShowing = fullscreenPreviewImg.dataset.index === String(index);
             currentFocusedFrameIndex = index;
 
-            // Update large preview
-            fullscreenPreviewImg.src = frame.base64;
+            if (!alreadyShowing) {
+                const swapId = ++previewSwapToken;
+                fullscreenPreviewImg.classList.add('is-updating');
+
+                const handleLoad = () => {
+                    if (swapId !== previewSwapToken) return;
+                    fullscreenPreviewImg.classList.remove('is-updating');
+                    fullscreenPreviewImg.removeEventListener('load', handleLoad);
+                };
+
+                fullscreenPreviewImg.addEventListener('load', handleLoad);
+                fullscreenPreviewImg.src = frame.base64;
+                fullscreenPreviewImg.dataset.index = String(index);
+
+                if (fullscreenPreviewImg.complete) {
+                    handleLoad();
+                }
+            } else {
+                fullscreenPreviewImg.classList.remove('is-updating');
+            }
+
+            // Update large preview labels
             fullscreenCurrentFrame.textContent = `#${index + 1}`;
             fullscreenCurrentTimestamp.textContent = frame.timestamp || formatTimestamp(frame.seconds);
 
-            // Update thumbnail active states
-            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
-            thumbs.forEach((thumb, i) => {
-                if (i === index) {
-                    thumb.classList.add('active');
-                } else {
-                    thumb.classList.remove('active');
-                }
-            });
+            setActiveFullscreenThumb(index);
 
             // Update state.selectedFrame for potential editing
             state.selectedFrame = {
-                index: index,
+                index,
                 base64: frame.base64,
                 timestamp: frame.timestamp || formatTimestamp(frame.seconds)
             };
+        }
+
+        function setActiveFullscreenThumb(index) {
+            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            thumbs.forEach((thumb, i) => {
+                thumb.classList.toggle('active', i === index);
+            });
         }
 
         function scrollToFullscreenThumb(index) {
@@ -4886,28 +4947,44 @@
         }
 
         function handleFullscreenTimelineScroll() {
-            const container = fullscreenTimelineScroll;
-            const containerRect = container.getBoundingClientRect();
-            const containerCenter = containerRect.left + containerRect.width / 2;
+            if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
 
-            const thumbs = container.querySelectorAll('.fullscreen-thumb');
-            let closestIndex = 0;
-            let closestDistance = Infinity;
+            fullscreenScrollRaf = requestAnimationFrame(() => {
+                const container = fullscreenTimelineScroll;
+                const containerRect = container.getBoundingClientRect();
+                const containerCenter = containerRect.left + containerRect.width / 2;
 
-            thumbs.forEach((thumb, index) => {
-                const thumbRect = thumb.getBoundingClientRect();
-                const thumbCenter = thumbRect.left + thumbRect.width / 2;
-                const distance = Math.abs(thumbCenter - containerCenter);
+                const thumbs = container.querySelectorAll('.fullscreen-thumb');
+                let closestIndex = 0;
+                let closestDistance = Infinity;
 
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestIndex = index;
+                thumbs.forEach((thumb, index) => {
+                    const thumbRect = thumb.getBoundingClientRect();
+                    const thumbCenter = thumbRect.left + thumbRect.width / 2;
+                    const distance = Math.abs(thumbCenter - containerCenter);
+
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestIndex = index;
+                    }
+                });
+
+                pendingScrollIndex = closestIndex;
+
+                if (fullscreenScrollSettleTimeout) {
+                    clearTimeout(fullscreenScrollSettleTimeout);
                 }
-            });
 
-            if (closestIndex !== currentFocusedFrameIndex) {
-                updateFullscreenPreview(closestIndex);
-            }
+                fullscreenScrollSettleTimeout = setTimeout(() => {
+                    if (pendingScrollIndex !== null) {
+                        if (pendingScrollIndex !== currentFocusedFrameIndex) {
+                            updateFullscreenPreview(pendingScrollIndex);
+                        } else {
+                            setActiveFullscreenThumb(pendingScrollIndex);
+                        }
+                    }
+                }, 90);
+            });
         }
 
         function useSelectedFullscreenFrame() {
@@ -4943,7 +5020,7 @@
         }
 
         // Global function for onclick
-        window.selectFullscreenFrame = function(index) {
+        window.selectFullscreenFrame = function (index) {
             updateFullscreenPreview(index);
             scrollToFullscreenThumb(index);
         };
@@ -4978,52 +5055,105 @@
         });
 
         function renderLiquidGlassTimeline(frames) {
+            // Pre-render all frames without focus state
             liquidGlassTimeline.innerHTML = frames.map((frame, index) => {
-                // base64 already includes "data:image/png;base64," prefix from backend
                 const imgSrc = frame.base64;
                 return `
-                <div class="liquid-frame ${index === 0 ? 'focused' : ''}"
+                <div class="liquid-frame"
                      data-index="${index}"
-                     onclick="selectTimelineFrame(${index})">
-                    <img src="${imgSrc}" alt="Frame ${index + 1}">
+                     data-seconds="${frame.seconds || 0}">
+                    <img src="${imgSrc}" alt="Frame ${index + 1}" loading="lazy">
                     <div class="liquid-frame-info">
-                        <span class="liquid-frame-index">#${index + 1}</span>
                         <span class="liquid-frame-timestamp">${frame.timestamp || formatTimestamp(frame.seconds)}</span>
                     </div>
                 </div>
             `;
             }).join('');
 
-            // Add scroll listener for focus detection
-            liquidGlassTimeline.addEventListener('scroll', handleTimelineScroll);
+            // Update total frames count
+            const totalFramesEl = document.getElementById('total-frames-count');
+            if (totalFramesEl) {
+                totalFramesEl.textContent = frames.length;
+            }
+
+            // Throttled scroll handler using requestAnimationFrame
+            let ticking = false;
+            liquidGlassTimeline.addEventListener('scroll', () => {
+                if (!ticking) {
+                    requestAnimationFrame(() => {
+                        handleTimelineScroll();
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            });
+
+            // Set initial focus
+            updateFocusedFrame(0);
+
+            // Add keyboard navigation
+            if (!window.timelineKeyboardHandlerAttached) {
+                document.addEventListener('keydown', handleTimelineKeyboard);
+                window.timelineKeyboardHandlerAttached = true;
+            }
+        }
+
+        function handleTimelineKeyboard(e) {
+            // Only handle if timeline is visible and not in fullscreen mode
+            const timelineSection = document.getElementById('liquid-glass-timeline-section');
+            const isFullscreen = document.querySelector('.fullscreen-timeline-mode');
+
+            if (timelineSection.classList.contains('hidden') || isFullscreen) return;
+
+            // Ignore if typing in input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                const nextIndex = Math.min(currentFocusedFrameIndex + 1, allExtractedFrames.length - 1);
+                selectTimelineFrame(nextIndex);
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const prevIndex = Math.max(currentFocusedFrameIndex - 1, 0);
+                selectTimelineFrame(prevIndex);
+            }
         }
 
         function formatTimestamp(seconds) {
-            if (!seconds && seconds !== 0) return '0:00';
+            if (!seconds && seconds !== 0) return '0:00.0';
             const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
+            const secs = (seconds % 60).toFixed(1);
+            return `${mins}:${secs.padStart(4, '0')}`;
         }
+
+        // Cache frame positions on first scroll
+        let framePositions = [];
+        let lastContainerWidth = 0;
 
         function handleTimelineScroll() {
             const container = liquidGlassTimeline;
-            const containerRect = container.getBoundingClientRect();
-            const containerCenter = containerRect.left + containerRect.width / 2;
+            const scrollLeft = container.scrollLeft;
+            const containerWidth = container.clientWidth;
 
-            const frames = container.querySelectorAll('.liquid-frame');
+            // Recalculate positions if container size changed
+            if (containerWidth !== lastContainerWidth) {
+                const frames = container.querySelectorAll('.liquid-frame');
+                framePositions = Array.from(frames).map(f => f.offsetLeft + f.offsetWidth / 2);
+                lastContainerWidth = containerWidth;
+            }
+
+            // Find center frame using cached positions
+            const centerX = scrollLeft + containerWidth / 2;
             let closestIndex = 0;
             let closestDistance = Infinity;
 
-            frames.forEach((frame, index) => {
-                const frameRect = frame.getBoundingClientRect();
-                const frameCenter = frameRect.left + frameRect.width / 2;
-                const distance = Math.abs(frameCenter - containerCenter);
-
+            for (let i = 0; i < framePositions.length; i++) {
+                const distance = Math.abs(framePositions[i] - centerX);
                 if (distance < closestDistance) {
                     closestDistance = distance;
-                    closestIndex = index;
+                    closestIndex = i;
                 }
-            });
+            }
 
             if (closestIndex !== currentFocusedFrameIndex) {
                 updateFocusedFrame(closestIndex);
@@ -5031,16 +5161,22 @@
         }
 
         function updateFocusedFrame(index) {
-            currentFocusedFrameIndex = index;
-            const frames = liquidGlassTimeline.querySelectorAll('.liquid-frame');
+            // Remove focus from previous
+            if (currentFocusedFrameIndex >= 0) {
+                const prev = liquidGlassTimeline.querySelector(`.liquid-frame[data-index="${currentFocusedFrameIndex}"]`);
+                if (prev) prev.classList.remove('focused');
+            }
+            // Add focus to new
+            const next = liquidGlassTimeline.querySelector(`.liquid-frame[data-index="${index}"]`);
+            if (next) next.classList.add('focused');
 
-            frames.forEach((frame, i) => {
-                if (i === index) {
-                    frame.classList.add('focused');
-                } else {
-                    frame.classList.remove('focused');
-                }
-            });
+            currentFocusedFrameIndex = index;
+
+            // Update frame counter badge
+            const frameNumberEl = document.getElementById('current-frame-number');
+            if (frameNumberEl) {
+                frameNumberEl.textContent = `#${index + 1}`;
+            }
         }
 
         // Global function for onclick
