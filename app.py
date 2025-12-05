@@ -14,6 +14,7 @@ configure_logging()
 
 from flask import Flask
 from web_ui import web_ui_blueprint
+from routes import api_blueprint
 
 def create_app():
     """
@@ -30,6 +31,7 @@ def create_app():
 
     # Register blueprints
     app.register_blueprint(web_ui_blueprint)
+    app.register_blueprint(api_blueprint)
 
     return app
 

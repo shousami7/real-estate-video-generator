@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
@@ -10,14 +11,17 @@ from celery.utils.log import get_task_logger
 
 from celery_app import celery
 from supabase_storage import (
+    SUPABASE_BUCKET_NAME,
+    build_storage_path,
+    download_file,
+    get_initialization_error,
+    get_latest_input_video,
     is_supabase_configured,
     is_supabase_required,
-    get_initialization_error,
-    upload_video_file,
+    upload_file,
     upload_frame_file,
     upload_log_file,
-    get_latest_input_video,
-    build_storage_path,
+    upload_video_file,
 )
 from veo_generator import VeoVideoGenerator
 from frame_editor import FrameEditor, AIFrameEditor
@@ -29,12 +33,14 @@ from utils.input_validator import (
     validate_image_for_veo,
     validate_video_for_processing
 )
+from utils.video import extract_frames_ffmpeg
 from task_checkpointing import get_checkpoint_manager
 import uuid
 
 logger = get_task_logger(__name__)
 
 SUPABASE_REQUIRED = is_supabase_required()
+FRAME_EXTRACTION_FPS = 4
 
 if is_supabase_configured():
     logger.info("✓ Supabase client initialized in Celery worker")
@@ -153,6 +159,78 @@ def _task_meta(progress: int, message: str, stage: str, video_id: str, step: Opt
         "video_id": video_id,
     }
 
+
+
+# -----------------------------------------------------------------------------
+# Frame extraction
+# -----------------------------------------------------------------------------
+
+
+@celery.task(bind=True, name="tasks.extract_frames_task")
+def extract_frames_task(self, task_id: str, video_path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Download a video from Supabase and extract JPEG frames at a fixed FPS.
+
+    Args:
+        task_id: Identifier used for storage paths.
+        video_path: Path to the source video in Supabase Storage.
+        bucket: Optional override for the Supabase bucket name.
+
+    Returns:
+        Metadata for the extracted frames, including storage paths and timestamps.
+    """
+
+    bucket_name = bucket or SUPABASE_BUCKET_NAME
+    temp_dir = tempfile.mkdtemp(prefix=f"extract_{task_id}_")
+    local_video_path = os.path.join(temp_dir, os.path.basename(video_path) or "input.mp4")
+    frames_dir = os.path.join(temp_dir, "frames")
+
+    logger.info("Starting frame extraction task %s from %s", task_id, video_path)
+
+    try:
+        download_file(bucket_name, video_path, local_video_path)
+
+        frame_paths = extract_frames_ffmpeg(local_video_path, frames_dir, fps=FRAME_EXTRACTION_FPS)
+
+        frames: List[Dict[str, Any]] = []
+        for idx, frame_path in enumerate(frame_paths):
+            timestamp_seconds = idx / FRAME_EXTRACTION_FPS
+            storage_path = f"videos/{task_id}/frames/{os.path.basename(frame_path)}"
+            upload_file(bucket_name, storage_path, frame_path, content_type="image/jpeg")
+
+            frames.append(
+                {
+                    "index": idx,
+                    "timestamp": f"{timestamp_seconds:.2f}",
+                    "path": storage_path,
+                }
+            )
+
+        result = {
+            "task_id": task_id,
+            "fps": FRAME_EXTRACTION_FPS,
+            "total_frames": len(frames),
+            "frames": frames,
+            "scenes": [],
+        }
+
+        logger.info(
+            "Frame extraction completed for %s: %d frames uploaded to %s",
+            task_id,
+            len(frames),
+            bucket_name,
+        )
+        return result
+
+    except Exception as exc:  # pragma: no cover - side-effect heavy
+        logger.exception("Frame extraction failed for task %s", task_id)
+        raise
+
+    finally:
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as cleanup_error:  # pragma: no cover - best effort cleanup
+            logger.warning("Failed to clean up temp directory %s: %s", temp_dir, cleanup_error)
 
 
 

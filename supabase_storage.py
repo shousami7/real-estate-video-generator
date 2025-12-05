@@ -544,3 +544,68 @@ def get_latest_input_video(video_id: str) -> Optional[str]:
 
     logger.warning(f"No input video found for video_id={video_id}")
     return None
+
+
+# -----------------------------------------------------------------------------
+# Simplified helpers for direct file transfer
+# -----------------------------------------------------------------------------
+
+
+def download_file(bucket: str, path: str, local_path: str) -> str:
+    """
+    Download a file from Supabase Storage to a local path.
+
+    Args:
+        bucket: Storage bucket name.
+        path: Remote file path within the bucket.
+        local_path: Target local path.
+
+    Returns:
+        The absolute local path of the downloaded file.
+    """
+    client = SUPABASE_CLIENT
+    if not client:
+        raise RuntimeError("Supabase client is not configured. Cannot download file.")
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    try:
+        file_bytes = client.storage.from_(bucket).download(path)
+        with open(local_path, "wb") as fh:
+            fh.write(file_bytes)
+        return os.path.abspath(local_path)
+    except Exception as exc:  # pragma: no cover - relies on external service
+        logger.exception("Failed to download %s from bucket %s", path, bucket)
+        raise RuntimeError(f"Failed to download {path} from Supabase: {exc}") from exc
+
+
+def upload_file(bucket: str, path: str, local_path: str, content_type: str | None = None) -> str:
+    """
+    Upload a local file to Supabase Storage.
+
+    Args:
+        bucket: Storage bucket name.
+        path: Target path in the bucket.
+        local_path: Path to the local file.
+        content_type: Optional content type for the upload.
+
+    Returns:
+        The remote storage path that was written.
+    """
+    client = SUPABASE_CLIENT
+    if not client:
+        raise RuntimeError("Supabase client is not configured. Cannot upload file.")
+
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(local_path)
+
+    options: Dict[str, Any] = {"upsert": True}
+    if content_type:
+        options["contentType"] = content_type
+
+    try:
+        with open(local_path, "rb") as fh:
+            client.storage.from_(bucket).upload(path=path, file=fh, file_options=options)
+        return path
+    except Exception as exc:  # pragma: no cover - relies on external service
+        logger.exception("Failed to upload %s to bucket %s", path, bucket)
+        raise RuntimeError(f"Failed to upload {path} to Supabase: {exc}") from exc
