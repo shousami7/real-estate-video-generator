@@ -817,35 +817,36 @@
             if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                 e.preventDefault();
 
-                // Use targetIndex to track intended position (avoids issues during smooth scroll)
-                const currentTarget = state.targetIndex;
-                let nextTarget;
+                const currentIndex = state.currentIndex;
+                let nextIndex;
 
                 if (e.key === 'ArrowRight') {
-                    nextTarget = Math.min(state.frames.length - 1, currentTarget + 1);
+                    nextIndex = Math.min(state.frames.length - 1, currentIndex + 1);
                 } else {
-                    nextTarget = Math.max(0, currentTarget - 1);
+                    nextIndex = Math.max(0, currentIndex - 1);
                 }
 
-                if (nextTarget === currentTarget) return;
+                if (nextIndex === currentIndex) return;
 
-                // Set navigation lock - prevents scroll-based updates
-                state.isNavigating = true;
-                state.targetIndex = nextTarget;
-                state.currentIndex = nextTarget;
+                // Update state immediately
+                state.currentIndex = nextIndex;
+                state.targetIndex = nextIndex;
                 updateTimecode();
-                updateMainPlayer(nextTarget);
+                updateMainPlayer(nextIndex);
 
-                // Use scrollIntoView for reliable centering (works with CSS scroll-snap)
+                // Jump instantly to the frame (no smooth scroll)
                 const cards = inner.querySelectorAll('.cinema-frame-card');
-                const targetCard = cards[nextTarget];
+                const targetCard = cards[nextIndex];
                 if (targetCard) {
                     targetCard.scrollIntoView({
-                        behavior: 'smooth',
+                        behavior: 'instant',
                         inline: 'center',
                         block: 'nearest'
                     });
                 }
+
+                // Update card transforms immediately
+                requestAnimationFrame(updateCardTransforms);
             } else if (e.key === 'Enter') {
                 confirmSelection();
             }
