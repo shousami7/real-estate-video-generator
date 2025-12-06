@@ -33,6 +33,9 @@ export function FrameTimeline({ frames }: FrameTimelineProps) {
   const { scrollX } = useScroll({ container: scrollContainerRef });
   const smoothX = useSpring(scrollX, { stiffness: 70, damping: 24, mass: 0.9 });
   const [currentX, setCurrentX] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const isNavigatingRef = useRef(false);
+  const targetIndexRef = useRef(0);
 
   useMotionValueEvent(smoothX, "change", (latest) => {
     setCurrentX(latest);
@@ -55,6 +58,68 @@ export function FrameTimeline({ frames }: FrameTimelineProps) {
     gap: ITEM_GAP,
     totalCount: frames.length,
   });
+
+  // Update activeIndex based on centerIndex (when not navigating with keyboard)
+  useEffect(() => {
+    if (!isNavigatingRef.current) {
+      setActiveIndex(centerIndex);
+      targetIndexRef.current = centerIndex;
+    }
+  }, [centerIndex]);
+
+  // Scroll to specific index, centering it in the viewport
+  const scrollToIndex = useCallback((index: number) => {
+    if (!scrollContainerRef.current || !viewportWidth) return;
+
+    const container = scrollContainerRef.current;
+    const spacing = ITEM_WIDTH + ITEM_GAP;
+
+    // Calculate the position of the item
+    const itemLeft = index * spacing;
+
+    // Calculate scroll position to center the item
+    const targetScrollLeft = itemLeft + ITEM_WIDTH / 2 - viewportWidth / 2;
+
+    // Smooth scroll to target position
+    container.scrollTo({
+      left: targetScrollLeft,
+      behavior: 'smooth'
+    });
+  }, [viewportWidth]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+
+      e.preventDefault();
+
+      const currentTarget = targetIndexRef.current;
+      let nextTarget: number;
+
+      if (e.key === 'ArrowRight') {
+        nextTarget = Math.min(frames.length - 1, currentTarget + 1);
+      } else {
+        nextTarget = Math.max(0, currentTarget - 1);
+      }
+
+      if (nextTarget === currentTarget) return;
+
+      // Set navigation lock
+      isNavigatingRef.current = true;
+      targetIndexRef.current = nextTarget;
+      setActiveIndex(nextTarget);
+      scrollToIndex(nextTarget);
+
+      // Release lock after animation completes
+      setTimeout(() => {
+        isNavigatingRef.current = false;
+      }, 600);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [frames.length, scrollToIndex]);
 
   const maxDistance = useMemo(() => viewportWidth / 2 + ITEM_WIDTH, [viewportWidth]);
   const focusThreshold = ITEM_WIDTH / 2;
@@ -158,7 +223,7 @@ export function FrameTimeline({ frames }: FrameTimelineProps) {
       <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/60">
         <span className="h-2 w-2 rounded-full bg-cyan-400" />
         <span>Centered frame: </span>
-        <span className="rounded-full bg-white/10 px-2 py-1 text-white/90">#{centerIndex}</span>
+        <span className="rounded-full bg-white/10 px-2 py-1 text-white/90">#{activeIndex}</span>
       </div>
     </div>
   );
