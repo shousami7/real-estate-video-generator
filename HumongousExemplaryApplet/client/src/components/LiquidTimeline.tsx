@@ -16,6 +16,8 @@ const GAP = 60;
 export function LiquidTimeline({ frames }: LiquidTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const isNavigatingRef = useRef(false);
+  const targetIndexRef = useRef(0);
 
   const { scrollX } = useScroll({
     container: containerRef,
@@ -27,23 +29,36 @@ export function LiquidTimeline({ frames }: LiquidTimelineProps) {
     mass: 0.8
   });
 
-  // Keyboard Navigation
+  // Keyboard Navigation with lock mechanism to prevent scroll-based updates during navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!containerRef.current) return;
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+
+      e.preventDefault();
+
+      // Use targetIndexRef to track the intended position (avoids stale closure issues)
+      const currentTarget = targetIndexRef.current;
+      let nextTarget: number;
 
       if (e.key === 'ArrowRight') {
-        const nextIndex = Math.min(frames.length - 1, activeIndex + 1);
-        scrollToIndex(nextIndex);
-      } else if (e.key === 'ArrowLeft') {
-        const prevIndex = Math.max(0, activeIndex - 1);
-        scrollToIndex(prevIndex);
+        nextTarget = Math.min(frames.length - 1, currentTarget + 1);
+      } else {
+        nextTarget = Math.max(0, currentTarget - 1);
       }
+
+      if (nextTarget === currentTarget) return;
+
+      // Set navigation lock - prevents useAnimationFrame from updating activeIndex
+      isNavigatingRef.current = true;
+      targetIndexRef.current = nextTarget;
+      setActiveIndex(nextTarget);
+      scrollToIndex(nextTarget);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeIndex, frames.length]);
+  }, [frames.length]);
 
   const scrollToIndex = (index: number) => {
     if (containerRef.current) {
@@ -59,8 +74,23 @@ export function LiquidTimeline({ frames }: LiquidTimelineProps) {
     if (!containerRef.current) return;
     const currentScroll = scrollX.get();
     const index = Math.round(currentScroll / (CARD_WIDTH + GAP));
+
+    // If navigating via keyboard, check if we've reached the target position
+    if (isNavigatingRef.current) {
+      const targetScroll = targetIndexRef.current * (CARD_WIDTH + GAP);
+      const scrollDiff = Math.abs(currentScroll - targetScroll);
+      // Unlock when scroll is close enough to target (within 5px)
+      if (scrollDiff < 5) {
+        isNavigatingRef.current = false;
+      }
+      // Don't update activeIndex from scroll position while navigating
+      return;
+    }
+
+    // Normal scroll-based index update (for mouse/touch scrolling)
     if (index !== activeIndex && index >= 0 && index < frames.length) {
       setActiveIndex(index);
+      targetIndexRef.current = index;
     }
   });
 
