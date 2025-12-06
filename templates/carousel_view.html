@@ -578,6 +578,8 @@
         const state = {
             frames: [],
             currentIndex: 0,
+            isNavigating: false,
+            targetIndex: 0,
         };
 
         const CARD_WIDTH = 240;
@@ -659,6 +661,16 @@
             const scrollX = viewport.scrollLeft;
             const viewportWidth = viewport.clientWidth;
             const centerX = scrollX + (viewportWidth / 2);
+
+            // Check if keyboard navigation scroll has completed
+            if (state.isNavigating) {
+                const targetScroll = state.targetIndex * STRIDE;
+                const scrollDiff = Math.abs(scrollX - targetScroll);
+                // Unlock when scroll is close enough to target (within 5px)
+                if (scrollDiff < 5) {
+                    state.isNavigating = false;
+                }
+            }
 
             const cards = inner.querySelectorAll('.cinema-frame-card');
 
@@ -742,10 +754,13 @@
                     borderGlow.style.opacity = absDist < 0.2 ? 1 : 0;
                 }
 
-                // Update Active State
-                const isActive = absDist < 0.4; // Slightly wider threshold for state update
-                if (isActive) {
-                    setActiveIndex(index);
+                // Update Active State (only when NOT keyboard navigating)
+                if (!state.isNavigating) {
+                    const isActive = absDist < 0.4;
+                    if (isActive && state.currentIndex !== index) {
+                        setActiveIndex(index);
+                        state.targetIndex = index;
+                    }
                 }
             });
         }
@@ -795,12 +810,34 @@
         }
 
         function handleKeyboard(e) {
-            if (e.key === 'ArrowRight') {
-                const nextIndex = Math.min(state.frames.length - 1, state.currentIndex + 1);
-                scrollToIndex(nextIndex);
-            } else if (e.key === 'ArrowLeft') {
-                const prevIndex = Math.max(0, state.currentIndex - 1);
-                scrollToIndex(prevIndex);
+            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+
+                // Use targetIndex to track intended position (avoids issues during smooth scroll)
+                const currentTarget = state.targetIndex;
+                let nextTarget;
+
+                if (e.key === 'ArrowRight') {
+                    nextTarget = Math.min(state.frames.length - 1, currentTarget + 1);
+                } else {
+                    nextTarget = Math.max(0, currentTarget - 1);
+                }
+
+                if (nextTarget === currentTarget) return;
+
+                // Set navigation lock - prevents scroll-based updates
+                state.isNavigating = true;
+                state.targetIndex = nextTarget;
+                state.currentIndex = nextTarget;
+                updateTimecode();
+                updateMainPlayer(nextTarget);
+
+                // Scroll to target
+                const targetScroll = nextTarget * STRIDE;
+                viewport.scrollTo({
+                    left: targetScroll,
+                    behavior: 'smooth'
+                });
             } else if (e.key === 'Enter') {
                 confirmSelection();
             }
