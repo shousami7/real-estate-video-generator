@@ -664,11 +664,15 @@
 
             // Check if keyboard navigation scroll has completed
             if (state.isNavigating) {
-                const targetScroll = state.targetIndex * STRIDE;
-                const scrollDiff = Math.abs(scrollX - targetScroll);
-                // Unlock when scroll is close enough to target (within 5px)
-                if (scrollDiff < 5) {
-                    state.isNavigating = false;
+                const cards = inner.querySelectorAll('.cinema-frame-card');
+                const targetCard = cards[state.targetIndex];
+                if (targetCard) {
+                    const cardCenter = targetCard.offsetLeft + (CARD_WIDTH / 2);
+                    const distanceFromCenter = Math.abs(cardCenter - centerX);
+                    // Unlock when target card is close to center (within 10px)
+                    if (distanceFromCenter < 10) {
+                        state.isNavigating = false;
+                    }
                 }
             }
 
@@ -832,12 +836,16 @@
                 updateTimecode();
                 updateMainPlayer(nextTarget);
 
-                // Scroll to target
-                const targetScroll = nextTarget * STRIDE;
-                viewport.scrollTo({
-                    left: targetScroll,
-                    behavior: 'smooth'
-                });
+                // Use scrollIntoView for reliable centering (works with CSS scroll-snap)
+                const cards = inner.querySelectorAll('.cinema-frame-card');
+                const targetCard = cards[nextTarget];
+                if (targetCard) {
+                    targetCard.scrollIntoView({
+                        behavior: 'smooth',
+                        inline: 'center',
+                        block: 'nearest'
+                    });
+                }
             } else if (e.key === 'Enter') {
                 confirmSelection();
             }
