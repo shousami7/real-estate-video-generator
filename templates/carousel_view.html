@@ -4,316 +4,743 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Frame Selection - Rolling Cards</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Frame Selection - Cinema Timeline</title>
     <link href="https://fonts.googleapis.com" rel="preconnect" />
     <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=SF+Mono&display=swap"
         rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
-    <script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "primary": "#34D399",
-                        "background-light": "#f6f8f7",
-                        "background-dark": "#0a0a0a",
-                        "panel-dark": "#1a1a1a",
-                    },
-                    fontFamily: {
-                        "display": ["Space Grotesk", "sans-serif"]
-                    },
-                },
-            },
-        }
-    </script>
     <style>
-        body {
-            font-family: 'Space Grotesk', sans-serif;
-            background-color: #0a0a0a;
-            color: white;
-            overflow: hidden;
-            /* Prevent body scroll, handle in components */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        /* Carousel Styles */
-        .carousel-container {
-            perspective: 1000px;
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: #050505;
+            color: white;
             overflow: hidden;
-            width: 100%;
-            height: 60vh;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Film Grain Overlay */
+        .cinema-film-grain {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        /* Background Ambient Glow */
+        .cinema-ambient-glow {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.2;
+        }
+
+        .cinema-ambient-glow::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.3) 0%, transparent 70%);
+            filter: blur(100px);
+        }
+
+        /* Header HUD */
+        .cinema-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 24px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        .cinema-header>* {
+            pointer-events: auto;
+        }
+
+        .cinema-title h1 {
+            font-size: 18px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+        }
+
+        .cinema-status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 12px;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .cinema-status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+        }
+
+        .cinema-header-controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .cinema-settings-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.8);
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
-        }
-
-        .carousel-track {
-            display: flex;
-            align-items: center;
-            position: absolute;
-            transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
-            /* Center the track initially */
-            left: 50%;
-            transform: translateX(-50%);
-        }
-
-        .carousel-card {
-            width: 480px;
-            /* Adjust based on desired size */
-            height: 270px;
-            /* 16:9 aspect ratio */
-            background-size: cover;
-            background-position: center;
-            border-radius: 12px;
-            margin: 0 20px;
-            transition: all 0.5s ease;
             cursor: pointer;
-            position: relative;
-            flex-shrink: 0;
-            border: 2px solid transparent;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            /* Initial state for non-active cards */
-            transform: scale(0.8);
-            opacity: 0.5;
-            filter: blur(2px);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(12px);
         }
 
-        .carousel-card.active {
-            transform: scale(1.1);
-            opacity: 1;
-            filter: blur(0);
-            border-color: #34D399;
-            box-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
-            z-index: 10;
+        .cinema-settings-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
         }
 
-        .carousel-card:hover {
-            opacity: 0.8;
-            transform: scale(0.85);
-            /* Slight hover effect for non-active */
-        }
-
-        .carousel-card.active:hover {
-            transform: scale(1.12);
-            /* Slight hover for active */
-            opacity: 1;
-        }
-
-        /* Frame Info Badge */
-        .frame-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
+        .cinema-export-btn {
+            padding: 12px 24px;
+            border-radius: 9999px;
+            background: white;
+            color: black;
+            font-size: 14px;
             font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
         }
 
-        /* Bottom Strip Styles */
-        .filmstrip-container {
-            width: 100%;
-            height: 120px;
-            background: #1a1a1a;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        .cinema-export-btn:hover {
+            transform: scale(1.05);
+        }
+
+        /* Center Focus Indicator */
+        .cinema-center-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1px;
+            height: 80vh;
+            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.1), transparent);
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* Cinema Timeline Viewport */
+        .cinema-timeline-viewport {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             display: flex;
             align-items: center;
             overflow-x: auto;
-            padding: 0 20px;
-            gap: 10px;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            cursor: grab;
+            perspective: 1500px;
+            z-index: 10;
+        }
+
+        .cinema-timeline-viewport:active {
+            cursor: grabbing;
+        }
+
+        .cinema-timeline-viewport::-webkit-scrollbar {
+            display: none;
+        }
+
+        .cinema-timeline-inner {
+            display: flex;
+            gap: 60px;
+            align-items: center;
+            transform-style: preserve-3d;
+        }
+
+        /* Cinema Frame Cards */
+        .cinema-frame-card {
+            flex-shrink: 0;
+            width: 600px;
+            aspect-ratio: 16 / 9;
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            cursor: pointer;
+            scroll-snap-align: center;
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform, opacity, filter;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            background: #1a1a1a;
+        }
+
+        .cinema-frame-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        /* Glass Reflection Layer */
+        .cinema-frame-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg,
+                    rgba(255, 255, 255, 0.15) 0%,
+                    transparent 50%,
+                    rgba(0, 0, 0, 0.3) 100%);
+            z-index: 20;
+            pointer-events: none;
+            mix-blend-mode: overlay;
+            border-radius: 16px;
+        }
+
+        /* Frame metadata overlay */
+        .cinema-frame-metadata {
             position: absolute;
             bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 24px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.5), transparent);
+            z-index: 30;
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
 
-        /* Custom scrollbar for filmstrip */
-        .filmstrip-container::-webkit-scrollbar {
-            height: 8px;
-        }
-
-        .filmstrip-container::-webkit-scrollbar-track {
-            background: #0a0a0a;
-        }
-
-        .filmstrip-container::-webkit-scrollbar-thumb {
-            background: #374151;
-            border-radius: 4px;
-        }
-
-        .filmstrip-container::-webkit-scrollbar-thumb:hover {
-            background: #4B5563;
-        }
-
-        .filmstrip-item {
-            width: 120px;
-            height: 67.5px;
-            /* 16:9 */
-            background-size: cover;
-            background-position: center;
-            border-radius: 4px;
-            cursor: pointer;
-            flex-shrink: 0;
-            border: 2px solid transparent;
-            opacity: 0.6;
-            transition: all 0.2s ease;
-        }
-
-        .filmstrip-item:hover {
+        .cinema-frame-card:hover .cinema-frame-metadata {
             opacity: 1;
-            transform: translateY(-2px);
         }
 
-        .filmstrip-item.active {
-            opacity: 1;
-            border-color: #34D399;
-            box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+        .cinema-frame-metadata p {
+            font-size: 12px;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            color: rgba(255, 255, 255, 0.9);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
         }
 
-        /* Controls */
-        .nav-btn {
+        .cinema-frame-metadata .raw-badge {
+            opacity: 0.5;
+        }
+
+        /* Active frame border glow */
+        .cinema-frame-card::after {
+            content: '';
             position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            inset: 0;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 16px;
+            z-index: 40;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .cinema-frame-card.active::after {
+            opacity: 1;
+        }
+
+        /* Bottom Glass Toolbar Container */
+        .cinema-toolbar-container {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            pointer-events: none;
+        }
+
+        .cinema-toolbar-container>* {
+            pointer-events: auto;
+        }
+
+        /* Scrub Bar */
+        .cinema-scrub-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cinema-timecode {
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            letter-spacing: 0.2em;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cinema-scrub-bar {
+            width: 384px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .cinema-scrub-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            background: white;
+            border-radius: 9999px;
+            transition: width 0.3s ease;
+        }
+
+        /* Glass Toolbar */
+        .cinema-glass-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            padding: 16px 40px;
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+            transition: background 0.3s ease;
+        }
+
+        .cinema-glass-toolbar:hover {
+            background: rgba(10, 10, 10, 0.9);
+        }
+
+        .cinema-tool-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            transition: color 0.2s ease;
+            position: relative;
+        }
+
+        .cinema-tool-btn:hover {
             color: white;
-            width: 48px;
-            height: 48px;
+        }
+
+        .cinema-tool-btn .icon-container {
+            padding: 8px;
+            border-radius: 12px;
+            transition: background 0.2s ease;
+        }
+
+        .cinema-tool-btn:hover .icon-container {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .cinema-tool-btn .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 500;
+            opacity: 0;
+            position: absolute;
+            bottom: -20px;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+
+        .cinema-tool-btn:hover .label {
+            opacity: 1;
+        }
+
+        .cinema-toolbar-divider {
+            width: 1px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 8px;
+        }
+
+        .cinema-play-btn {
+            width: 64px;
+            height: 64px;
+            background: white;
+            color: black;
             border-radius: 50%;
+            border: none;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            z-index: 20;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
+            margin: 0 8px;
         }
 
-        .nav-btn:hover {
-            background: rgba(52, 211, 153, 0.8);
-            color: black;
-            border-color: transparent;
+        .cinema-play-btn:hover {
+            transform: scale(1.05);
         }
 
-        .prev-btn {
-            left: 40px;
+        .cinema-play-btn:active {
+            transform: scale(0.95);
         }
 
-        .next-btn {
-            right: 40px;
+        .cinema-play-btn .material-symbols-outlined {
+            font-size: 28px;
+            margin-left: 4px;
+        }
+
+        /* Navigation Hints */
+        .keyboard-hint {
+            position: fixed;
+            bottom: 200px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            z-index: 40;
+        }
+
+        .keyboard-hint kbd {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 24px;
+            padding: 0 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 11px;
         }
     </style>
 </head>
 
-<body class="flex flex-col h-screen">
+<body>
+    <!-- Film Grain Overlay -->
+    <div class="cinema-film-grain"></div>
 
-    <!-- Header -->
-    <div class="h-16 border-b border-white/10 flex items-center px-6 bg-[#0a0a0a] z-20">
-        <h1 class="text-xl font-bold text-primary">Frame Selection</h1>
-        <div class="ml-auto flex gap-4">
-            <button class="px-4 py-2 text-sm text-gray-400 hover:text-white" onclick="window.close()">Close</button>
-            <button id="confirm-selection-btn"
-                class="px-4 py-2 bg-primary text-black font-bold rounded-lg hover:opacity-90">
-                Confirm Selection
-            </button>
-        </div>
-    </div>
+    <!-- Background Ambient Glow -->
+    <div class="cinema-ambient-glow"></div>
 
-    <!-- Main Carousel Area -->
-    <div class="flex-1 relative bg-gradient-to-b from-[#0a0a0a] to-[#1a1a1a]">
+    <!-- Center Focus Indicator -->
+    <div class="cinema-center-indicator"></div>
 
-        <div class="carousel-container" id="carousel-container">
-            <button class="nav-btn prev-btn" id="prev-btn">
-                <span class="material-symbols-outlined">chevron_left</span>
-            </button>
-
-            <div class="carousel-track" id="carousel-track">
-                <!-- Cards will be injected here JS -->
+    <!-- Header HUD -->
+    <div class="cinema-header">
+        <div class="cinema-title">
+            <h1>Sequence 01</h1>
+            <div class="cinema-status-bar">
+                <div class="cinema-status-indicator"></div>
+                <span>Ready</span>
+                <span style="margin: 0 8px;">|</span>
+                <span id="frame-counter">0 frames</span>
             </div>
-
-            <button class="nav-btn next-btn" id="next-btn">
-                <span class="material-symbols-outlined">chevron_right</span>
-            </button>
         </div>
-
+        <div class="cinema-header-controls">
+            <button class="cinema-settings-btn" title="Settings">
+                <span class="material-symbols-outlined" style="font-size: 20px;">settings</span>
+            </button>
+            <button class="cinema-export-btn" id="confirm-selection-btn">Confirm Selection</button>
+        </div>
     </div>
 
-    <!-- Bottom Filmstrip -->
-    <div class="filmstrip-container" id="filmstrip-container">
-        <!-- Thumbnails will be injected here JS -->
+    <!-- Cinema Timeline Viewport -->
+    <div class="cinema-timeline-viewport" id="cinema-timeline-viewport">
+        <div class="cinema-timeline-inner" id="cinema-timeline-inner">
+            <!-- Cinema frame cards will be inserted here by JS -->
+        </div>
+    </div>
+
+    <!-- Bottom Glass Toolbar -->
+    <div class="cinema-toolbar-container">
+        <!-- Scrub Bar / Timecode -->
+        <div class="cinema-scrub-container">
+            <div class="cinema-timecode" id="cinema-timecode">00:00:00:00</div>
+            <div class="cinema-scrub-bar">
+                <div class="cinema-scrub-progress" id="cinema-scrub-progress" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <!-- Glass Toolbar -->
+        <div class="cinema-glass-toolbar">
+            <button class="cinema-tool-btn" title="Split">
+                <div class="icon-container">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">content_cut</span>
+                </div>
+                <span class="label">Split</span>
+            </button>
+            <button class="cinema-tool-btn" title="Audio">
+                <div class="icon-container">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">volume_up</span>
+                </div>
+                <span class="label">Audio</span>
+            </button>
+
+            <div class="cinema-toolbar-divider"></div>
+
+            <button class="cinema-play-btn" title="Play/Pause">
+                <span class="material-symbols-outlined">play_arrow</span>
+            </button>
+
+            <div class="cinema-toolbar-divider"></div>
+
+            <button class="cinema-tool-btn" title="Layers">
+                <div class="icon-container">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">layers</span>
+                </div>
+                <span class="label">Layers</span>
+            </button>
+            <button class="cinema-tool-btn" title="Preview">
+                <div class="icon-container">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">desktop_windows</span>
+                </div>
+                <span class="label">Preview</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Keyboard Hints -->
+    <div class="keyboard-hint">
+        <kbd>←</kbd><kbd>→</kbd> Navigate
+        <span style="margin: 0 8px;">|</span>
+        <kbd>Enter</kbd> Select
     </div>
 
     <script>
         // --- State Management ---
         const state = {
-            frames: [], // Will hold frame data
+            frames: [],
             currentIndex: 0,
-            cardWidth: 480 + 40, // width + margin (approx)
         };
 
-        // --- Demo Data Generator (If no API) ---
-        function generateDemoFrames(count = 20) {
-            return Array.from({ length: count }, (_, i) => ({
-                id: i,
-                // Use placeholder images if no real ones
-                base64: `https://picsum.photos/seed/${i + 100}/800/450`,
-                timestamp: `00:00:${String(i).padStart(2, '0')}`,
-                frame_number: i
-            }));
-        }
+        const CARD_WIDTH = 600;
+        const CARD_GAP = 60;
 
-        // --- Core Functions ---
+        // --- DOM Elements ---
+        const viewport = document.getElementById('cinema-timeline-viewport');
+        const inner = document.getElementById('cinema-timeline-inner');
+        const timecodeEl = document.getElementById('cinema-timecode');
+        const progressEl = document.getElementById('cinema-scrub-progress');
+        const frameCounterEl = document.getElementById('frame-counter');
 
+        // --- Initialize ---
         function init() {
             // Data passed from server via Jinja2
-            // safe filter is used to ensure json is not escaped
             const serverFrames = {{ frames | tojson | safe
         }};
 
         if (serverFrames && serverFrames.length > 0) {
             state.frames = serverFrames.map((f, i) => ({
                 id: f.frame_id,
-                base64: f.url, // URL to the image
+                src: f.url,
                 timestamp: f.timestamp,
                 frame_number: i + 1,
                 seconds: f.seconds,
                 path: f.path
             }));
         } else {
-            console.warn("No frames provided from server, falling back to empty state");
+            console.warn("No frames provided from server");
             state.frames = [];
         }
 
         if (state.frames.length > 0) {
-            renderCarousel();
-            renderFilmstrip();
-            updateCarousel();
+            renderTimeline();
+            updateFrameCounter();
+            updateTimecode();
+            updateCardTransforms();
+
+            // Set viewport padding to center first/last cards
+            const viewportWidth = window.innerWidth;
+            const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+            viewport.style.paddingLeft = `${sidePadding}px`;
+            viewport.style.paddingRight = `${sidePadding}px`;
         } else {
-            document.getElementById('carousel-track').innerHTML = '<div class="text-gray-500">No frames available</div>';
+            inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
         }
 
         // Event Listeners
-        document.getElementById('prev-btn').addEventListener('click', () => navigate(-1));
-        document.getElementById('next-btn').addEventListener('click', () => navigate(1));
-
-        // Keyboard navigation
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowLeft') navigate(-1);
-            if (e.key === 'ArrowRight') navigate(1);
-        });
+        viewport.addEventListener('scroll', handleScroll);
+        document.addEventListener('keydown', handleKeyboard);
 
         // Confirm button
-        document.getElementById('confirm-selection-btn').addEventListener('click', () => {
+        document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+        }
+
+        function renderTimeline() {
+            inner.innerHTML = state.frames.map((frame, index) => `
+                <div class="cinema-frame-card ${index === 0 ? 'active' : ''}"
+                     data-index="${index}"
+                     onclick="scrollToIndex(${index})">
+                    <img src="${frame.src}" alt="Frame ${frame.frame_number}" draggable="false">
+                    <div class="cinema-frame-metadata">
+                        <p>
+                            <span>Clip ${frame.frame_number}</span>
+                            <span class="raw-badge">RAW</span>
+                        </p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateCardTransforms() {
+            const scrollX = viewport.scrollLeft;
+            const viewportWidth = viewport.clientWidth;
+            const centerX = scrollX + (viewportWidth / 2);
+
+            const cards = inner.querySelectorAll('.cinema-frame-card');
+
+            cards.forEach((card, index) => {
+                const cardCenter = card.offsetLeft + (CARD_WIDTH / 2);
+                const distance = cardCenter - centerX;
+                const normalizedDistance = distance / (CARD_WIDTH + CARD_GAP);
+
+                // Calculate 3D transforms based on distance
+                const absDistance = Math.abs(normalizedDistance);
+                const clampedDistance = Math.min(absDistance, 2);
+
+                // Scale: 1.1 at center, 0.8 at edges
+                const scale = 1.1 - (clampedDistance * 0.15);
+
+                // RotateY: 0 at center, ±45deg at edges
+                const rotateY = normalizedDistance * 25;
+
+                // X translation for parallax effect
+                const translateX = normalizedDistance * -40;
+
+                // Z translation for depth
+                const translateZ = -Math.abs(normalizedDistance) * 150;
+
+                // Opacity: 1 at center, 0.1 at edges
+                const opacity = Math.max(0.1, 1 - (clampedDistance * 0.45));
+
+                // Blur: 0 at center, 12px at edges
+                const blur = clampedDistance * 6;
+
+                // Apply transforms
+                card.style.transform = `
+                    perspective(1500px)
+                    translateX(${translateX}px)
+                    translateZ(${translateZ}px)
+                    rotateY(${rotateY}deg)
+                    scale(${scale})
+                `;
+                card.style.opacity = opacity;
+                card.style.filter = `blur(${blur}px)`;
+                card.style.zIndex = Math.round(50 - absDistance * 20);
+
+                // Toggle active class
+                const isActive = absDistance < 0.3;
+                card.classList.toggle('active', isActive);
+
+                if (isActive && state.currentIndex !== index) {
+                    state.currentIndex = index;
+                    updateTimecode();
+                }
+            });
+        }
+
+        function handleScroll() {
+            requestAnimationFrame(updateCardTransforms);
+        }
+
+        function scrollToIndex(index) {
+            const targetScroll = index * (CARD_WIDTH + CARD_GAP);
+            viewport.scrollTo({
+                left: targetScroll,
+                behavior: 'smooth'
+            });
+        }
+
+        function handleKeyboard(e) {
+            if (e.key === 'ArrowRight') {
+                const nextIndex = Math.min(state.frames.length - 1, state.currentIndex + 1);
+                scrollToIndex(nextIndex);
+            } else if (e.key === 'ArrowLeft') {
+                const prevIndex = Math.max(0, state.currentIndex - 1);
+                scrollToIndex(prevIndex);
+            } else if (e.key === 'Enter') {
+                confirmSelection();
+            }
+        }
+
+        function updateFrameCounter() {
+            frameCounterEl.textContent = `${state.frames.length} frames`;
+        }
+
+        function updateTimecode() {
+            const frame = state.frames[state.currentIndex];
+            if (!frame) return;
+
+            const timestamp = frame.timestamp || formatTimestamp(frame.seconds);
+            const parts = timestamp.split(':');
+            let timecode = '00:00:00:00';
+            if (parts.length >= 2) {
+                timecode = `00:${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
+            }
+
+            timecodeEl.textContent = timecode;
+
+            // Update progress bar
+            const progress = state.frames.length > 1 ? ((state.currentIndex + 1) / state.frames.length) * 100 : 0;
+            progressEl.style.width = `${progress}%`;
+        }
+
+        function formatTimestamp(seconds) {
+            if (typeof seconds !== 'number') return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function confirmSelection() {
             if (state.frames.length === 0) return;
 
             const selected = state.frames[state.currentIndex];
-            // Send selected frame back to opener if available
             if (window.opener && !window.opener.closed) {
-                // We can define a message protocol or just call a function on opener
-                // For now, let's try to postMessage
                 window.opener.postMessage({
                     type: 'FRAME_SELECTED',
                     frame: selected
@@ -322,137 +749,10 @@
             } else {
                 alert(`Selected Frame ${selected.frame_number} at ${selected.timestamp}\n(Parent window not found, cannot return selection)`);
             }
-        });
         }
 
-        function renderCarousel() {
-            const track = document.getElementById('carousel-track');
-            track.innerHTML = state.frames.map((frame, index) => `
-                <div class="carousel-card" 
-                     data-index="${index}"
-                     style="background-image: url('${frame.base64}')"
-                     onclick="jumpTo(${index})">
-                    <div class="frame-info">Frame ${frame.frame_number} (${frame.timestamp})</div>
-                </div>
-            `).join('');
-        }
-
-        function renderFilmstrip() {
-            const container = document.getElementById('filmstrip-container');
-            container.innerHTML = state.frames.map((frame, index) => `
-                <div class="filmstrip-item" 
-                     data-index="${index}"
-                     style="background-image: url('${frame.base64}')"
-                     onclick="jumpTo(${index})">
-                </div>
-            `).join('');
-        }
-
-        function updateCarousel() {
-            const track = document.getElementById('carousel-track');
-            const cards = document.querySelectorAll('.carousel-card');
-            const strips = document.querySelectorAll('.filmstrip-item');
-            const filmstripContainer = document.getElementById('filmstrip-container');
-
-            // 1. Update Active Classes
-            cards.forEach((card, i) => {
-                if (i === state.currentIndex) {
-                    card.classList.add('active');
-                } else {
-                    card.classList.remove('active');
-                }
-            });
-
-            strips.forEach((strip, i) => {
-                if (i === state.currentIndex) {
-                    strip.classList.add('active');
-                    // Scroll filmstrip to keep active item in view
-                    ensureVisible(strip, filmstripContainer);
-                } else {
-                    strip.classList.remove('active');
-                }
-            });
-
-            // 2. Position Track
-            // We want the active card to be in the center.
-            // The track is centered at 50% left.
-            // So we need to translate the track such that the center of the active card is at 0 (relative to the track origin).
-
-            // cardWidth (approx 520px including margin)
-            // If index 0 is active: center of card 0 is at width/2 + margin.
-            // We want that point to be at 0.
-            // Actually, simpler logic:
-            // Shift = - (index * CARD_FULL_WIDTH)
-            // But we need to account for the initial offset to center the FIRST card.
-
-            const cardWidth = 480;
-            const margin = 20;
-            const fullWidth = cardWidth + (margin * 2);
-
-            // Calculate offset to center the current card
-            // We want the center of the card at index i to be at the center of the screen
-            // Carousel track is absolutely positioned with left: 50%
-            // So we just need to shift it left by (index * fullWidth) + (fullWidth / 2) - (fullWidth / 2) ???
-            // Let's say track origin (0,0) is at screen center.
-            // Card 0 is at 0.
-            // Card 1 is at fullWidth.
-            // If card 1 is active, we move track by -fullWidth.
-
-            // However, the flex layout puts cards in a row.
-            // We just need to shift the track so the center of the active card is at the pivot point.
-
-            // The pivot point is half the width of one card? No, track is centered.
-            // Since we use justify-center in track? No, display flex in track aligns them start to end.
-
-            // Let's rely on calculation:
-            // offset = - (state.currentIndex * fullWidth) + startOffset?
-            // Since the track is `left: 50%`, the 0px mark of the track is at the screen center.
-            // We want the center of the active card to be at the 0px mark.
-            // The cards are laid out: [Card0][Card1][Card2]...
-            // Center of Card 0 is at `margin + cardWidth/2`.
-            // Center of Card n is at `(n * fullWidth) + margin + cardWidth/2`.
-
-            const centerOffset = 20 + (480 / 2); // margin + half-width
-            const cardPosition = (state.currentIndex * fullWidth) + centerOffset;
-            const targetTranslate = -cardPosition;
-
-            // But wait, we want the CENTER of the card at the center of the screen?
-            // And `left: 50%` places the left edge of the track at the center.
-            // So if targetTranslate is 0, the left edge of the first card (plus margin) starts at center.
-            // We want center of card to be at center.
-            // So we need to shift left by centerOffset.
-            // Yes.
-
-            track.style.transform = `translateX(${targetTranslate}px) translateZ(0)`; // translateZ forces GPU
-        }
-
-        function ensureVisible(element, container) {
-            const containerRect = container.getBoundingClientRect();
-            const elementRect = element.getBoundingClientRect();
-
-            if (elementRect.left < containerRect.left) {
-                container.scrollLeft -= (containerRect.left - elementRect.left + 20);
-            } else if (elementRect.right > containerRect.right) {
-                container.scrollLeft += (elementRect.right - containerRect.right + 20);
-            }
-        }
-
-        function navigate(direction) {
-            const newIndex = state.currentIndex + direction;
-            if (newIndex >= 0 && newIndex < state.frames.length) {
-                state.currentIndex = newIndex;
-                updateCarousel();
-            }
-        }
-
-        function jumpTo(index) {
-            state.currentIndex = index;
-            updateCarousel();
-        }
-
-        // Initialize
+        // Initialize on DOM ready
         document.addEventListener('DOMContentLoaded', init);
-
     </script>
 </body>
 
