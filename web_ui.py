@@ -747,58 +747,59 @@ def export_video_from_frames():
         output_filename = f"export_{timestamp}.mp4"
         output_path = os.path.join(output_dir, output_filename)
         
-        # Create a concat file list for ffmpeg
-        concat_list_path = os.path.join(editor_path, 'concat_list.txt')
-        with open(concat_list_path, 'w') as f:
-            for frame_file in frame_files:
-                frame_path = os.path.join(editor_path, frame_file)
-                if os.path.exists(frame_path):
-                    # ffmpeg concat demuxer format: file 'path' and duration
-                    f.write(f"file '{frame_path}'\n")
-                    f.write(f"duration {duration_per_frame}\n")
-            # Repeat last frame to avoid cutting last image short
-            if frame_files:
-                last_frame_path = os.path.join(editor_path, frame_files[-1])
-                f.write(f"file '{last_frame_path}'\n")
-        
-        # Run ffmpeg command with proper settings for image concatenation
-        ffmpeg_cmd = [
-            'ffmpeg', '-y',  # Overwrite output
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', concat_list_path,
-            '-vsync', 'vfr',  # Variable frame rate for concat
-            '-pix_fmt', 'yuv420p',  # Required for compatibility
-            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',  # Ensure even dimensions
-            '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '23',
-            '-r', str(fps),  # Output framerate
-            '-movflags', '+faststart',
-            output_path
-        ]
-        
-        logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
-        
-        result = subprocess.run(
-            ffmpeg_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-        
-        if result.returncode != 0:
-            logger.error(f"ffmpeg error: {result.stderr}")
-            return jsonify({
-                "status": "error",
-                "message": f"ffmpeg failed: {result.stderr[:500]}"
-            }), 500
-        
-        # Clean up concat list
+        # Create a temporary concat file for ffmpeg (frames.txt is the source of truth)
+        import tempfile
+        concat_fd, concat_list_path = tempfile.mkstemp(suffix='_concat.txt', prefix='ffmpeg_')
         try:
-            os.remove(concat_list_path)
-        except:
-            pass
+            with os.fdopen(concat_fd, 'w') as f:
+                for frame_file in frame_files:
+                    frame_path = os.path.join(editor_path, frame_file)
+                    if os.path.exists(frame_path):
+                        # ffmpeg concat demuxer format: file 'path' and duration
+                        f.write(f"file '{frame_path}'\n")
+                        f.write(f"duration {duration_per_frame}\n")
+                # Repeat last frame to avoid cutting last image short
+                if frame_files:
+                    last_frame_path = os.path.join(editor_path, frame_files[-1])
+                    f.write(f"file '{last_frame_path}'\n")
+            
+            # Run ffmpeg command with proper settings for image concatenation
+            ffmpeg_cmd = [
+                'ffmpeg', '-y',  # Overwrite output
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_list_path,
+                '-pix_fmt', 'yuv420p',  # Required for compatibility
+                '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',  # Ensure even dimensions
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-r', str(fps),  # Output framerate
+                '-movflags', '+faststart',
+                output_path
+            ]
+            
+            logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+            
+            result = subprocess.run(
+                ffmpeg_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"ffmpeg error: {result.stderr}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"ffmpeg failed: {result.stderr[:500]}"
+                }), 500
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(concat_list_path)
+            except:
+                pass
         
         # Return download URL
         download_url = url_for('web_ui.serve_output_file', 
