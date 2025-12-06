@@ -6,4 +6,4 @@ tqdm>=4.66.0
 Flask>=2.3.0
 celery>=5.3.6
 redis>=5.0.0
-supabase-py>=0.11.0
+supabase>=0.11.0
