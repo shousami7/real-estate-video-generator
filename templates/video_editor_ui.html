@@ -5329,6 +5329,7 @@
 
         function selectCinemaFrame(index) {
             scrollToCinemaCard(index);
+            scrollToFullscreenThumb(index);
             updateFullscreenPreview(index);
             updateCinemaTimecode(index, allExtractedFrames.length);
         }
@@ -5435,6 +5436,7 @@
                     if (currentFocusedFrameIndex > 0) {
                         const newIndex = currentFocusedFrameIndex - 1;
                         updateFullscreenPreview(newIndex);
+                        scrollToFullscreenThumb(newIndex);
                         scrollToCinemaCard(newIndex);
                         updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
@@ -5444,6 +5446,7 @@
                     if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
                         const newIndex = currentFocusedFrameIndex + 1;
                         updateFullscreenPreview(newIndex);
+                        scrollToFullscreenThumb(newIndex);
                         scrollToCinemaCard(newIndex);
                         updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
