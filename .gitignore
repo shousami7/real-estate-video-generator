@@ -43,3 +43,6 @@ Thumbs.db
 htmlcov/
 
 frames/
+
+# some sample TS projects
+node_modules/
