@@ -368,7 +368,8 @@
             /* Matches GAP in LiquidTimeline */
             align-items: center;
             transform-style: preserve-3d;
-            /* Padding set dynamically by JS */
+            padding: 0 50vw;
+            /* Centering padding */
         }
 
         /* Cinema Frame Cards */
@@ -576,49 +577,51 @@
         // --- Initialize ---
         function init() {
             // Data passed from server via Jinja2
-            const serverFrames = {{ frames | tojson | safe
-        }};
+            const serverFrames = [
+                { frame_id: '1', url: 'https://picsum.photos/800/450?random=1', timestamp: '00:00:05:00', seconds: 5, frame_number: 1 },
+                { frame_id: '2', url: 'https://picsum.photos/800/450?random=2', timestamp: '00:00:10:00', seconds: 10, frame_number: 2 },
+                { frame_id: '3', url: 'https://picsum.photos/800/450?random=3', timestamp: '00:00:15:00', seconds: 15, frame_number: 3 },
+                { frame_id: '4', url: 'https://picsum.photos/800/450?random=4', timestamp: '00:00:20:00', seconds: 20, frame_number: 4 },
+                { frame_id: '5', url: 'https://picsum.photos/800/450?random=5', timestamp: '00:00:25:00', seconds: 25, frame_number: 5 },
+            ];
 
-        if (serverFrames && serverFrames.length > 0) {
-            state.frames = serverFrames.map((f, i) => ({
-                id: f.frame_id,
-                src: f.url,
-                timestamp: f.timestamp,
-                frame_number: i + 1,
-                seconds: f.seconds,
-                path: f.path
-            }));
-        } else {
-            console.warn("No frames provided from server");
-            state.frames = [];
-        }
+            if (serverFrames && serverFrames.length > 0) {
+                state.frames = serverFrames.map((f, i) => ({
+                    id: f.frame_id,
+                    src: f.url,
+                    timestamp: f.timestamp,
+                    frame_number: i + 1,
+                    seconds: f.seconds,
+                    path: f.path
+                }));
+            } else {
+                console.warn("No frames provided from server");
+                state.frames = [];
+            }
 
-        if (state.frames.length > 0) {
-            renderTimeline();
-            updateTimecode();
+            if (state.frames.length > 0) {
+                renderTimeline();
+                updateTimecode();
 
-            // Set inner padding to center first/last cards
-            const viewportWidth = window.innerWidth;
-            const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
-            inner.style.paddingLeft = `${sidePadding}px`;
-            inner.style.paddingRight = `${sidePadding}px`;
+                // Set viewport padding to center first/last cards
+                const viewportWidth = window.innerWidth;
+                const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+                viewport.style.paddingLeft = `${sidePadding}px`;
+                viewport.style.paddingRight = `${sidePadding}px`;
 
-            // Set initial scroll position to 0 to center the first frame
-            viewport.scrollLeft = 0;
+                // Initial Main Player Update
+                updateMainPlayer(0);
 
-            // Initial Main Player Update
-            updateMainPlayer(0);
+                // Initial Transform Update
+                requestAnimationFrame(updateCardTransforms);
+            } else {
+                inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
+            }
 
-            // Initial Transform Update
-            requestAnimationFrame(updateCardTransforms);
-        } else {
-            inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
-        }
-
-        // Event Listeners
-        viewport.addEventListener('scroll', handleScroll);
-        document.addEventListener('keydown', handleKeyboard);
-        document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+            // Event Listeners
+            viewport.addEventListener('scroll', handleScroll);
+            document.addEventListener('keydown', handleKeyboard);
+            document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
         }
 
         function renderTimeline() {

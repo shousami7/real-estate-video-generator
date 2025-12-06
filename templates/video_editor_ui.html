@@ -916,7 +916,7 @@
             display: flex;
             gap: 12px;
             /* Closer gap for continuous strip feel */
-            padding: 0 50%;
+            padding: 0 calc(50% - 120px);
             overflow-x: auto;
             scroll-behavior: smooth;
             scrollbar-width: none;
@@ -1175,6 +1175,15 @@
             height: 6px;
             border-radius: 50%;
             background: #10b981;
+        }
+
+        .cinema-status-divider {
+            color: rgba(255, 255, 255, 0.35);
+        }
+
+        .cinema-status-timestamp {
+            color: rgba(255, 255, 255, 0.7);
+            letter-spacing: 0.08em;
         }
 
         .fullscreen-timeline-controls {
@@ -1809,12 +1818,16 @@
                     </div>
                     <!-- Horizontal scrollable timeline -->
                     <div class="liquid-glass-timeline-container">
-                        <!-- Frame counter badge (top-left) -->
+                        <!-- Frame counter badge (top center) -->
                         <div id="current-frame-badge"
-                            class="absolute top-4 left-4 z-20 px-4 py-2 bg-black/70 backdrop-blur-sm rounded-lg border border-cyan-500/30">
-                            <span class="text-cyan-400 font-bold text-lg" id="current-frame-number">#1</span>
-                            <span class="text-gray-400 text-sm ml-1">/</span>
-                            <span class="text-gray-400 text-sm ml-1" id="total-frames-count">0</span>
+                            class="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-cyan-500/40 bg-black/70 px-4 py-2 backdrop-blur-sm">
+                            <div class="text-[11px] uppercase tracking-[0.12em] text-cyan-200/80">Current frame</div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-cyan-400 font-bold text-lg" id="current-frame-number">#1</span>
+                                <span class="text-gray-400 text-sm">/</span>
+                                <span class="text-gray-400 text-sm" id="total-frames-count">0</span>
+                                <span class="text-gray-300 text-xs font-mono" id="current-frame-timestamp">0:00</span>
+                            </div>
                         </div>
 
                         <div class="liquid-glass-timeline" id="liquid-glass-timeline">
@@ -1932,7 +1945,9 @@
                             <div class="cinema-status-indicator"></div>
                             <span>Ready</span>
                             <span style="margin: 0 8px;">|</span>
-                            <span id="fullscreen-frame-counter">0 frames</span>
+                            <span id="fullscreen-frame-counter">Frame #1 / 0</span>
+                            <span class="cinema-status-divider">•</span>
+                            <span class="cinema-status-timestamp" id="fullscreen-frame-timestamp">0:00</span>
                         </div>
                     </div>
                     <div class="fullscreen-timeline-controls">
@@ -5043,6 +5058,7 @@
         const fullscreenCurrentTimestamp = document.getElementById('fullscreen-current-timestamp');
         const fullscreenTimelineScroll = document.getElementById('fullscreen-timeline-scroll');
         const fullscreenFrameCounter = document.getElementById('fullscreen-frame-counter');
+        const fullscreenFrameTimestamp = document.getElementById('fullscreen-frame-timestamp');
         const fullscreenCloseBtn = document.getElementById('fullscreen-close-btn');
         const fullscreenPickFrameBtn = document.getElementById('fullscreen-pick-frame-btn');
         const fullscreenChatInput = document.getElementById('fullscreen-chat-input');
@@ -5159,7 +5175,14 @@
             cinemaTimelineViewport.style.paddingRight = `${sidePadding}px`;
 
             // Update frame counter
-            fullscreenFrameCounter.textContent = `${frames.length} frames`;
+            fullscreenFrameCounter.textContent = `Frame #1 / ${frames.length}`;
+            if (fullscreenFrameTimestamp) {
+                const firstFrame = frames[0];
+                const timestamp = firstFrame
+                    ? (firstFrame.timestamp || formatTimestamp(firstFrame.seconds))
+                    : '0:00';
+                fullscreenFrameTimestamp.textContent = timestamp;
+            }
 
             // Update timecode for first frame
             updateCinemaTimecode(0, frames.length);
@@ -5360,6 +5383,10 @@
             // Update large preview labels
             fullscreenCurrentFrame.textContent = `#${index + 1}`;
             fullscreenCurrentTimestamp.textContent = frame.timestamp || formatTimestamp(frame.seconds);
+            fullscreenFrameCounter.textContent = `Frame #${index + 1} / ${allExtractedFrames.length}`;
+            if (fullscreenFrameTimestamp) {
+                fullscreenFrameTimestamp.textContent = frame.timestamp || formatTimestamp(frame.seconds);
+            }
 
             setActiveFullscreenThumb(index);
 
@@ -5536,6 +5563,8 @@
         });
 
         function renderLiquidGlassTimeline(frames) {
+            allExtractedFrames = frames;
+
             // Pre-render all frames without focus state
             liquidGlassTimeline.innerHTML = frames.map((frame, index) => {
                 const imgSrc = frame.base64;
@@ -5555,6 +5584,15 @@
             const totalFramesEl = document.getElementById('total-frames-count');
             if (totalFramesEl) {
                 totalFramesEl.textContent = frames.length;
+            }
+
+            const badgeTimestampEl = document.getElementById('current-frame-timestamp');
+            if (badgeTimestampEl) {
+                const firstFrame = frames[0];
+                const timestamp = firstFrame
+                    ? (firstFrame.timestamp || formatTimestamp(firstFrame.seconds))
+                    : '0:00';
+                badgeTimestampEl.textContent = timestamp;
             }
 
             // Throttled scroll handler using requestAnimationFrame
@@ -5657,6 +5695,15 @@
             const frameNumberEl = document.getElementById('current-frame-number');
             if (frameNumberEl) {
                 frameNumberEl.textContent = `#${index + 1}`;
+            }
+
+            const frameTimestampEl = document.getElementById('current-frame-timestamp');
+            if (frameTimestampEl) {
+                const frameData = allExtractedFrames[index] || state.frames[index];
+                const timestamp = frameData
+                    ? (frameData.timestamp || formatTimestamp(frameData.seconds))
+                    : '0:00';
+                frameTimestampEl.textContent = timestamp;
             }
         }
 
