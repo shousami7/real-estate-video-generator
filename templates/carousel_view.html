@@ -856,10 +856,13 @@
                     }
                 }
 
-                // Scroll to target
+                // Scroll to target (with clamping to prevent overscroll)
                 const targetScroll = nextTarget * STRIDE;
+                const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+                const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
                 viewport.scrollTo({
-                    left: targetScroll,
+                    left: clampedScroll,
                     behavior: 'smooth'
                 });
             } else if (e.key === 'Enter') {
