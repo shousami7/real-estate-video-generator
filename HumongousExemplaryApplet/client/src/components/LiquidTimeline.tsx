@@ -16,8 +16,6 @@ const GAP = 60;
 export function LiquidTimeline({ frames }: LiquidTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const isNavigatingRef = useRef(false);
-  const targetIndexRef = useRef(0);
 
   const { scrollX } = useScroll({
     container: containerRef,
@@ -29,52 +27,30 @@ export function LiquidTimeline({ frames }: LiquidTimelineProps) {
     mass: 0.8
   });
 
-  // Keyboard Navigation with lock mechanism to prevent scroll-based updates during navigation
+  // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!containerRef.current) return;
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-
-      e.preventDefault();
-
-      // Use targetIndexRef to track the intended position (avoids stale closure issues)
-      const currentTarget = targetIndexRef.current;
-      let nextTarget: number;
 
       if (e.key === 'ArrowRight') {
-        nextTarget = Math.min(frames.length - 1, currentTarget + 1);
-      } else {
-        nextTarget = Math.max(0, currentTarget - 1);
+        const nextIndex = Math.min(frames.length - 1, activeIndex + 1);
+        scrollToIndex(nextIndex);
+      } else if (e.key === 'ArrowLeft') {
+        const prevIndex = Math.max(0, activeIndex - 1);
+        scrollToIndex(prevIndex);
       }
-
-      if (nextTarget === currentTarget) return;
-
-      // Set navigation lock - prevents useAnimationFrame from updating activeIndex
-      isNavigatingRef.current = true;
-      targetIndexRef.current = nextTarget;
-      setActiveIndex(nextTarget);
-      scrollToIndex(nextTarget);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [frames.length]);
+  }, [activeIndex, frames.length]);
 
   const scrollToIndex = (index: number) => {
     if (containerRef.current) {
-      // Get the inner flex container and its children (cards)
-      const innerContainer = containerRef.current.firstElementChild;
-      const cards = innerContainer?.children;
-      const targetCard = cards?.[index] as HTMLElement | undefined;
-
-      if (targetCard) {
-        // Use scrollIntoView for reliable centering (works with CSS scroll-snap)
-        targetCard.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest'
-        });
-      }
+      containerRef.current.scrollTo({
+        left: index * (CARD_WIDTH + GAP),
+        behavior: 'smooth'
+      });
     }
   };
 
@@ -82,32 +58,9 @@ export function LiquidTimeline({ frames }: LiquidTimelineProps) {
   useAnimationFrame(() => {
     if (!containerRef.current) return;
     const currentScroll = scrollX.get();
-    const viewportWidth = containerRef.current.clientWidth;
-    const centerX = currentScroll + viewportWidth / 2;
-
-    // If navigating via keyboard, check if target card has reached center
-    if (isNavigatingRef.current) {
-      const innerContainer = containerRef.current.firstElementChild;
-      const cards = innerContainer?.children;
-      const targetCard = cards?.[targetIndexRef.current] as HTMLElement | undefined;
-
-      if (targetCard) {
-        const cardCenter = targetCard.offsetLeft + CARD_WIDTH / 2;
-        const distanceFromCenter = Math.abs(cardCenter - centerX);
-        // Unlock when target card is close to center (within 10px)
-        if (distanceFromCenter < 10) {
-          isNavigatingRef.current = false;
-        }
-      }
-      // Don't update activeIndex from scroll position while navigating
-      return;
-    }
-
-    // Normal scroll-based index update (for mouse/touch scrolling)
     const index = Math.round(currentScroll / (CARD_WIDTH + GAP));
     if (index !== activeIndex && index >= 0 && index < frames.length) {
       setActiveIndex(index);
-      targetIndexRef.current = index;
     }
   });
 
