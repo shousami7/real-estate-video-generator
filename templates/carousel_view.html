@@ -178,6 +178,22 @@
             transition: opacity 0.1s ease;
         }
 
+        .frame-position-badge {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 12px;
+            letter-spacing: 0.05em;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
         /* Timeline Strip Container */
         .nle-timeline-strip {
             position: fixed;
@@ -346,6 +362,7 @@
             overflow-x: auto;
             overflow-y: hidden;
             scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
             scrollbar-width: none;
             -ms-overflow-style: none;
             cursor: grab;
@@ -496,6 +513,7 @@
 
     <!-- Main Player -->
     <div class="nle-main-player">
+        <div class="frame-position-badge" id="frame-position-badge">Frame #-- / 0</div>
         <img id="main-player-image" src="" alt="Active Frame">
     </div>
 
@@ -572,6 +590,7 @@
         const timecodeEl = document.getElementById('nle-timecode');
         const progressFillEl = document.getElementById('nle-progress-fill');
         const mainPlayerImg = document.getElementById('main-player-image');
+        const frameBadgeEl = document.getElementById('frame-position-badge');
 
         // --- Initialize ---
         function init() {
@@ -595,7 +614,7 @@
 
         if (state.frames.length > 0) {
             renderTimeline();
-            updateTimecode();
+            setActiveIndex(0, { force: true, instant: true });
 
             // Set inner padding to center first/last cards
             const viewportWidth = window.innerWidth;
@@ -605,9 +624,6 @@
 
             // Set initial scroll position to 0 to center the first frame
             viewport.scrollLeft = 0;
-
-            // Initial Main Player Update
-            updateMainPlayer(0);
 
             // Initial Transform Update
             requestAnimationFrame(updateCardTransforms);
@@ -728,12 +744,30 @@
 
                 // Update Active State
                 const isActive = absDist < 0.4; // Slightly wider threshold for state update
-                if (isActive && state.currentIndex !== index) {
-                    state.currentIndex = index;
-                    updateTimecode();
-                    updateMainPlayer(index);
+                if (isActive) {
+                    setActiveIndex(index);
                 }
             });
+        }
+
+        function setActiveIndex(index, options = {}) {
+            if (!state.frames.length) return;
+
+            const clamped = Math.max(0, Math.min(state.frames.length - 1, index));
+            const shouldForce = options.force === true;
+            if (!shouldForce && state.currentIndex === clamped) return;
+
+            state.currentIndex = clamped;
+            updateTimecode();
+            updateMainPlayer(clamped);
+
+            if (options.scroll === true) {
+                const targetScroll = clamped * STRIDE;
+                viewport.scrollTo({
+                    left: targetScroll,
+                    behavior: options.instant ? 'auto' : 'smooth'
+                });
+            }
         }
 
         function updateMainPlayer(index) {
@@ -757,11 +791,7 @@
         }
 
         function scrollToIndex(index) {
-            const targetScroll = index * STRIDE;
-            viewport.scrollTo({
-                left: targetScroll,
-                behavior: 'smooth'
-            });
+            setActiveIndex(index, { scroll: true });
         }
 
         function handleKeyboard(e) {
@@ -777,8 +807,16 @@
         }
 
         function updateTimecode() {
+            if (!state.frames.length) {
+                updateFrameBadge();
+                return;
+            }
+
             const frame = state.frames[state.currentIndex];
-            if (!frame) return;
+            if (!frame) {
+                updateFrameBadge();
+                return;
+            }
 
             const timestamp = frame.timestamp || formatTimestamp(frame.seconds);
             // Ensure 00:00:00:00 format
@@ -792,6 +830,21 @@
             // Update progress bar
             const progress = state.frames.length > 1 ? ((state.currentIndex + 1) / state.frames.length) : 0;
             progressFillEl.style.transform = `scaleX(${progress})`;
+
+            updateFrameBadge();
+        }
+
+        function updateFrameBadge() {
+            if (!frameBadgeEl) return;
+
+            const total = state.frames.length;
+            if (!total) {
+                frameBadgeEl.textContent = 'Frame #-- / 0';
+                return;
+            }
+
+            const current = Math.min(total, state.currentIndex + 1);
+            frameBadgeEl.textContent = `Frame #${current} / ${total}`;
         }
 
         function formatTimestamp(seconds) {
