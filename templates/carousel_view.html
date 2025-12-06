@@ -792,15 +792,17 @@
             if (!state.frames[index]) return;
             const frame = state.frames[index];
 
-            // Debounce/Check if actually changed to avoid flickering
-            if (mainPlayerImg.getAttribute('src') !== frame.src) {
+            // Use dataset index for robust tracking
+            const currentIndex = parseInt(mainPlayerImg.dataset.index);
+
+            if (currentIndex !== index) {
                 mainPlayerImg.style.opacity = '0.5';
-                setTimeout(() => {
-                    mainPlayerImg.src = frame.src;
-                    mainPlayerImg.onload = () => {
-                        mainPlayerImg.style.opacity = '1';
-                    };
-                }, 50);
+                mainPlayerImg.src = frame.src;
+                mainPlayerImg.dataset.index = index;
+
+                mainPlayerImg.onload = () => {
+                    mainPlayerImg.style.opacity = '1';
+                };
             }
         }
 
@@ -835,10 +837,35 @@
                 updateTimecode();
                 updateMainPlayer(nextTarget);
 
-                // Scroll to target
+                // Immediately apply "centered" visual state to target card
+                const cards = inner.querySelectorAll('.cinema-frame-card');
+                const targetCard = cards[nextTarget];
+                if (targetCard) {
+                    // Apply instant centered transforms
+                    targetCard.style.transform = `
+                        perspective(1500px)
+                        translateX(0px)
+                        translateZ(0px)
+                        rotateY(0deg)
+                        scale(1.1)
+                    `;
+                    targetCard.style.opacity = '1';
+                    targetCard.style.filter = 'blur(0px)';
+                    targetCard.style.zIndex = '50';
+
+                    const borderGlow = targetCard.querySelector('.card-border-glow');
+                    if (borderGlow) {
+                        borderGlow.style.opacity = '1';
+                    }
+                }
+
+                // Scroll to target (with clamping to prevent overscroll)
                 const targetScroll = nextTarget * STRIDE;
+                const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+                const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
                 viewport.scrollTo({
-                    left: targetScroll,
+                    left: clampedScroll,
                     behavior: 'smooth'
                 });
             } else if (e.key === 'Enter') {
