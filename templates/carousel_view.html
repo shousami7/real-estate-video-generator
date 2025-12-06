@@ -537,17 +537,20 @@
 
         <!-- Glass Controls Toolbar -->
         <div class="nle-glass-toolbar">
-            <button class="tool-btn">
+            <!-- Hidden file input for image upload -->
+            <input type="file" id="add-frame-input" accept="image/*" style="display: none;">
+
+            <button class="tool-btn" id="add-frame-btn" title="Add a new frame">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">content_cut</span>
+                    <span class="material-symbols-outlined">add_photo_alternate</span>
                 </div>
-                <span class="tool-label">Split</span>
+                <span class="tool-label">Add Frame</span>
             </button>
-            <button class="tool-btn">
+            <button class="tool-btn" id="save-order-btn" title="Save current frame order">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">volume_up</span>
+                    <span class="material-symbols-outlined">save</span>
                 </div>
-                <span class="tool-label">Audio</span>
+                <span class="tool-label">Save Order</span>
             </button>
 
             <div class="tool-separator"></div>
@@ -892,22 +895,166 @@
         }
 
         function confirmSelection() {
-            if (state.frames.length === 0) return;
+            // Trigger video export
+            exportVideo();
+        }
 
-            const selected = state.frames[state.currentIndex];
-            if (window.opener && !window.opener.closed) {
-                window.opener.postMessage({
-                    type: 'FRAME_SELECTED',
-                    frame: selected
-                }, '*');
-                window.close();
-            } else {
-                alert(`Selected Frame ${selected.frame_number} at ${selected.timestamp}\n(Parent window not found, cannot return selection)`);
+        async function exportVideo() {
+            if (state.frames.length === 0) {
+                alert('No frames to export');
+                return;
+            }
+
+            const exportBtn = document.getElementById('confirm-selection-btn');
+            const originalText = exportBtn.textContent;
+            exportBtn.textContent = 'Exporting...';
+            exportBtn.disabled = true;
+
+            // Show loading overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'export-overlay';
+            overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000;';
+            overlay.innerHTML = `
+                <span class="material-symbols-outlined" style="font-size: 48px; color: white; animation: spin 1s linear infinite;">progress_activity</span>
+                <div style="color: white; margin-top: 16px; font-size: 18px;">Exporting ${state.frames.length} frames to video...</div>
+                <div style="color: #888; margin-top: 8px; font-size: 14px;">This may take a moment</div>
+            `;
+            document.body.appendChild(overlay);
+
+            // Add spin animation
+            const style = document.createElement('style');
+            style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+
+            try {
+                const response = await fetch('/frames/export_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fps: 24,
+                        duration_per_frame: 0.5
+                    })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    overlay.innerHTML = `
+                        <span class="material-symbols-outlined" style="font-size: 48px; color: #10b981;">check_circle</span>
+                        <div style="color: white; margin-top: 16px; font-size: 18px;">Export Complete!</div>
+                        <div style="color: #888; margin-top: 8px; font-size: 14px;">${data.frame_count} frames • ${data.duration.toFixed(1)}s duration</div>
+                        <a href="${data.download_url}" download="${data.filename}" 
+                           style="margin-top: 24px; padding: 12px 32px; background: white; color: black; text-decoration: none; border-radius: 9999px; font-weight: 600;">
+                            Download Video
+                        </a>
+                        <button onclick="this.parentElement.remove()" 
+                                style="margin-top: 16px; background: none; border: 1px solid #666; color: #888; padding: 8px 24px; border-radius: 9999px; cursor: pointer;">
+                            Close
+                        </button>
+                    `;
+
+                    // Auto-start download
+                    const link = document.createElement('a');
+                    link.href = data.download_url;
+                    link.download = data.filename;
+                    link.click();
+                } else {
+                    throw new Error(data.message);
+                }
+            } catch (err) {
+                overlay.remove();
+                alert('Export failed: ' + err.message);
+            } finally {
+                exportBtn.textContent = originalText;
+                exportBtn.disabled = false;
+            }
+        }
+
+        // --- Upload Frame Handler ---
+        function setupUploadHandler() {
+            const addBtn = document.getElementById('add-frame-btn');
+            const addInput = document.getElementById('add-frame-input');
+            const saveBtn = document.getElementById('save-order-btn');
+
+            if (addBtn && addInput) {
+                addBtn.addEventListener('click', () => addInput.click());
+                addInput.addEventListener('change', handleFrameUpload);
+            }
+
+            if (saveBtn) {
+                saveBtn.addEventListener('click', saveFrameOrder);
+            }
+        }
+
+        async function handleFrameUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            e.target.value = '';  // Reset for next upload
+
+            // Show loading
+            const loadingDiv = document.createElement('div');
+            loadingDiv.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+            loadingDiv.innerHTML = '<span class="material-symbols-outlined" style="font-size: 48px; color: white; animation: spin 1s linear infinite;">progress_activity</span>';
+            document.body.appendChild(loadingDiv);
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('position', state.currentIndex + 1);  // Insert after current
+
+                const response = await fetch('/frames/upload_image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    alert('Upload failed: ' + data.message);
+                }
+            } catch (err) {
+                alert('Error uploading: ' + err.message);
+            } finally {
+                loadingDiv.remove();
+            }
+        }
+
+        async function saveFrameOrder() {
+            const filenames = state.frames.map(f => {
+                if (f.path) {
+                    return f.path.split('/').pop();
+                }
+                return f.src.split('/').pop();
+            });
+
+            try {
+                const response = await fetch('/frames/save_order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const toast = document.createElement('div');
+                    toast.textContent = 'Order saved!';
+                    toast.style.cssText = 'position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; z-index: 1000;';
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 2000);
+                } else {
+                    alert('Failed to save: ' + data.message);
+                }
+            } catch (err) {
+                alert('Error saving order: ' + err.message);
             }
         }
 
         // Initialize on DOM ready
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            setupUploadHandler();
+        });
     </script>
 </body>
 

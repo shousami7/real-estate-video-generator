@@ -669,6 +669,7 @@ def load_frame_session():
         
         # Update session
         session['editor_frames'] = frames
+        session['current_session_id'] = session_id  # For export and upload support
         session.pop('editor_video_path', None)
         
         logger.info(f"Loaded session {session_id} with {len(frames)} frames")
@@ -681,6 +682,288 @@ def load_frame_session():
         
     except Exception as e:
         logger.error(f"Error loading frame session: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def write_frames_txt(editor_path, filenames):
+    """Helper function to write frames.txt with the current frame order."""
+    frames_txt_path = os.path.join(editor_path, 'frames.txt')
+    with open(frames_txt_path, 'w') as f:
+        for filename in filenames:
+            f.write(filename + '\n')
+
+
+def read_frames_txt(editor_path):
+    """Helper function to read frame order from frames.txt."""
+    frames_txt_path = os.path.join(editor_path, 'frames.txt')
+    if os.path.exists(frames_txt_path):
+        with open(frames_txt_path, 'r') as f:
+            return [line.strip() for line in f if line.strip()]
+    return None
+
+
+@web_ui_blueprint.route('/frames/export_video', methods=['POST'])
+def export_video_from_frames():
+    """
+    Export frames to a video using ffmpeg.
+    Reads frame order from frames.txt and creates a video with specified fps.
+    """
+    import subprocess
+    import time
+    
+    try:
+        data = request.get_json() or {}
+        fps = data.get('fps', 24)
+        duration_per_frame = data.get('duration_per_frame', 0.5)  # seconds each frame shows
+        
+        session_id = session.get('current_session_id')
+        if not session_id:
+            return jsonify({"status": "error", "message": "No active session. Please load a session first."}), 400
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        editor_path = os.path.join(upload_root, 'frames', session_id, 'editor')
+        
+        if not os.path.isdir(editor_path):
+            return jsonify({"status": "error", "message": "Session directory not found"}), 404
+        
+        # Read frame order from frames.txt
+        frame_files = read_frames_txt(editor_path)
+        
+        if not frame_files:
+            # Fall back to alphabetical order
+            valid_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+            frame_files = sorted([f for f in os.listdir(editor_path) 
+                                 if os.path.splitext(f)[1].lower() in valid_extensions])
+        
+        if not frame_files:
+            return jsonify({"status": "error", "message": "No frames found in session"}), 400
+        
+        # Create output directory
+        output_dir = os.path.join(upload_root, 'output', session_id)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate unique output filename
+        timestamp = int(time.time())
+        output_filename = f"export_{timestamp}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        # Create a concat file list for ffmpeg
+        concat_list_path = os.path.join(editor_path, 'concat_list.txt')
+        with open(concat_list_path, 'w') as f:
+            for frame_file in frame_files:
+                frame_path = os.path.join(editor_path, frame_file)
+                if os.path.exists(frame_path):
+                    # ffmpeg concat demuxer format: file 'path' and duration
+                    f.write(f"file '{frame_path}'\n")
+                    f.write(f"duration {duration_per_frame}\n")
+            # Repeat last frame to avoid cutting last image short
+            if frame_files:
+                last_frame_path = os.path.join(editor_path, frame_files[-1])
+                f.write(f"file '{last_frame_path}'\n")
+        
+        # Run ffmpeg command with proper settings for image concatenation
+        ffmpeg_cmd = [
+            'ffmpeg', '-y',  # Overwrite output
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_list_path,
+            '-vsync', 'vfr',  # Variable frame rate for concat
+            '-pix_fmt', 'yuv420p',  # Required for compatibility
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',  # Ensure even dimensions
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            '-r', str(fps),  # Output framerate
+            '-movflags', '+faststart',
+            output_path
+        ]
+        
+        logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+        
+        result = subprocess.run(
+            ffmpeg_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"ffmpeg error: {result.stderr}")
+            return jsonify({
+                "status": "error",
+                "message": f"ffmpeg failed: {result.stderr[:500]}"
+            }), 500
+        
+        # Clean up concat list
+        try:
+            os.remove(concat_list_path)
+        except:
+            pass
+        
+        # Return download URL
+        download_url = url_for('web_ui.serve_output_file', 
+                               filename=f"{session_id}/{output_filename}")
+        
+        logger.info(f"Video exported successfully: {output_path}")
+        
+        return jsonify({
+            "status": "success",
+            "filename": output_filename,
+            "download_url": download_url,
+            "frame_count": len(frame_files),
+            "duration": len(frame_files) * duration_per_frame
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "message": "Export timed out"}), 500
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "ffmpeg not found. Please install ffmpeg."}), 500
+    except Exception as e:
+        logger.error(f"Error exporting video: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@web_ui_blueprint.route('/frames/upload_image', methods=['POST'])
+def upload_frame_image():
+    """
+    Upload a new image to the current session.
+    The image is saved to frames/<session_id>/editor and frames.txt is updated.
+    """
+    try:
+        from werkzeug.utils import secure_filename
+        
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+        
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({"status": "error", "message": "No file selected"}), 400
+        
+        # Validate extension
+        valid_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in valid_extensions:
+            return jsonify({"status": "error", "message": f"Invalid file type: {ext}"}), 400
+        
+        # Get current session ID
+        session_id = session.get('current_session_id')
+        if not session_id:
+            return jsonify({"status": "error", "message": "No active session. Please load a session first."}), 400
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        editor_path = os.path.join(upload_root, 'frames', session_id, 'editor')
+        
+        if not os.path.isdir(editor_path):
+            return jsonify({"status": "error", "message": "Session directory not found"}), 404
+        
+        # Generate unique filename
+        import time
+        safe_name = secure_filename(file.filename)
+        if not safe_name:
+            safe_name = f"uploaded_{int(time.time())}{ext}"
+        
+        # Avoid overwriting existing files
+        base_name = os.path.splitext(safe_name)[0]
+        final_name = safe_name
+        counter = 1
+        while os.path.exists(os.path.join(editor_path, final_name)):
+            final_name = f"{base_name}_{counter}{ext}"
+            counter += 1
+        
+        save_path = os.path.join(editor_path, final_name)
+        file.save(save_path)
+        
+        # Get insert position (optional, defaults to end)
+        insert_position = request.form.get('position', type=int)
+        
+        # Read current frames.txt
+        filenames = read_frames_txt(editor_path)
+        if not filenames:
+            filenames = sorted([f for f in os.listdir(editor_path) 
+                               if os.path.splitext(f)[1].lower() in valid_extensions and f != 'frames.txt'])
+        
+        # Insert at position or append
+        if insert_position is not None and 0 <= insert_position <= len(filenames):
+            filenames.insert(insert_position, final_name)
+        else:
+            filenames.append(final_name)
+        
+        # Update frames.txt
+        write_frames_txt(editor_path, filenames)
+        
+        # Update session frames
+        frames = []
+        for idx, fn in enumerate(filenames):
+            frames.append({
+                'id': idx,
+                'path': os.path.join(editor_path, fn),
+                'filename': fn,
+                'timestamp': idx
+            })
+        session['editor_frames'] = frames
+        
+        # Return URL for the uploaded image
+        image_url = url_for('web_ui.serve_frame_file', filename=f"{session_id}/editor/{final_name}")
+        
+        logger.info(f"Uploaded image {final_name} to session {session_id}")
+        
+        return jsonify({
+            "status": "success",
+            "filename": final_name,
+            "url": image_url,
+            "position": insert_position if insert_position is not None else len(filenames) - 1
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading image: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@web_ui_blueprint.route('/frames/save_order', methods=['POST'])
+def save_frame_order():
+    """
+    Save the current frame order to frames.txt.
+    Expects JSON with 'filenames' array in desired order.
+    """
+    try:
+        data = request.get_json()
+        filenames = data.get('filenames', [])
+        
+        session_id = session.get('current_session_id')
+        if not session_id:
+            return jsonify({"status": "error", "message": "No active session"}), 400
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        editor_path = os.path.join(upload_root, 'frames', session_id, 'editor')
+        
+        if not os.path.isdir(editor_path):
+            return jsonify({"status": "error", "message": "Session directory not found"}), 404
+        
+        # Validate that all filenames exist
+        for fn in filenames:
+            if not os.path.exists(os.path.join(editor_path, fn)):
+                return jsonify({"status": "error", "message": f"File not found: {fn}"}), 400
+        
+        # Write frames.txt
+        write_frames_txt(editor_path, filenames)
+        
+        # Update session frames
+        frames = []
+        for idx, fn in enumerate(filenames):
+            frames.append({
+                'id': idx,
+                'path': os.path.join(editor_path, fn),
+                'filename': fn,
+                'timestamp': idx
+            })
+        session['editor_frames'] = frames
+        
+        logger.info(f"Saved frame order for session {session_id}: {len(filenames)} frames")
+        
+        return jsonify({"status": "success", "frame_count": len(filenames)})
+        
+    except Exception as e:
+        logger.error(f"Error saving frame order: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
