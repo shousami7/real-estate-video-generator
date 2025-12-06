@@ -1082,13 +1082,13 @@
             }
         }
 
-        /* ===== Fullscreen Frame Timeline Mode ===== */
+        /* ===== Cinema-Style Fullscreen Frame Timeline Mode ===== */
         .fullscreen-timeline-mode {
             position: fixed;
             inset: 0;
             z-index: 100;
             display: flex;
-            background: #0a0a0a;
+            background: #050505;
         }
 
         .fullscreen-timeline-content {
@@ -1096,38 +1096,132 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
         }
 
+        /* Film Grain Overlay */
+        .cinema-film-grain {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        /* Background Ambient Glow */
+        .cinema-ambient-glow {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            transition: opacity 1s;
+            opacity: 0.2;
+        }
+
+        .cinema-ambient-glow::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.15) 0%, transparent 60%);
+            filter: blur(100px);
+            mix-blend-mode: screen;
+        }
+
+        /* Header HUD */
         .fullscreen-timeline-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 420px;
+            padding: 24px 32px;
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            padding: 16px 24px;
-            border-bottom: 1px solid #374151;
-            background: #111827;
+            align-items: flex-start;
+            z-index: 40;
+            pointer-events: none;
         }
 
         .fullscreen-timeline-title {
             display: flex;
-            align-items: center;
-            gap: 12px;
+            flex-direction: column;
+            gap: 4px;
+            pointer-events: auto;
         }
 
         .fullscreen-timeline-title h2 {
             color: white;
-            font-size: 1.25rem;
-            font-weight: 700;
+            font-size: 1.125rem;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+        }
+
+        .cinema-status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.7rem;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .cinema-status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
         }
 
         .fullscreen-timeline-controls {
             display: flex;
+            gap: 16px;
             align-items: center;
-            gap: 12px;
+            pointer-events: auto;
         }
 
-        .fullscreen-frame-counter {
-            color: #9CA3AF;
+        .cinema-settings-btn {
+            padding: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .cinema-settings-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .cinema-settings-btn:hover .material-symbols-outlined {
+            transform: rotate(90deg);
+        }
+
+        .cinema-settings-btn .material-symbols-outlined {
+            transition: transform 0.5s ease;
+        }
+
+        .cinema-export-btn {
+            padding: 12px 24px;
+            border-radius: 9999px;
+            background: white;
+            color: black;
             font-size: 0.875rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+        }
+
+        .cinema-export-btn:hover {
+            transform: scale(1.05);
         }
 
         .fullscreen-close-btn {
@@ -1136,196 +1230,317 @@
             justify-content: center;
             width: 40px;
             height: 40px;
-            border-radius: 8px;
-            background: #374151;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             color: white;
-            border: none;
             cursor: pointer;
             transition: background 0.2s;
         }
 
         .fullscreen-close-btn:hover {
-            background: #4B5563;
+            background: rgba(255, 255, 255, 0.1);
         }
 
-        /* Large preview area */
-        .fullscreen-preview-area {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            min-height: 0;
-            background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0a 70%);
-        }
-
-        .fullscreen-preview-frame {
-            max-width: 100%;
-            max-height: 100%;
-            border-radius: 16px;
-            box-shadow:
-                0 0 60px rgba(6, 182, 212, 0.3),
-                0 0 120px rgba(168, 85, 247, 0.15),
-                0 25px 50px rgba(0, 0, 0, 0.5);
-            border: 2px solid rgba(6, 182, 212, 0.4);
-            opacity: 1;
-            transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease;
-        }
-
-        .fullscreen-preview-frame.is-updating {
-            opacity: 0.35;
-            transform: scale(0.985);
-            filter: blur(0.4px);
-        }
-
-        .fullscreen-preview-info {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 12px 24px;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .fullscreen-preview-info span {
-            color: white;
-            font-size: 0.875rem;
-        }
-
-        .fullscreen-preview-info .frame-number {
-            color: #06B6D4;
-            font-weight: 600;
-        }
-
-        .fullscreen-preview-info .timestamp {
-            color: #A855F7;
-            font-family: monospace;
-        }
-
-        /* Bottom timeline strip */
-        .fullscreen-timeline-strip {
+        .fullscreen-frame-counter {
             display: none;
-            /* Hidden per user request */
         }
 
-        .fullscreen-timeline-scroll {
+        /* Cinema Timeline Viewport - Main scrollable area */
+        .cinema-timeline-viewport {
+            position: relative;
+            width: 100%;
+            height: 80vh;
             display: flex;
-            gap: 16px;
-            padding: 0 calc(50% - 80px);
+            align-items: center;
             overflow-x: auto;
-            scroll-behavior: smooth;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
             scrollbar-width: none;
             -ms-overflow-style: none;
-            scroll-snap-type: x mandatory;
-            scroll-padding-left: calc(50% - 80px);
-            scroll-padding-right: calc(50% - 80px);
-        }
-
-        .fullscreen-timeline-scroll::-webkit-scrollbar {
-            display: none;
-        }
-
-        .fullscreen-thumb {
-            flex-shrink: 0;
-            width: 160px;
-            aspect-ratio: 16 / 9;
-            border-radius: 12px;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-            border: 2px solid transparent;
-            opacity: 0.5;
-            scroll-snap-align: center;
-            scroll-snap-stop: always;
-        }
-
-        .fullscreen-thumb img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: filter 0.3s;
-        }
-
-        .fullscreen-thumb:hover {
-            opacity: 0.8;
-            transform: scale(1.05);
-        }
-
-        .fullscreen-thumb.active {
-            opacity: 1;
-            transform: scale(1.1);
-            border-color: #06B6D4;
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
-        }
-
-        .fullscreen-thumb.active img {
-            filter: none;
-        }
-
-        .fullscreen-thumb:not(.active) img {
-            filter: brightness(0.7);
-        }
-
-        .fullscreen-thumb-info {
-            position: absolute;
-            bottom: 4px;
-            left: 4px;
-            right: 4px;
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 8px;
-            background: rgba(0, 0, 0, 0.7);
-            border-radius: 6px;
-            font-size: 10px;
-        }
-
-        .fullscreen-thumb-info span {
-            color: white;
-        }
-
-        /* Timeline fade edges */
-        .fullscreen-timeline-strip::before,
-        .fullscreen-timeline-strip::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 150px;
-            pointer-events: none;
+            cursor: grab;
+            perspective: 1500px;
             z-index: 10;
         }
 
-        .fullscreen-timeline-strip::before {
-            left: 0;
-            background: linear-gradient(to right, #0a0a0a 0%, transparent 100%);
+        .cinema-timeline-viewport:active {
+            cursor: grabbing;
         }
 
-        .fullscreen-timeline-strip::after {
-            right: 420px;
-            background: linear-gradient(to left, #0a0a0a 0%, transparent 100%);
+        .cinema-timeline-viewport::-webkit-scrollbar {
+            display: none;
         }
 
-        /* Center indicator for timeline */
-        .fullscreen-center-indicator {
+        .cinema-timeline-inner {
+            display: flex;
+            gap: 60px;
+            align-items: center;
+            transform-style: preserve-3d;
+        }
+
+        /* Cinema Frame Cards */
+        .cinema-frame-card {
+            flex-shrink: 0;
+            width: 500px;
+            aspect-ratio: 16 / 9;
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            cursor: pointer;
+            scroll-snap-align: center;
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform, opacity, filter;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            background: #1a1a1a;
+        }
+
+        .cinema-frame-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        /* Glass Reflection Layer */
+        .cinema-frame-card::before {
+            content: '';
             position: absolute;
-            left: 50%;
-            top: 0;
+            inset: 0;
+            background: linear-gradient(135deg,
+                    rgba(255, 255, 255, 0.15) 0%,
+                    transparent 50%,
+                    rgba(0, 0, 0, 0.3) 100%);
+            z-index: 20;
+            pointer-events: none;
+            mix-blend-mode: overlay;
+            border-radius: 16px;
+        }
+
+        /* Frame metadata overlay */
+        .cinema-frame-metadata {
+            position: absolute;
             bottom: 0;
-            width: 3px;
-            transform: translateX(-50%);
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.5), transparent);
+            z-index: 30;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .cinema-frame-card:hover .cinema-frame-metadata {
+            opacity: 1;
+        }
+
+        .cinema-frame-metadata p {
+            font-size: 0.75rem;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            color: rgba(255, 255, 255, 0.9);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .cinema-frame-metadata span.raw-badge {
+            opacity: 0.5;
+        }
+
+        /* Active frame border glow */
+        .cinema-frame-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 16px;
+            z-index: 40;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .cinema-frame-card.active::after {
+            opacity: 1;
+        }
+
+        /* Legacy preview area - hidden in cinema mode, we show frames inline */
+        .fullscreen-preview-area {
+            display: none;
+        }
+
+        .fullscreen-preview-frame,
+        .fullscreen-preview-info {
+            display: none;
+        }
+
+        /* Bottom Glass Toolbar */
+        .cinema-toolbar-container {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            right: 420px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            z-index: 40;
+            pointer-events: none;
+        }
+
+        /* Scrub Bar / Timecode */
+        .cinema-scrub-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cinema-timecode {
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.6);
+            letter-spacing: 0.2em;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cinema-scrub-bar {
+            width: 384px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .cinema-scrub-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            background: white;
+            transition: width 0.1s ease;
+        }
+
+        /* Glass Toolbar */
+        .cinema-glass-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            padding: 16px 40px;
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            pointer-events: auto;
+            transition: background 0.3s ease;
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+            transform: scale(0.9);
+        }
+
+        .cinema-glass-toolbar:hover {
+            background: rgba(10, 10, 10, 0.9);
+        }
+
+        .cinema-tool-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.5);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: color 0.2s ease;
+            position: relative;
+        }
+
+        .cinema-tool-btn:hover {
+            color: white;
+        }
+
+        .cinema-tool-btn .icon-container {
+            padding: 8px;
+            border-radius: 12px;
+            transition: background 0.2s ease;
+        }
+
+        .cinema-tool-btn:hover .icon-container {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .cinema-tool-btn .label {
+            font-size: 0.625rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 500;
+            opacity: 0;
+            position: absolute;
+            bottom: -20px;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+
+        .cinema-tool-btn:hover .label {
+            opacity: 1;
+        }
+
+        .cinema-toolbar-divider {
+            width: 1px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 8px;
+        }
+
+        /* Play Button */
+        .cinema-play-btn {
+            width: 56px;
+            height: 56px;
+            background: white;
+            color: black;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
+            margin: 0 8px;
+        }
+
+        .cinema-play-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .cinema-play-btn:active {
+            transform: scale(0.95);
+        }
+
+        .cinema-play-btn .material-symbols-outlined {
+            font-size: 28px;
+            margin-left: 2px;
+        }
+
+        /* Center Focus Indicator */
+        .cinema-center-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1px;
+            height: 80vh;
             background: linear-gradient(to bottom,
                     transparent 0%,
-                    #06B6D4 30%,
-                    #A855F7 70%,
+                    rgba(255, 255, 255, 0.1) 30%,
+                    rgba(255, 255, 255, 0.1) 70%,
                     transparent 100%);
-            z-index: 5;
             pointer-events: none;
+            z-index: 0;
         }
 
         /* Chat panel in fullscreen mode */
@@ -1336,6 +1551,21 @@
             border-left: 1px solid #374151;
             display: flex;
             flex-direction: column;
+        }
+
+        /* Legacy elements - hide them */
+        .fullscreen-timeline-strip {
+            display: none;
+        }
+
+        .fullscreen-timeline-scroll {
+            display: none;
+        }
+
+        .fullscreen-thumb,
+        .fullscreen-thumb-info,
+        .fullscreen-center-indicator {
+            display: none;
         }
 
         /* Keyboard navigation hint */
@@ -1676,46 +1906,110 @@
             </aside>
         </main>
 
-        <!-- Fullscreen Frame Timeline Mode -->
+        <!-- Fullscreen Frame Timeline Mode (Cinema Style) -->
         <div id="fullscreen-timeline-mode" class="fullscreen-timeline-mode hidden">
             <!-- Left: Main content area -->
             <div class="fullscreen-timeline-content">
-                <!-- Header -->
+                <!-- Film Grain Overlay -->
+                <div class="cinema-film-grain"></div>
+
+                <!-- Background Ambient Glow -->
+                <div class="cinema-ambient-glow"></div>
+
+                <!-- Center Focus Indicator -->
+                <div class="cinema-center-indicator"></div>
+
+                <!-- Header HUD -->
                 <div class="fullscreen-timeline-header">
                     <div class="fullscreen-timeline-title">
-                        <span class="material-symbols-outlined text-primary">auto_awesome</span>
-                        <h2>Frame Timeline</h2>
+                        <h2>Sequence 01</h2>
+                        <div class="cinema-status-bar">
+                            <div class="cinema-status-indicator"></div>
+                            <span>Ready</span>
+                            <span style="margin: 0 8px;">|</span>
+                            <span id="fullscreen-frame-counter">0 frames</span>
+                        </div>
                     </div>
                     <div class="fullscreen-timeline-controls">
                         <div class="keyboard-hint">
                             <kbd>←</kbd><kbd>→</kbd> Navigate
                             <kbd>ESC</kbd> Close
                         </div>
-                        <span id="fullscreen-frame-counter" class="fullscreen-frame-counter">0 frames</span>
+                        <button class="cinema-settings-btn" title="Settings">
+                            <span class="material-symbols-outlined" style="font-size: 20px;">settings</span>
+                        </button>
+                        <button class="cinema-export-btn">Export Video</button>
                         <button id="fullscreen-close-btn" class="fullscreen-close-btn" title="Close (ESC)">
                             <span class="material-symbols-outlined">close</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- Large preview area -->
-                <div class="fullscreen-preview-area">
-                    <div
-                        style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
-                        <img id="fullscreen-preview-img" class="fullscreen-preview-frame" src="" alt="Selected Frame">
-                        <div class="fullscreen-preview-info">
-                            <span class="frame-number" id="fullscreen-current-frame">#1</span>
-                            <span class="timestamp" id="fullscreen-current-timestamp">0:00</span>
-                        </div>
+                <!-- Cinema Timeline Viewport (3D Perspective Scrollable Area) -->
+                <div class="cinema-timeline-viewport" id="cinema-timeline-viewport">
+                    <div class="cinema-timeline-inner" id="cinema-timeline-inner">
+                        <!-- Cinema frame cards will be inserted here by JS -->
                     </div>
                 </div>
 
-                <!-- Bottom timeline strip -->
-                <div class="fullscreen-timeline-strip">
-                    <div class="fullscreen-center-indicator"></div>
-                    <div id="fullscreen-timeline-scroll" class="fullscreen-timeline-scroll">
-                        <!-- Thumbnails will be inserted here -->
+                <!-- Bottom Glass Toolbar -->
+                <div class="cinema-toolbar-container">
+                    <!-- Scrub Bar / Timecode -->
+                    <div class="cinema-scrub-container">
+                        <div class="cinema-timecode" id="cinema-timecode">00:00:00:00</div>
+                        <div class="cinema-scrub-bar">
+                            <div class="cinema-scrub-progress" id="cinema-scrub-progress" style="width: 0%;"></div>
+                        </div>
                     </div>
+
+                    <!-- Glass Toolbar -->
+                    <div class="cinema-glass-toolbar">
+                        <button class="cinema-tool-btn" title="Split">
+                            <div class="icon-container">
+                                <span class="material-symbols-outlined" style="font-size: 20px;">content_cut</span>
+                            </div>
+                            <span class="label">Split</span>
+                        </button>
+                        <button class="cinema-tool-btn" title="Audio">
+                            <div class="icon-container">
+                                <span class="material-symbols-outlined" style="font-size: 20px;">volume_up</span>
+                            </div>
+                            <span class="label">Audio</span>
+                        </button>
+
+                        <div class="cinema-toolbar-divider"></div>
+
+                        <button class="cinema-play-btn" title="Play/Pause">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                        </button>
+
+                        <div class="cinema-toolbar-divider"></div>
+
+                        <button class="cinema-tool-btn" title="Layers">
+                            <div class="icon-container">
+                                <span class="material-symbols-outlined" style="font-size: 20px;">layers</span>
+                            </div>
+                            <span class="label">Layers</span>
+                        </button>
+                        <button class="cinema-tool-btn" title="Preview">
+                            <div class="icon-container">
+                                <span class="material-symbols-outlined" style="font-size: 20px;">desktop_windows</span>
+                            </div>
+                            <span class="label">Preview</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Legacy elements (hidden but kept for JS compatibility) -->
+                <div class="fullscreen-preview-area" style="display: none;">
+                    <img id="fullscreen-preview-img" class="fullscreen-preview-frame" src="" alt="Selected Frame">
+                    <div class="fullscreen-preview-info">
+                        <span class="frame-number" id="fullscreen-current-frame">#1</span>
+                        <span class="timestamp" id="fullscreen-current-timestamp">0:00</span>
+                    </div>
+                </div>
+                <div class="fullscreen-timeline-strip" style="display: none;">
+                    <div id="fullscreen-timeline-scroll" class="fullscreen-timeline-scroll"></div>
                 </div>
             </div>
 
@@ -4814,29 +5108,62 @@
         });
 
         // ==================== Fullscreen Timeline Functions ====================
+        const cinemaTimelineViewport = document.getElementById('cinema-timeline-viewport');
+        const cinemaTimelineInner = document.getElementById('cinema-timeline-inner');
+        const cinemaTimecode = document.getElementById('cinema-timecode');
+        const cinemaScrubProgress = document.getElementById('cinema-scrub-progress');
+
+        const CINEMA_CARD_WIDTH = 500;
+        const CINEMA_CARD_GAP = 60;
+
         function openFullscreenTimeline(frames) {
             isFullscreenTimelineOpen = true;
             currentFocusedFrameIndex = 0;
 
-            // Render thumbnails
-            fullscreenTimelineScroll.innerHTML = frames.map((frame, index) => `
-                <div class="fullscreen-thumb ${index === 0 ? 'active' : ''}"
+            // Calculate viewport padding to center first/last cards
+            const viewportWidth = window.innerWidth - 420; // Subtract chat panel width
+            const sidePadding = (viewportWidth / 2) - (CINEMA_CARD_WIDTH / 2);
+
+            // Render cinema-style frame cards
+            cinemaTimelineInner.innerHTML = frames.map((frame, index) => `
+                <div class="cinema-frame-card ${index === 0 ? 'active' : ''}"
                      data-index="${index}"
-                     style="position: relative;"
-                     onclick="selectFullscreenFrame(${index})">
-                    <img src="${frame.base64}" alt="Frame ${index + 1}">
-                    <div class="fullscreen-thumb-info">
-                        <span>#${index + 1}</span>
-                        <span>${frame.timestamp || formatTimestamp(frame.seconds)}</span>
+                     onclick="selectCinemaFrame(${index})">
+                    <img src="${frame.base64}" alt="Frame ${index + 1}" draggable="false">
+                    <div class="cinema-frame-metadata">
+                        <p>
+                            <span>Clip ${index + 1}</span>
+                            <span class="raw-badge">RAW</span>
+                        </p>
                     </div>
                 </div>
             `).join('');
 
+            // Also update legacy scroll container for compatibility
+            fullscreenTimelineScroll.innerHTML = frames.map((frame, index) => `
+                <div class="fullscreen-thumb ${index === 0 ? 'active' : ''}"
+                     data-index="${index}"
+                     style="position: relative; display: none;"
+                     onclick="selectFullscreenFrame(${index})">
+                    <img src="${frame.base64}" alt="Frame ${index + 1}">
+                </div>
+            `).join('');
+
+            // Set padding on viewport
+            cinemaTimelineViewport.style.paddingLeft = `${sidePadding}px`;
+            cinemaTimelineViewport.style.paddingRight = `${sidePadding}px`;
+
             // Update frame counter
             fullscreenFrameCounter.textContent = `${frames.length} frames`;
 
-            // Show first frame in preview
+            // Update timecode for first frame
+            updateCinemaTimecode(0, frames.length);
+
+            // Show first frame in legacy preview (for state compatibility)
             updateFullscreenPreview(0);
+
+            // Initial 3D transform update
+            updateCinemaCardTransforms();
 
             // Show fullscreen mode
             fullscreenTimelineMode.classList.remove('hidden');
@@ -4845,8 +5172,141 @@
             // Add keyboard listener
             document.addEventListener('keydown', handleFullscreenKeyboard);
 
-            // Add scroll listener for timeline
-            fullscreenTimelineScroll.addEventListener('scroll', handleFullscreenTimelineScroll);
+            // Add scroll listener for cinema timeline
+            cinemaTimelineViewport.addEventListener('scroll', handleCinemaTimelineScroll);
+        }
+
+        function updateCinemaTimecode(index, totalFrames) {
+            if (!allExtractedFrames[index]) return;
+
+            const frame = allExtractedFrames[index];
+            const timestamp = frame.timestamp || formatTimestamp(frame.seconds);
+
+            // Format as SMPTE timecode (HH:MM:SS:FF)
+            const parts = timestamp.split(':');
+            let timecode = '00:00:00:00';
+            if (parts.length >= 2) {
+                timecode = `00:${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
+            }
+
+            cinemaTimecode.textContent = timecode;
+
+            // Update progress bar
+            const progress = totalFrames > 1 ? ((index + 1) / totalFrames) * 100 : 0;
+            cinemaScrubProgress.style.width = `${progress}%`;
+        }
+
+        function updateCinemaCardTransforms() {
+            const viewport = cinemaTimelineViewport;
+            const scrollX = viewport.scrollLeft;
+            const viewportWidth = viewport.clientWidth;
+            const centerX = scrollX + (viewportWidth / 2);
+
+            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+
+            cards.forEach((card, index) => {
+                const cardWidth = CINEMA_CARD_WIDTH;
+                const cardCenter = card.offsetLeft + (cardWidth / 2);
+                const distance = cardCenter - centerX;
+                const normalizedDistance = distance / (cardWidth + CINEMA_CARD_GAP);
+
+                // Calculate 3D transforms based on distance
+                const absDistance = Math.abs(normalizedDistance);
+                const clampedDistance = Math.min(absDistance, 2);
+
+                // Scale: 1.1 at center, 0.8 at edges
+                const scale = 1.1 - (clampedDistance * 0.15);
+
+                // RotateY: 0 at center, ±45deg at edges
+                const rotateY = normalizedDistance * 25;
+
+                // X translation for parallax effect
+                const translateX = normalizedDistance * -40;
+
+                // Z translation for depth
+                const translateZ = -Math.abs(normalizedDistance) * 150;
+
+                // Opacity: 1 at center, 0.1 at edges
+                const opacity = Math.max(0.1, 1 - (clampedDistance * 0.45));
+
+                // Blur: 0 at center, 12px at edges
+                const blur = clampedDistance * 6;
+
+                // Apply transforms
+                card.style.transform = `
+                    perspective(1500px)
+                    translateX(${translateX}px)
+                    translateZ(${translateZ}px)
+                    rotateY(${rotateY}deg)
+                    scale(${scale})
+                `;
+                card.style.opacity = opacity;
+                card.style.filter = `blur(${blur}px)`;
+                card.style.zIndex = Math.round(50 - absDistance * 20);
+
+                // Toggle active class
+                card.classList.toggle('active', absDistance < 0.3);
+            });
+        }
+
+        function handleCinemaTimelineScroll() {
+            if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
+
+            fullscreenScrollRaf = requestAnimationFrame(() => {
+                // Update 3D transforms
+                updateCinemaCardTransforms();
+
+                // Find closest card to center
+                const viewport = cinemaTimelineViewport;
+                const scrollX = viewport.scrollLeft;
+                const viewportWidth = viewport.clientWidth;
+                const centerX = scrollX + (viewportWidth / 2);
+
+                const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+                let closestIndex = 0;
+                let closestDistance = Infinity;
+
+                cards.forEach((card, index) => {
+                    const cardCenter = card.offsetLeft + (CINEMA_CARD_WIDTH / 2);
+                    const distance = Math.abs(cardCenter - centerX);
+
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestIndex = index;
+                    }
+                });
+
+                pendingScrollIndex = closestIndex;
+
+                if (fullscreenScrollSettleTimeout) {
+                    clearTimeout(fullscreenScrollSettleTimeout);
+                }
+
+                fullscreenScrollSettleTimeout = setTimeout(() => {
+                    if (pendingScrollIndex !== null && pendingScrollIndex !== currentFocusedFrameIndex) {
+                        updateFullscreenPreview(pendingScrollIndex);
+                        updateCinemaTimecode(pendingScrollIndex, allExtractedFrames.length);
+                    }
+                }, 90);
+            });
+        }
+
+        function selectCinemaFrame(index) {
+            scrollToCinemaCard(index);
+            updateFullscreenPreview(index);
+            updateCinemaTimecode(index, allExtractedFrames.length);
+        }
+
+        function scrollToCinemaCard(index) {
+            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            const targetCard = cards[index];
+            if (!targetCard) return;
+
+            const viewport = cinemaTimelineViewport;
+            const viewportWidth = viewport.clientWidth;
+            const scrollOffset = targetCard.offsetLeft - (viewportWidth / 2) + (CINEMA_CARD_WIDTH / 2);
+
+            viewport.scrollTo({ left: scrollOffset, behavior: 'smooth' });
         }
 
         function closeFullscreenTimeline() {
@@ -4854,7 +5314,9 @@
             fullscreenTimelineMode.classList.add('hidden');
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleFullscreenKeyboard);
+            // Remove both legacy and cinema timeline scroll listeners
             fullscreenTimelineScroll.removeEventListener('scroll', handleFullscreenTimelineScroll);
+            cinemaTimelineViewport.removeEventListener('scroll', handleCinemaTimelineScroll);
             if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
             if (fullscreenScrollSettleTimeout) clearTimeout(fullscreenScrollSettleTimeout);
             fullscreenScrollRaf = null;
@@ -4931,15 +5393,19 @@
                 case 'ArrowLeft':
                     e.preventDefault();
                     if (currentFocusedFrameIndex > 0) {
-                        updateFullscreenPreview(currentFocusedFrameIndex - 1);
-                        scrollToFullscreenThumb(currentFocusedFrameIndex);
+                        const newIndex = currentFocusedFrameIndex - 1;
+                        updateFullscreenPreview(newIndex);
+                        scrollToCinemaCard(newIndex);
+                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
                     if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
-                        updateFullscreenPreview(currentFocusedFrameIndex + 1);
-                        scrollToFullscreenThumb(currentFocusedFrameIndex);
+                        const newIndex = currentFocusedFrameIndex + 1;
+                        updateFullscreenPreview(newIndex);
+                        scrollToCinemaCard(newIndex);
+                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
                     break;
                 case 'Escape':
