@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Frame Selection - Rolling Cards</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#34D399",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#0a0a0a",
+                        "panel-dark": "#1a1a1a",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: #0a0a0a;
+            color: white;
+            overflow: hidden;
+            /* Prevent body scroll, handle in components */
+        }
+
+        /* Carousel Styles */
+        .carousel-container {
+            perspective: 1000px;
+            overflow: hidden;
+            width: 100%;
+            height: 60vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .carousel-track {
+            display: flex;
+            align-items: center;
+            position: absolute;
+            transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+            /* Center the track initially */
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .carousel-card {
+            width: 480px;
+            /* Adjust based on desired size */
+            height: 270px;
+            /* 16:9 aspect ratio */
+            background-size: cover;
+            background-position: center;
+            border-radius: 12px;
+            margin: 0 20px;
+            transition: all 0.5s ease;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+            border: 2px solid transparent;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            /* Initial state for non-active cards */
+            transform: scale(0.8);
+            opacity: 0.5;
+            filter: blur(2px);
+        }
+
+        .carousel-card.active {
+            transform: scale(1.1);
+            opacity: 1;
+            filter: blur(0);
+            border-color: #34D399;
+            box-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
+            z-index: 10;
+        }
+
+        .carousel-card:hover {
+            opacity: 0.8;
+            transform: scale(0.85);
+            /* Slight hover effect for non-active */
+        }
+
+        .carousel-card.active:hover {
+            transform: scale(1.12);
+            /* Slight hover for active */
+            opacity: 1;
+        }
+
+        /* Frame Info Badge */
+        .frame-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Bottom Strip Styles */
+        .filmstrip-container {
+            width: 100%;
+            height: 120px;
+            background: #1a1a1a;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            padding: 0 20px;
+            gap: 10px;
+            position: absolute;
+            bottom: 0;
+        }
+
+        /* Custom scrollbar for filmstrip */
+        .filmstrip-container::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .filmstrip-container::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+
+        .filmstrip-container::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+
+        .filmstrip-container::-webkit-scrollbar-thumb:hover {
+            background: #4B5563;
+        }
+
+        .filmstrip-item {
+            width: 120px;
+            height: 67.5px;
+            /* 16:9 */
+            background-size: cover;
+            background-position: center;
+            border-radius: 4px;
+            cursor: pointer;
+            flex-shrink: 0;
+            border: 2px solid transparent;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
+
+        .filmstrip-item:hover {
+            opacity: 1;
+            transform: translateY(-2px);
+        }
+
+        .filmstrip-item.active {
+            opacity: 1;
+            border-color: #34D399;
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+        }
+
+        /* Controls */
+        .nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: rgba(52, 211, 153, 0.8);
+            color: black;
+            border-color: transparent;
+        }
+
+        .prev-btn {
+            left: 40px;
+        }
+
+        .next-btn {
+            right: 40px;
+        }
+    </style>
+</head>
+
+<body class="flex flex-col h-screen">
+
+    <!-- Header -->
+    <div class="h-16 border-b border-white/10 flex items-center px-6 bg-[#0a0a0a] z-20">
+        <h1 class="text-xl font-bold text-primary">Frame Selection</h1>
+        <div class="ml-auto flex gap-4">
+            <button class="px-4 py-2 text-sm text-gray-400 hover:text-white" onclick="window.close()">Close</button>
+            <button id="confirm-selection-btn"
+                class="px-4 py-2 bg-primary text-black font-bold rounded-lg hover:opacity-90">
+                Confirm Selection
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Carousel Area -->
+    <div class="flex-1 relative bg-gradient-to-b from-[#0a0a0a] to-[#1a1a1a]">
+
+        <div class="carousel-container" id="carousel-container">
+            <button class="nav-btn prev-btn" id="prev-btn">
+                <span class="material-symbols-outlined">chevron_left</span>
+            </button>
+
+            <div class="carousel-track" id="carousel-track">
+                <!-- Cards will be injected here JS -->
+            </div>
+
+            <button class="nav-btn next-btn" id="next-btn">
+                <span class="material-symbols-outlined">chevron_right</span>
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Bottom Filmstrip -->
+    <div class="filmstrip-container" id="filmstrip-container">
+        <!-- Thumbnails will be injected here JS -->
+    </div>
+
+    <script>
+        // --- State Management ---
+        const state = {
+            frames: [], // Will hold frame data
+            currentIndex: 0,
+            cardWidth: 480 + 40, // width + margin (approx)
+        };
+
+        // --- Demo Data Generator (If no API) ---
+        function generateDemoFrames(count = 20) {
+            return Array.from({ length: count }, (_, i) => ({
+                id: i,
+                // Use placeholder images if no real ones
+                base64: `https://picsum.photos/seed/${i + 100}/800/450`,
+                timestamp: `00:00:${String(i).padStart(2, '0')}`,
+                frame_number: i
+            }));
+        }
+
+        // --- Core Functions ---
+
+        function init() {
+            // Data passed from server via Jinja2
+            // safe filter is used to ensure json is not escaped
+            const serverFrames = {{ frames | tojson | safe
+        }};
+
+        if (serverFrames && serverFrames.length > 0) {
+            state.frames = serverFrames.map((f, i) => ({
+                id: f.frame_id,
+                base64: f.url, // URL to the image
+                timestamp: f.timestamp,
+                frame_number: i + 1,
+                seconds: f.seconds,
+                path: f.path
+            }));
+        } else {
+            console.warn("No frames provided from server, falling back to empty state");
+            state.frames = [];
+        }
+
+        if (state.frames.length > 0) {
+            renderCarousel();
+            renderFilmstrip();
+            updateCarousel();
+        } else {
+            document.getElementById('carousel-track').innerHTML = '<div class="text-gray-500">No frames available</div>';
+        }
+
+        // Event Listeners
+        document.getElementById('prev-btn').addEventListener('click', () => navigate(-1));
+        document.getElementById('next-btn').addEventListener('click', () => navigate(1));
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') navigate(-1);
+            if (e.key === 'ArrowRight') navigate(1);
+        });
+
+        // Confirm button
+        document.getElementById('confirm-selection-btn').addEventListener('click', () => {
+            if (state.frames.length === 0) return;
+
+            const selected = state.frames[state.currentIndex];
+            // Send selected frame back to opener if available
+            if (window.opener && !window.opener.closed) {
+                // We can define a message protocol or just call a function on opener
+                // For now, let's try to postMessage
+                window.opener.postMessage({
+                    type: 'FRAME_SELECTED',
+                    frame: selected
+                }, '*');
+                window.close();
+            } else {
+                alert(`Selected Frame ${selected.frame_number} at ${selected.timestamp}\n(Parent window not found, cannot return selection)`);
+            }
+        });
+        }
+
+        function renderCarousel() {
+            const track = document.getElementById('carousel-track');
+            track.innerHTML = state.frames.map((frame, index) => `
+                <div class="carousel-card" 
+                     data-index="${index}"
+                     style="background-image: url('${frame.base64}')"
+                     onclick="jumpTo(${index})">
+                    <div class="frame-info">Frame ${frame.frame_number} (${frame.timestamp})</div>
+                </div>
+            `).join('');
+        }
+
+        function renderFilmstrip() {
+            const container = document.getElementById('filmstrip-container');
+            container.innerHTML = state.frames.map((frame, index) => `
+                <div class="filmstrip-item" 
+                     data-index="${index}"
+                     style="background-image: url('${frame.base64}')"
+                     onclick="jumpTo(${index})">
+                </div>
+            `).join('');
+        }
+
+        function updateCarousel() {
+            const track = document.getElementById('carousel-track');
+            const cards = document.querySelectorAll('.carousel-card');
+            const strips = document.querySelectorAll('.filmstrip-item');
+            const filmstripContainer = document.getElementById('filmstrip-container');
+
+            // 1. Update Active Classes
+            cards.forEach((card, i) => {
+                if (i === state.currentIndex) {
+                    card.classList.add('active');
+                } else {
+                    card.classList.remove('active');
+                }
+            });
+
+            strips.forEach((strip, i) => {
+                if (i === state.currentIndex) {
+                    strip.classList.add('active');
+                    // Scroll filmstrip to keep active item in view
+                    ensureVisible(strip, filmstripContainer);
+                } else {
+                    strip.classList.remove('active');
+                }
+            });
+
+            // 2. Position Track
+            // We want the active card to be in the center.
+            // The track is centered at 50% left.
+            // So we need to translate the track such that the center of the active card is at 0 (relative to the track origin).
+
+            // cardWidth (approx 520px including margin)
+            // If index 0 is active: center of card 0 is at width/2 + margin.
+            // We want that point to be at 0.
+            // Actually, simpler logic:
+            // Shift = - (index * CARD_FULL_WIDTH)
+            // But we need to account for the initial offset to center the FIRST card.
+
+            const cardWidth = 480;
+            const margin = 20;
+            const fullWidth = cardWidth + (margin * 2);
+
+            // Calculate offset to center the current card
+            // We want the center of the card at index i to be at the center of the screen
+            // Carousel track is absolutely positioned with left: 50%
+            // So we just need to shift it left by (index * fullWidth) + (fullWidth / 2) - (fullWidth / 2) ???
+            // Let's say track origin (0,0) is at screen center.
+            // Card 0 is at 0.
+            // Card 1 is at fullWidth.
+            // If card 1 is active, we move track by -fullWidth.
+
+            // However, the flex layout puts cards in a row.
+            // We just need to shift the track so the center of the active card is at the pivot point.
+
+            // The pivot point is half the width of one card? No, track is centered.
+            // Since we use justify-center in track? No, display flex in track aligns them start to end.
+
+            // Let's rely on calculation:
+            // offset = - (state.currentIndex * fullWidth) + startOffset?
+            // Since the track is `left: 50%`, the 0px mark of the track is at the screen center.
+            // We want the center of the active card to be at the 0px mark.
+            // The cards are laid out: [Card0][Card1][Card2]...
+            // Center of Card 0 is at `margin + cardWidth/2`.
+            // Center of Card n is at `(n * fullWidth) + margin + cardWidth/2`.
+
+            const centerOffset = 20 + (480 / 2); // margin + half-width
+            const cardPosition = (state.currentIndex * fullWidth) + centerOffset;
+            const targetTranslate = -cardPosition;
+
+            // But wait, we want the CENTER of the card at the center of the screen?
+            // And `left: 50%` places the left edge of the track at the center.
+            // So if targetTranslate is 0, the left edge of the first card (plus margin) starts at center.
+            // We want center of card to be at center.
+            // So we need to shift left by centerOffset.
+            // Yes.
+
+            track.style.transform = `translateX(${targetTranslate}px) translateZ(0)`; // translateZ forces GPU
+        }
+
+        function ensureVisible(element, container) {
+            const containerRect = container.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
+
+            if (elementRect.left < containerRect.left) {
+                container.scrollLeft -= (containerRect.left - elementRect.left + 20);
+            } else if (elementRect.right > containerRect.right) {
+                container.scrollLeft += (elementRect.right - containerRect.right + 20);
+            }
+        }
+
+        function navigate(direction) {
+            const newIndex = state.currentIndex + direction;
+            if (newIndex >= 0 && newIndex < state.frames.length) {
+                state.currentIndex = newIndex;
+                updateCarousel();
+            }
+        }
+
+        function jumpTo(index) {
+            state.currentIndex = index;
+            updateCarousel();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+
+</html>

@@ -1547,7 +1547,14 @@
 
                 <!-- Extracted Frames Section (After decomposition) -->
                 <div class="w-full relative hidden shrink-0" id="extracted-frames-section">
-                    <h3 class="text-white text-lg font-bold mb-4">Extracted Frames</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-white text-lg font-bold">Extracted Frames</h3>
+                        <a href="/frames/selection_view" target="_blank" id="open-rolling-view-btn"
+                            class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors">
+                            <span class="material-symbols-outlined !text-lg">view_carousel</span>
+                            Open Rolling View
+                        </a>
+                    </div>
                     <div class="grid grid-cols-6 gap-3" id="frames-container">
                         <!-- Frames will be inserted here by JS -->
                     </div>
@@ -3633,6 +3640,9 @@
                     if (data.status === 'success') {
                         state.frames = data.frames;
                         renderFrames();
+                        // Auto-redirect to rolling view as per user request
+                        window.location.href = '/frames/selection_view';
+                        showExtractedFrames(); // Fallback in case redirect is slow or blocked
                         if (state.frames.length > 0) {
                             selectFrame(0);
                         }

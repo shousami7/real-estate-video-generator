@@ -531,6 +531,50 @@ def serve_output_file(filename):
         }), 404
 
 
+@web_ui_blueprint.route('/frames/selection_view')
+def frame_selection_view():
+    """
+    Serve the rolling cards carousel view with frames from session.
+    """
+    if 'editor_frames' not in session:
+        # Fallback or redirect if no frames are in session
+        return redirect(url_for('web_ui.video_editor'))
+    
+    frames_data = session['editor_frames']
+    
+    # We need to map the file paths to accessible URLs
+    # The current frame data has 'path' which is absolute file path
+    # accessible via /frames/<filename>
+    
+    frames_dir_abs = os.path.abspath('frames')
+    
+    view_frames = []
+    for frame in frames_data:
+        path = frame.get('path')
+        if path:
+            # path is absolute path, we need relative to 'frames' dir
+            # e.g. /abs/path/to/frames/session/editor/img.jpg -> session/editor/img.jpg
+            try:
+                if os.path.isabs(path):
+                    filename = os.path.relpath(path, frames_dir_abs)
+                else:
+                    # If it's already relative (maybe?), just assume it might be relative to frames?
+                    # Or relative to CWD. Let's assume absolute as per logic.
+                    # Fallback to basename if common prefix fails or just use it.
+                    # But safest is relpath if we know it is inside frames_dir_abs
+                    filename = os.path.relpath(os.path.abspath(path), frames_dir_abs)
+            except ValueError:
+                # If path is not under frames dir
+                filename = os.path.basename(path)
+                
+            # Create a shallow copy for display
+            view_frame = frame.copy()
+            view_frame['url'] = url_for('web_ui.serve_frame_file', filename=filename)
+            view_frames.append(view_frame)
+            
+    return render_template('carousel_view.html', frames=view_frames)
+
+
 @web_ui_blueprint.route('/frames/extract', methods=['POST'])
 def extract_frames():
     """
