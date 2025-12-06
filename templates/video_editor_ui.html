@@ -1624,6 +1624,11 @@
                     class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-black text-sm font-bold leading-normal tracking-[0.015em] hover:opacity-90 transition-opacity">
                     <span class="truncate">Export</span>
                 </button>
+                <button id="import-btn"
+                    class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors border-l border-gray-600">
+                    <span class="material-symbols-outlined mr-2 !text-base">folder_open</span>
+                    <span class="truncate">Import</span>
+                </button>
                 <button id="back-btn"
                     class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#374151] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#4B5563] transition-colors">
                     <span class="truncate">Back</span>
@@ -5775,6 +5780,124 @@
             document.addEventListener('DOMContentLoaded', checkStorageStatus);
         } else {
             checkStorageStatus();
+        }
+
+        // ==================== Import Session Modal ====================
+        const importBtn = document.getElementById('import-btn');
+
+        if (importBtn) {
+            importBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openImportSessionModal();
+            });
+        }
+
+        function openImportSessionModal() {
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.id = 'import-session-modal';
+            modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] backdrop-blur-sm';
+            modal.innerHTML = `
+                <div class="bg-[#1F2937] rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col shadow-2xl border border-gray-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-white text-xl font-bold">Import Frame Session</h3>
+                        <button id="close-import-modal" class="text-gray-400 hover:text-white transition-colors">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div id="sessions-list" class="flex-1 overflow-y-auto">
+                        <div class="flex justify-center py-8">
+                            <span class="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Close modal on background click or close button
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+            document.getElementById('close-import-modal').addEventListener('click', () => modal.remove());
+
+            // Fetch available sessions
+            fetchSessions();
+        }
+
+        async function fetchSessions() {
+            try {
+                const response = await fetch('/frames/sessions');
+                const data = await response.json();
+
+                const listContainer = document.getElementById('sessions-list');
+
+                if (data.status !== 'success' || !data.sessions || data.sessions.length === 0) {
+                    listContainer.innerHTML = `
+                        <div class="text-center text-gray-400 py-8">
+                            <span class="material-symbols-outlined text-4xl mb-2 block">folder_off</span>
+                            <p>No frame sessions found.</p>
+                            <p class="text-sm mt-2">Extract frames from a video first, then import here.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                listContainer.innerHTML = data.sessions.map(session => `
+                    <div class="session-item flex items-center gap-4 p-3 rounded-lg hover:bg-[#374151] cursor-pointer transition-colors border border-gray-700 mb-2" data-session-id="${session.session_id}">
+                        <img src="${session.thumbnail_url}" alt="Thumbnail" class="w-16 h-16 object-cover rounded-lg bg-gray-800">
+                        <div class="flex-1">
+                            <div class="text-white font-medium truncate">${session.session_id}</div>
+                            <div class="text-gray-400 text-sm">${session.frame_count} frames</div>
+                            <div class="text-gray-500 text-xs">${session.modified_at}</div>
+                        </div>
+                        <span class="material-symbols-outlined text-gray-400">chevron_right</span>
+                    </div>
+                `).join('');
+
+                // Add click handlers for session items
+                listContainer.querySelectorAll('.session-item').forEach(item => {
+                    item.addEventListener('click', () => loadSession(item.dataset.sessionId));
+                });
+
+            } catch (err) {
+                document.getElementById('sessions-list').innerHTML = `
+                    <div class="text-center text-red-400 py-8">
+                        <span class="material-symbols-outlined text-4xl mb-2 block">error</span>
+                        <p>Failed to load sessions: ${err.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function loadSession(sessionId) {
+            const modal = document.getElementById('import-session-modal');
+            const listContainer = document.getElementById('sessions-list');
+
+            listContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8">
+                    <span class="material-symbols-outlined animate-spin text-4xl text-primary mb-4">progress_activity</span>
+                    <div class="text-white">Loading session...</div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/frames/load_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    window.location.href = '/frames/selection_view';
+                } else {
+                    alert('Failed to load session: ' + data.message);
+                    if (modal) modal.remove();
+                }
+            } catch (err) {
+                alert('Error loading session: ' + err.message);
+                if (modal) modal.remove();
+            }
         }
     </script>
 </body>

@@ -575,6 +575,115 @@ def frame_selection_view():
     return render_template('carousel_view.html', frames=view_frames)
 
 
+@web_ui_blueprint.route('/frames/sessions', methods=['GET'])
+def list_frame_sessions():
+    """
+    List all available frame sessions from frames/<UUID>/editor directories.
+    Returns sessions sorted by modification time (newest first).
+    """
+    try:
+        from datetime import datetime
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        frames_dir = os.path.join(upload_root, 'frames')
+        
+        if not os.path.exists(frames_dir):
+            return jsonify({"status": "success", "sessions": []})
+        
+        sessions = []
+        for session_id in os.listdir(frames_dir):
+            session_path = os.path.join(frames_dir, session_id)
+            editor_path = os.path.join(session_path, 'editor')
+            
+            # Only include directories that have an 'editor' subdirectory with images
+            if os.path.isdir(editor_path):
+                # Count image files
+                valid_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+                image_files = [f for f in os.listdir(editor_path) 
+                              if os.path.splitext(f)[1].lower() in valid_extensions]
+                
+                if image_files:
+                    # Get modification time of editor directory
+                    mtime = os.path.getmtime(editor_path)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Get first image as thumbnail
+                    image_files.sort()
+                    first_image = image_files[0]
+                    thumbnail_url = url_for('web_ui.serve_frame_file', 
+                                           filename=f"{session_id}/editor/{first_image}")
+                    
+                    sessions.append({
+                        'session_id': session_id,
+                        'frame_count': len(image_files),
+                        'modified_at': mtime_str,
+                        'modified_timestamp': mtime,
+                        'thumbnail_url': thumbnail_url
+                    })
+        
+        # Sort by modification time, newest first
+        sessions.sort(key=lambda x: x['modified_timestamp'], reverse=True)
+        
+        return jsonify({"status": "success", "sessions": sessions})
+        
+    except Exception as e:
+        logger.error(f"Error listing frame sessions: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@web_ui_blueprint.route('/frames/load_session', methods=['POST'])
+def load_frame_session():
+    """
+    Load an existing frame session into the editor.
+    """
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({"status": "error", "message": "No session_id provided"}), 400
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        editor_path = os.path.join(upload_root, 'frames', session_id, 'editor')
+        
+        if not os.path.isdir(editor_path):
+            return jsonify({"status": "error", "message": "Session not found"}), 404
+        
+        # Load all image files from the editor directory
+        valid_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+        image_files = sorted([f for f in os.listdir(editor_path) 
+                             if os.path.splitext(f)[1].lower() in valid_extensions])
+        
+        if not image_files:
+            return jsonify({"status": "error", "message": "No images found in session"}), 400
+        
+        frames = []
+        for idx, filename in enumerate(image_files):
+            file_path = os.path.join(editor_path, filename)
+            frames.append({
+                'id': idx,
+                'path': file_path,
+                'filename': filename,
+                'timestamp': idx
+            })
+        
+        # Update session
+        session['editor_frames'] = frames
+        session.pop('editor_video_path', None)
+        
+        logger.info(f"Loaded session {session_id} with {len(frames)} frames")
+        
+        return jsonify({
+            "status": "success",
+            "session_id": session_id,
+            "frame_count": len(frames)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error loading frame session: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @web_ui_blueprint.route('/frames/extract', methods=['POST'])
 def extract_frames():
     """
