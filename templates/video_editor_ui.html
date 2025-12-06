@@ -5329,6 +5329,7 @@
 
         function selectCinemaFrame(index) {
             scrollToCinemaCard(index);
+            scrollToFullscreenThumb(index);
             updateFullscreenPreview(index);
             updateCinemaTimecode(index, allExtractedFrames.length);
         }
@@ -5435,6 +5436,7 @@
                     if (currentFocusedFrameIndex > 0) {
                         const newIndex = currentFocusedFrameIndex - 1;
                         updateFullscreenPreview(newIndex);
+                        scrollToFullscreenThumb(newIndex);
                         scrollToCinemaCard(newIndex);
                         updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
@@ -5444,6 +5446,7 @@
                     if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
                         const newIndex = currentFocusedFrameIndex + 1;
                         updateFullscreenPreview(newIndex);
+                        scrollToFullscreenThumb(newIndex);
                         scrollToCinemaCard(newIndex);
                         updateCinemaTimecode(newIndex, allExtractedFrames.length);
                     }
@@ -5628,9 +5631,11 @@
         function handleTimelineKeyboard(e) {
             // Only handle if timeline is visible and not in fullscreen mode
             const timelineSection = document.getElementById('liquid-glass-timeline-section');
-            const isFullscreen = document.querySelector('.fullscreen-timeline-mode');
+            const isFullscreen = isFullscreenTimelineOpen || (
+                fullscreenTimelineMode && !fullscreenTimelineMode.classList.contains('hidden')
+            );
 
-            if (timelineSection.classList.contains('hidden') || isFullscreen) return;
+            if (!timelineSection || timelineSection.classList.contains('hidden') || isFullscreen) return;
 
             // Ignore if typing in input
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
