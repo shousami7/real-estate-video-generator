@@ -34,6 +34,7 @@ from utils.input_validator import (
     validate_video_for_processing
 )
 from utils.video import extract_frames_ffmpeg
+from utils.frame_utils import calculate_frame_timestamp
 from task_checkpointing import get_checkpoint_manager
 import uuid
 
@@ -166,8 +167,8 @@ def _task_meta(progress: int, message: str, stage: str, video_id: str, step: Opt
 # -----------------------------------------------------------------------------
 
 
-@celery.task(bind=True, name="tasks.extract_frames_task")
-def extract_frames_task(self, task_id: str, video_path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
+@celery.task(bind=True, name="tasks.extract_frames_from_supabase")
+def extract_frames_from_supabase(self, task_id: str, video_path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
     """
     Download a video from Supabase and extract JPEG frames at a fixed FPS.
 
@@ -194,7 +195,7 @@ def extract_frames_task(self, task_id: str, video_path: str, bucket: Optional[st
 
         frames: List[Dict[str, Any]] = []
         for idx, frame_path in enumerate(frame_paths):
-            timestamp_seconds = idx / FRAME_EXTRACTION_FPS
+            timestamp_seconds = calculate_frame_timestamp(idx, FRAME_EXTRACTION_FPS)
             storage_path = f"videos/{task_id}/frames/{os.path.basename(frame_path)}"
             upload_file(bucket_name, storage_path, frame_path, content_type="image/jpeg")
 
@@ -1524,15 +1525,23 @@ def _configure_veo_auth() -> Dict[str, Any]:
     }
 
 
-@celery.task(bind=True, name="tasks.extract_frames_task")
-def extract_frames_task(
+@celery.task(bind=True, name="tasks.extract_frames_from_local")
+def extract_frames_from_local(
     self,
     video_id: str,
     video_path: Optional[str] = None,
     fps: float = 1.0
 ) -> Dict[str, Any]:
     """
-    Extract frames from a video.
+    Extract frames from a local video file.
+
+    Args:
+        video_id: Video/session ID.
+        video_path: Path to the video file (optional, will try to find from SceneManager).
+        fps: Frames per second to extract (default: 1.0).
+
+    Returns:
+        Task response with extracted frames metadata.
     """
     logger.debug(f"Starting frame extraction: video_id={video_id}")
     try:
@@ -1713,6 +1722,6 @@ def edit_frame_task(
 task_generate_video = generate_video_from_chat_task
 task_extend_video = extend_scene_task
 task_stitch_videos = merge_scenes_task
-task_extract_frames = extract_frames_task
+task_extract_frames = extract_frames_from_local  # Default to local extraction
 task_edit_frame = edit_frame_task
 task_adjust_video = adjust_video_task

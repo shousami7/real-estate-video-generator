@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from flask import Blueprint, jsonify, request
 
-from tasks import extract_frames_task
+from tasks import extract_frames_from_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +34,9 @@ def enqueue_frame_extraction() -> Any:
         return jsonify({"error": "task_id and video_path are required"}), 400
 
     try:
-        extract_frames_task.delay(task_id, video_path)
+        extract_frames_from_supabase.delay(task_id, video_path)
     except Exception as exc:  # pragma: no cover - depends on celery backend
-        logger.exception("Failed to enqueue extract_frames_task")
+        logger.exception("Failed to enqueue extract_frames_from_supabase")
         return jsonify({"error": str(exc)}), 500
 
     return jsonify({"status": "queued", "task_id": task_id}), 202
