@@ -2,6 +2,8 @@ import os
 import json
 import uuid
 import logging
+import subprocess
+import base64
 from typing import Any, Dict, List, Optional
 from google import genai
 
@@ -1034,6 +1036,163 @@ def export_frames_to_video():
         }), 500
     except Exception as e:
         logger.error(f"Error exporting video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/edit-with-ai', methods=['POST'])
+def edit_frames_with_ai():
+    """
+    Edit multiple frames using AI with a specified model and prompt
+    Request JSON: {
+        "frames": [{"path": "...", "url": "...", "frame_number": 1}, ...],
+        "model": "nanobanana-pro",
+        "prompt": "Enhance colors and brightness, add a cinematic look"
+    }
+    """
+    try:
+        data = request.get_json()
+        frames = data.get('frames', [])
+        model = data.get('model', 'nanobanana-pro')
+        prompt = data.get('prompt', '')
+
+        if not frames or len(frames) == 0:
+            return jsonify({
+                "status": "error",
+                "message": "No frames provided"
+            }), 400
+
+        if not prompt:
+            return jsonify({
+                "status": "error",
+                "message": "Prompt is required"
+            }), 400
+
+        # Get API key
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "Google API key not configured"
+            }), 500
+
+        # Initialize AI editor
+        ai_editor = AIFrameEditor(api_key=api_key)
+
+        # Create output directory for edited frames
+        session_id = session.get('session_id', str(uuid.uuid4()))
+        session['session_id'] = session_id
+
+        edited_frames_dir = os.path.join('frames', session_id, 'ai_edited')
+        os.makedirs(edited_frames_dir, exist_ok=True)
+
+        edited_frames = []
+        successful_edits = 0
+        failed_edits = 0
+
+        # Process each frame
+        for frame in frames:
+            try:
+                # Get frame path
+                frame_path = frame.get('path')
+                frame_number = frame.get('frame_number', 0)
+
+                if not frame_path:
+                    # Try to extract path from URL
+                    frame_url = frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]  # Remove leading /
+                    else:
+                        logger.warning(f"Could not determine path for frame {frame_number}")
+                        failed_edits += 1
+                        continue
+
+                # Normalize path
+                if not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if not os.path.exists(frame_path):
+                    logger.warning(f"Frame not found: {frame_path}")
+                    failed_edits += 1
+                    continue
+
+                logger.info(f"Editing frame {frame_number} with model {model} and prompt: {prompt}")
+
+                # Generate edited frame using AI
+                # Use generate_frame_variations to get AI-edited versions
+                variations = ai_editor.generate_frame_variations(
+                    base_image_path=frame_path,
+                    prompt=prompt,
+                    variation_count=1  # Only need one edited version
+                )
+
+                if variations and len(variations) > 0:
+                    # Save the first variation as the edited frame
+                    variation_data = variations[0]
+
+                    # Extract base64 image data
+                    if variation_data.startswith('data:image'):
+                        base64_str = variation_data.split(',')[1]
+                        image_data = base64.b64decode(base64_str)
+
+                        # Save to file
+                        timestamp = int(datetime.now().timestamp())
+                        edited_filename = f"edited_frame_{frame_number}_{timestamp}.png"
+                        edited_path = os.path.join(edited_frames_dir, edited_filename)
+
+                        with open(edited_path, 'wb') as f:
+                            f.write(image_data)
+
+                        # Build URL for the edited frame
+                        frames_root = os.path.abspath('frames')
+                        normalized_path = os.path.abspath(edited_path)
+
+                        try:
+                            relative_path = os.path.relpath(normalized_path, frames_root)
+                            edited_url = url_for('web_ui.serve_frame', filename=relative_path)
+                        except ValueError:
+                            edited_url = f"/frames/{edited_filename}"
+
+                        edited_frames.append({
+                            'frame_number': frame_number,
+                            'path': edited_path,
+                            'url': edited_url
+                        })
+
+                        successful_edits += 1
+                        logger.info(f"Successfully edited frame {frame_number}")
+                    else:
+                        logger.warning(f"Invalid variation data format for frame {frame_number}")
+                        failed_edits += 1
+                else:
+                    logger.warning(f"No variations generated for frame {frame_number}")
+                    failed_edits += 1
+
+            except Exception as e:
+                logger.error(f"Error editing frame {frame_number}: {e}", exc_info=True)
+                failed_edits += 1
+                continue
+
+        if successful_edits == 0:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to edit any frames. {failed_edits} frames failed."
+            }), 500
+
+        logger.info(f"Successfully edited {successful_edits} frames, {failed_edits} failed")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Edited {successful_edits} frames using {model}",
+            "edited_frames": edited_frames,
+            "successful_edits": successful_edits,
+            "failed_edits": failed_edits
+        })
+
+    except Exception as e:
+        logger.error(f"Error in edit_frames_with_ai: {e}", exc_info=True)
         return jsonify({
             "status": "error",
             "message": str(e)
