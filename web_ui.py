@@ -816,29 +816,29 @@ def extract_frames():
 
         frames = editor.extract_frames(frame_count=frame_count)
 
-        # セッションにはパス情報のみ保存（base64データは除外）
-        frames_for_session = [
+        # セッションとクライアント両方に同じ形式で保存（base64は除外、URLを追加）
+        frames_for_response = [
             {
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
                 "timestamp": frame['timestamp'],
                 "seconds": frame['seconds'],
-                "name": frame.get('name')
-                # base64 は含まない
+                "name": frame.get('name'),
+                "url": f"/frames/image/{frame['frame_id']}"  # base64の代わりにURL
             }
             for frame in frames
         ]
 
-        session['editor_frames'] = frames_for_session
+        session['editor_frames'] = frames_for_response
         session['editor_frames_dir'] = frames_dir
         session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
-        logger.info(f"Extracted {len(frames)} frames")
+        logger.info(f"Extracted {len(frames)} frames (URL-based response)")
 
-        # クライアントにはbase64付きの完全なデータを返す
+        # クライアントにはURL付きデータを返す（base64なしで軽量）
         return jsonify({
             "status": "success",
-            "frames": frames,  # base64を含む完全なデータ
+            "frames": frames_for_response,
             "frame_count": len(frames)
         })
 
@@ -880,7 +880,9 @@ def get_frame_image(frame_id):
 
         directory = os.path.dirname(frame_path)
         filename = os.path.basename(frame_path)
-        return send_from_directory(directory, filename, mimetype='image/png')
+        # Detect mimetype based on file extension
+        mimetype = 'image/jpeg' if filename.lower().endswith('.jpg') else 'image/png'
+        return send_from_directory(directory, filename, mimetype=mimetype)
 
     except Exception as e:
         logger.error(f"Error getting frame image: {e}", exc_info=True)
