@@ -4,6 +4,7 @@ import uuid
 import logging
 import subprocess
 import base64
+import time
 from typing import Any, Dict, List, Optional
 from google import genai
 
@@ -816,15 +817,20 @@ def extract_frames():
 
         frames = editor.extract_frames(frame_count=frame_count)
 
+        # Get extraction timestamp for cache-busting
+        cache_ts = editor.extraction_timestamp or int(time.time())
+
         # セッションとクライアント両方に同じ形式で保存（base64は除外、URLを追加）
         frames_for_response = [
             {
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
+                "full_path": frame.get('full_path', frame['path']),  # Full-res path for export
                 "timestamp": frame['timestamp'],
                 "seconds": frame['seconds'],
                 "name": frame.get('name'),
-                "url": f"/frames/image/{frame['frame_id']}"  # base64の代わりにURL
+                "url": f"/frames/image/{frame['frame_id']}?t={cache_ts}",  # Cache-busting URL
+                "full_url": f"/frames/image/{frame['frame_id']}?full=1&t={cache_ts}"  # Full-res URL
             }
             for frame in frames
         ]
@@ -832,14 +838,16 @@ def extract_frames():
         session['editor_frames'] = frames_for_response
         session['editor_frames_dir'] = frames_dir
         session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
+        session['editor_cache_ts'] = cache_ts  # Store cache timestamp
 
-        logger.info(f"Extracted {len(frames)} frames (URL-based response)")
+        logger.info(f"Extracted {len(frames)} frames (URL-based response, cache_ts={cache_ts})")
 
         # クライアントにはURL付きデータを返す（base64なしで軽量）
         return jsonify({
             "status": "success",
             "frames": frames_for_response,
-            "frame_count": len(frames)
+            "frame_count": len(frames),
+            "cache_ts": cache_ts
         })
 
     except Exception as e:
@@ -853,7 +861,10 @@ def extract_frames():
 @web_ui_blueprint.route('/frames/image/<int:frame_id>')
 def get_frame_image(frame_id):
     """
-    Get individual frame image by ID
+    Get individual frame image by ID.
+    Query params:
+        - full=1: Return full-resolution image instead of thumbnail
+        - t=<timestamp>: Cache-busting parameter (ignored but ensures fresh fetch)
     """
     try:
         if 'editor_frames' not in session:
@@ -870,7 +881,13 @@ def get_frame_image(frame_id):
                 "message": "Invalid frame ID"
             }), 400
 
-        frame_path = frames[frame_id]['path']
+        # Check if full-resolution is requested
+        use_full = request.args.get('full', '0') == '1'
+
+        if use_full and 'full_path' in frames[frame_id]:
+            frame_path = frames[frame_id]['full_path']
+        else:
+            frame_path = frames[frame_id]['path']
 
         if not os.path.exists(frame_path):
             return jsonify({
@@ -882,7 +899,11 @@ def get_frame_image(frame_id):
         filename = os.path.basename(frame_path)
         # Detect mimetype based on file extension
         mimetype = 'image/jpeg' if filename.lower().endswith('.jpg') else 'image/png'
-        return send_from_directory(directory, filename, mimetype=mimetype)
+
+        response = send_from_directory(directory, filename, mimetype=mimetype)
+        # Add cache control headers - allow caching but validate with server
+        response.headers['Cache-Control'] = 'private, max-age=300, must-revalidate'
+        return response
 
     except Exception as e:
         logger.error(f"Error getting frame image: {e}", exc_info=True)

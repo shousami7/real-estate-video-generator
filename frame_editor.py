@@ -9,6 +9,7 @@ import base64
 import subprocess
 import logging
 import time
+import shutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import timedelta
@@ -46,8 +47,12 @@ class FrameEditor:
         self.video_path = video_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Subdirectories for thumbnails and full-resolution frames
+        self.thumbs_dir = self.output_dir / "thumbs"
+        self.full_dir = self.output_dir / "full"
         self.frames = []
         self.ffmpeg_path = ffmpeg_path
+        self.extraction_timestamp = None  # For cache-busting
 
         # Verify FFmpeg availability upfront to provide clear error messages
         self._verify_ffmpeg()
@@ -87,24 +92,47 @@ class FrameEditor:
         # Let exceptions propagate - returning 0.0 causes confusing errors downstream
         return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
 
+    def _clear_frame_directory(self):
+        """Clear existing frame files before new extraction."""
+        # Clear thumbs directory
+        if self.thumbs_dir.exists():
+            shutil.rmtree(self.thumbs_dir)
+        self.thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clear full directory
+        if self.full_dir.exists():
+            shutil.rmtree(self.full_dir)
+        self.full_dir.mkdir(parents=True, exist_ok=True)
+
+        # Also clear any old-style frame files in output_dir root
+        for old_file in self.output_dir.glob("frame_*.jpg"):
+            old_file.unlink()
+        for old_file in self.output_dir.glob("extracted_frame_*.png"):
+            old_file.unlink()
+
+        logger.debug(f"Cleared frame directories: {self.thumbs_dir}, {self.full_dir}")
+
     def extract_frames(
         self,
         frame_count: int = None,
         fps: float = 5.0,
         thumbnail_width: int = 320,
-        jpeg_quality: int = 8
+        jpeg_quality: int = 8,
+        full_quality: int = 2
     ) -> List[Dict[str, Any]]:
         """
         Extract frames from video using batch ffmpeg processing (single invocation).
+        Produces both thumbnails (for UI) and full-resolution frames (for export/edit).
 
         Args:
             frame_count: Number of frames to extract (if specified, takes priority over fps)
             fps: Frames per second to extract (default: 5.0, used only if frame_count is None)
             thumbnail_width: Width of thumbnail in pixels (default: 320, height auto-calculated)
-            jpeg_quality: JPEG quality for ffmpeg (2-31, lower is better quality, default: 8)
+            jpeg_quality: JPEG quality for thumbnails (2-31, lower is better quality, default: 8)
+            full_quality: JPEG quality for full-resolution frames (2-31, default: 2 for high quality)
 
         Returns:
-            List of frame information (path, timestamp, base64)
+            List of frame information (thumb_path, full_path, timestamp, etc.)
         """
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
@@ -114,6 +142,12 @@ class FrameEditor:
 
         if duration <= 0:
             raise RuntimeError(f"Invalid video duration: {duration}")
+
+        # Clear existing frames before extraction
+        self._clear_frame_directory()
+
+        # Set extraction timestamp for cache-busting
+        self.extraction_timestamp = int(time.time())
 
         # Calculate frame count based on parameters
         if frame_count is not None:
@@ -128,70 +162,82 @@ class FrameEditor:
         # Calculate fps for ffmpeg filter based on frame count and duration
         extract_fps = actual_frame_count / duration if duration > 0 else 1.0
 
-        # Output pattern for batch extraction (JPEG format for smaller file size)
-        output_pattern = str(self.output_dir / "frame_%04d.jpg")
+        # Output patterns for batch extraction
+        thumb_pattern = str(self.thumbs_dir / "frame_%04d.jpg")
+        full_pattern = str(self.full_dir / "frame_%04d.jpg")
 
-        # Build ffmpeg command for batch extraction
-        # Using fps filter to extract frames at calculated intervals
-        # scale filter resizes to thumbnail width while maintaining aspect ratio
-        vf_filters = f"fps={extract_fps:.6f},scale={thumbnail_width}:-1"
-
-        cmd = [
+        # Extract thumbnails (resized, lower quality for fast UI)
+        thumb_vf = f"fps={extract_fps:.6f},scale={thumbnail_width}:-1"
+        thumb_cmd = [
             self.ffmpeg_path,
             "-i", self.video_path,
-            "-vf", vf_filters,
-            "-q:v", str(jpeg_quality),  # JPEG quality (2-31, lower is better)
-            "-y",  # Overwrite output files
-            output_pattern
+            "-vf", thumb_vf,
+            "-q:v", str(jpeg_quality),
+            "-y",
+            thumb_pattern
         ]
 
-        logger.debug(f"Running batch ffmpeg extraction: {' '.join(cmd)}")
+        # Extract full-resolution frames (no resize, high quality for export/edit)
+        full_vf = f"fps={extract_fps:.6f}"
+        full_cmd = [
+            self.ffmpeg_path,
+            "-i", self.video_path,
+            "-vf", full_vf,
+            "-q:v", str(full_quality),
+            "-y",
+            full_pattern
+        ]
+
+        logger.debug(f"Running batch ffmpeg extraction (thumbnails): {' '.join(thumb_cmd)}")
+        logger.debug(f"Running batch ffmpeg extraction (full): {' '.join(full_cmd)}")
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=True,
-                timeout=120  # Longer timeout for batch processing
-            )
-            logger.debug(f"ffmpeg stdout: {result.stdout.decode('utf-8', errors='ignore')}")
+            # Extract thumbnails
+            subprocess.run(thumb_cmd, capture_output=True, check=True, timeout=120)
+            # Extract full-resolution
+            subprocess.run(full_cmd, capture_output=True, check=True, timeout=120)
         except subprocess.CalledProcessError as e:
-            logger.error(f"ffmpeg batch extraction failed: {e.stderr.decode('utf-8', errors='ignore')}")
+            logger.error(f"ffmpeg batch extraction failed: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)}")
             raise RuntimeError(f"Frame extraction failed: {e}")
         except subprocess.TimeoutExpired:
             raise RuntimeError("Frame extraction timed out (120s limit)")
 
-        # Collect generated frame files
-        frame_files = sorted(self.output_dir.glob("frame_*.jpg"))
+        # Collect generated thumbnail files
+        thumb_files = sorted(self.thumbs_dir.glob("frame_*.jpg"))
+        full_files = sorted(self.full_dir.glob("frame_*.jpg"))
 
-        if not frame_files:
+        if not thumb_files:
             raise RuntimeError("No frames were extracted")
 
-        logger.debug(f"Found {len(frame_files)} extracted frame files")
+        logger.debug(f"Found {len(thumb_files)} thumbnail files, {len(full_files)} full-res files")
 
         # Build frame information list
         self.frames = []
-        actual_extracted = len(frame_files)
+        actual_extracted = len(thumb_files)
         interval = duration / actual_extracted if actual_extracted > 0 else 1.0
 
-        for i, frame_path in enumerate(frame_files):
+        for i, thumb_path in enumerate(thumb_files):
             timestamp = interval * i
             # Ensure timestamp doesn't exceed duration
             if timestamp >= duration:
                 timestamp = max(duration - 0.001, 0)
 
+            # Get corresponding full-res path
+            full_path = full_files[i] if i < len(full_files) else thumb_path
+
             frame_info = {
                 "frame_id": i,
                 "name": f"extracted frame {i + 1}",
-                "path": str(frame_path),
+                "path": str(thumb_path),  # Thumbnail path (for backward compatibility)
+                "full_path": str(full_path),  # Full-resolution path (for export/edit)
                 "timestamp": self._format_timestamp(timestamp),
                 "seconds": timestamp,
-                "base64": f"data:image/jpeg;base64,{self._image_to_base64(str(frame_path))}"
+                "cache_ts": self.extraction_timestamp  # For cache-busting
             }
             self.frames.append(frame_info)
             logger.debug(f"Processed frame {i} at {frame_info['timestamp']}")
 
-        logger.info(f"Successfully extracted {len(self.frames)} frames (batch mode, JPEG {thumbnail_width}px)")
+        logger.info(f"Successfully extracted {len(self.frames)} frames (batch mode, thumb={thumbnail_width}px + full-res)")
         return self.frames
 
     def get_frame_by_id(self, frame_id: int) -> Optional[Dict[str, Any]]:
