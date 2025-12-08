@@ -828,8 +828,8 @@
             if (!state.frames[index]) return;
             const frame = state.frames[index];
 
-            // Use dataset index for robust tracking
-            const currentIndex = parseInt(mainPlayerImg.dataset.index);
+            // Use dataset index for robust tracking (default to -1 if not set)
+            const currentIndex = mainPlayerImg.dataset.index ? parseInt(mainPlayerImg.dataset.index) : -1;
 
             if (currentIndex !== index) {
                 mainPlayerImg.style.opacity = '0.5';
@@ -1026,11 +1026,16 @@
 
             // Create a local URL for the image
             const reader = new FileReader();
+
+            reader.onerror = function() {
+                alert('Failed to read the file. Please try again.');
+            };
+
             reader.onload = function(e) {
                 const imageUrl = e.target.result;
 
-                // Calculate insertion point (after current frame)
-                const insertIndex = state.currentIndex + 1;
+                // Calculate insertion point (after current frame, or 0 if no frames)
+                const insertIndex = state.frames.length > 0 ? state.currentIndex + 1 : 0;
 
                 // Calculate timestamp for new frame
                 let newTimestamp = '0:00';
@@ -1069,8 +1074,19 @@
                     state.frames[i].frame_number = i + 1;
                 }
 
-                // Re-render timeline
-                renderTimeline();
+                // Re-render timeline or initialize if first frame
+                if (state.frames.length === 1) {
+                    // First frame - need to fully initialize
+                    inner.innerHTML = '';
+                    renderTimeline();
+                    const viewportWidth = window.innerWidth;
+                    const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+                    inner.style.paddingLeft = `${sidePadding}px`;
+                    inner.style.paddingRight = `${sidePadding}px`;
+                    viewport.scrollLeft = 0;
+                } else {
+                    renderTimeline();
+                }
 
                 // Navigate to newly inserted frame
                 state.currentIndex = insertIndex;
@@ -1084,37 +1100,94 @@
             event.target.value = '';
         }
 
-        function handleDownloadFrame() {
+        async function handleDownloadFrame() {
             if (state.frames.length === 0) return;
 
             const currentFrame = state.frames[state.currentIndex];
+            const filename = `frame_${currentFrame.frame_number}_${currentFrame.timestamp.replace(/:/g, '-')}.jpg`;
 
-            // Create a temporary link and trigger download
-            const link = document.createElement('a');
-            link.href = currentFrame.src;
-            link.download = `frame_${currentFrame.frame_number}_${currentFrame.timestamp.replace(':', '-')}.jpg`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            try {
+                // For local/blob URLs or same-origin images, use direct download
+                if (currentFrame.src.startsWith('data:') || currentFrame.src.startsWith('blob:')) {
+                    const link = document.createElement('a');
+                    link.href = currentFrame.src;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    // For remote URLs, fetch and create blob to avoid CORS issues
+                    const response = await fetch(currentFrame.src);
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    // Clean up blob URL
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                }
+            } catch (error) {
+                console.error('Download failed:', error);
+                // Fallback to opening in new tab
+                window.open(currentFrame.src, '_blank');
+            }
         }
 
-        function handleDownloadAll() {
+        async function handleDownloadAll() {
             if (state.frames.length === 0) return;
 
             const confirmed = confirm(`Download all ${state.frames.length} frames?\n\nThis will download each frame individually.`);
             if (!confirmed) return;
 
+            // Update frame badge to show progress
+            const originalBadgeText = frameBadgeEl.textContent;
+
             // Download each frame with a small delay to avoid browser blocking
-            state.frames.forEach((frame, index) => {
-                setTimeout(() => {
-                    const link = document.createElement('a');
-                    link.href = frame.src;
-                    link.download = `frame_${frame.frame_number}_${frame.timestamp.replace(':', '-')}.jpg`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }, index * 200); // 200ms delay between downloads
-            });
+            for (let index = 0; index < state.frames.length; index++) {
+                const frame = state.frames[index];
+                const filename = `frame_${frame.frame_number}_${frame.timestamp.replace(/:/g, '-')}.jpg`;
+
+                // Show download progress
+                frameBadgeEl.textContent = `Downloading ${index + 1} / ${state.frames.length}`;
+
+                try {
+                    if (index > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay between downloads
+                    }
+
+                    if (frame.src.startsWith('data:') || frame.src.startsWith('blob:')) {
+                        const link = document.createElement('a');
+                        link.href = frame.src;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    } else {
+                        const response = await fetch(frame.src);
+                        const blob = await response.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                    }
+                } catch (error) {
+                    console.error(`Failed to download frame ${frame.frame_number}:`, error);
+                }
+            }
+
+            // Restore original badge text
+            frameBadgeEl.textContent = originalBadgeText;
         }
 
         // Initialize on DOM ready
