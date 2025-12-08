@@ -361,8 +361,8 @@
             align-items: center;
             overflow-x: auto;
             overflow-y: hidden;
-            scroll-snap-type: x mandatory;
-            scroll-behavior: smooth;
+            /* Removed scroll-snap-type to prevent conflict with JS scrollTo */
+            /* Removed scroll-behavior as JS handles smooth scrolling */
             scrollbar-width: none;
             -ms-overflow-style: none;
             cursor: grab;
@@ -398,7 +398,7 @@
             border-radius: 12px;
             overflow: hidden;
             cursor: pointer;
-            scroll-snap-align: center;
+            /* Removed scroll-snap-align as JS handles centering */
             background: #111827;
             /* gray-900 */
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
@@ -907,6 +907,7 @@
             currentIndex: 0,
             isNavigating: false,
             targetIndex: 0,
+            targetScroll: 0,
         };
 
         const CARD_WIDTH = 240;
@@ -1005,10 +1006,11 @@
 
             // Check if keyboard navigation scroll has completed
             if (state.isNavigating) {
-                const targetScroll = state.targetIndex * STRIDE;
+                // Use stored clamped scroll position for accurate completion check
+                const targetScroll = state.targetScroll !== undefined ? state.targetScroll : state.targetIndex * STRIDE;
                 const scrollDiff = Math.abs(scrollX - targetScroll);
-                // Unlock when scroll is close enough to target (within 5px)
-                if (scrollDiff < 5) {
+                // Unlock when scroll is close enough to target (within 10px for smoother transition)
+                if (scrollDiff < 10) {
                     state.isNavigating = false;
                 }
             }
@@ -1114,13 +1116,20 @@
             if (!shouldForce && state.currentIndex === clamped) return;
 
             state.currentIndex = clamped;
+            state.targetIndex = clamped;
             updateTimecode();
             updateMainPlayer(clamped);
 
             if (options.scroll === true) {
                 const targetScroll = clamped * STRIDE;
+                const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+                const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
+                state.targetScroll = clampedScroll;
+                state.isNavigating = !options.instant; // Lock during smooth scroll only
+
                 viewport.scrollTo({
-                    left: targetScroll,
+                    left: clampedScroll,
                     behavior: options.instant ? 'auto' : 'smooth'
                 });
             }
@@ -1168,40 +1177,20 @@
 
                 if (nextTarget === currentTarget) return;
 
-                // Set navigation lock - prevents scroll-based updates
-                state.isNavigating = true;
-                state.targetIndex = nextTarget;
-                state.currentIndex = nextTarget;
-                updateTimecode();
-                updateMainPlayer(nextTarget);
-
-                // Immediately apply "centered" visual state to target card
-                const cards = inner.querySelectorAll('.cinema-frame-card');
-                const targetCard = cards[nextTarget];
-                if (targetCard) {
-                    // Apply instant centered transforms
-                    targetCard.style.transform = `
-                        perspective(1500px)
-                        translateX(0px)
-                        translateZ(0px)
-                        rotateY(0deg)
-                        scale(1.1)
-                    `;
-                    targetCard.style.opacity = '1';
-                    targetCard.style.filter = 'blur(0px)';
-                    targetCard.style.zIndex = '50';
-
-                    const borderGlow = targetCard.querySelector('.card-border-glow');
-                    if (borderGlow) {
-                        borderGlow.style.opacity = '1';
-                    }
-                }
-
-                // Scroll to target (with clamping to prevent overscroll)
+                // Calculate clamped scroll position for completion check
                 const targetScroll = nextTarget * STRIDE;
                 const maxScroll = viewport.scrollWidth - viewport.clientWidth;
                 const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
 
+                // Set navigation lock - prevents scroll-based updates
+                state.isNavigating = true;
+                state.targetIndex = nextTarget;
+                state.targetScroll = clampedScroll; // Store clamped scroll for completion check
+                state.currentIndex = nextTarget;
+                updateTimecode();
+                updateMainPlayer(nextTarget);
+
+                // Scroll to target
                 viewport.scrollTo({
                     left: clampedScroll,
                     behavior: 'smooth'
