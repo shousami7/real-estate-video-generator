@@ -875,6 +875,164 @@ def get_frame_image(frame_id):
         }), 500
 
 
+@web_ui_blueprint.route('/frames/export-video', methods=['POST'])
+def export_frames_to_video():
+    """
+    Export frames to video using FFmpeg
+    Request JSON: {
+        "frames": [{"path": "...", "url": "..."}, ...],
+        "frame_duration": 2.0,  // seconds per frame (default: 2.0)
+        "fps": 30  // output fps (default: 30)
+    }
+    """
+    try:
+        data = request.get_json()
+        frames = data.get('frames', [])
+        frame_duration = float(data.get('frame_duration', 2.0))
+        output_fps = int(data.get('fps', 30))
+
+        if not frames or len(frames) == 0:
+            return jsonify({
+                "status": "error",
+                "message": "No frames provided"
+            }), 400
+
+        # Create output directory
+        session_id = session.get('session_id', 'default')
+        output_dir = os.path.join('output', session_id, 'exported')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate unique output filename
+        timestamp = int(datetime.now().timestamp())
+        output_filename = f"exported_video_{timestamp}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+
+        # Create concat file for FFmpeg
+        concat_file_path = os.path.join(output_dir, f"concat_{timestamp}.txt")
+
+        with open(concat_file_path, 'w') as f:
+            for frame in frames:
+                # Get frame path from URL or path
+                frame_path = frame.get('path')
+                if not frame_path:
+                    # Try to extract path from URL
+                    frame_url = frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]  # Remove leading /
+                    else:
+                        continue
+
+                # Normalize path
+                if not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if not os.path.exists(frame_path):
+                    logger.warning(f"Frame not found: {frame_path}")
+                    continue
+
+                # Write to concat file
+                # Use absolute path and escape single quotes
+                escaped_path = frame_path.replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
+                f.write(f"duration {frame_duration}\n")
+
+            # Add last frame again without duration (FFmpeg concat requirement)
+            if frames:
+                last_frame = frames[-1]
+                frame_path = last_frame.get('path')
+                if not frame_path:
+                    frame_url = last_frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]
+
+                if frame_path and not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if frame_path and os.path.exists(frame_path):
+                    escaped_path = frame_path.replace("'", "'\\''")
+                    f.write(f"file '{escaped_path}'\n")
+
+        # Build FFmpeg command
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output file
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file_path,
+            '-vsync', 'vfr',
+            '-r', str(output_fps),
+            '-pix_fmt', 'yuv420p',
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            output_path
+        ]
+
+        logger.info(f"Running FFmpeg to export video: {' '.join(cmd)}")
+
+        # Execute FFmpeg
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minutes timeout
+        )
+
+        # Clean up concat file
+        try:
+            os.remove(concat_file_path)
+        except:
+            pass
+
+        if result.returncode != 0:
+            logger.error(f"FFmpeg error: {result.stderr}")
+            return jsonify({
+                "status": "error",
+                "message": f"Video export failed: {result.stderr}"
+            }), 500
+
+        # Verify output file
+        if not os.path.exists(output_path):
+            return jsonify({
+                "status": "error",
+                "message": "Video file was not created"
+            }), 500
+
+        file_size = os.path.getsize(output_path)
+        if file_size == 0:
+            return jsonify({
+                "status": "error",
+                "message": "Video file is empty"
+            }), 500
+
+        # Return success with download URL
+        normalized_path = output_path.replace('\\', '/')
+        video_url = f"/{normalized_path}"
+
+        logger.info(f"Video exported successfully: {output_path} ({file_size} bytes)")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Video exported successfully ({len(frames)} frames)",
+            "video_url": video_url,
+            "video_path": output_path,
+            "file_size": file_size
+        })
+
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg export timed out")
+        return jsonify({
+            "status": "error",
+            "message": "Video export timed out. Too many frames or frames too large."
+        }), 500
+    except Exception as e:
+        logger.error(f"Error exporting video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 @web_ui_blueprint.route('/frames/edit', methods=['POST'])
 def edit_frame():
     """

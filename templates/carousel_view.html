@@ -667,7 +667,7 @@
             // Event Listeners
             viewport.addEventListener('scroll', handleScroll);
             document.addEventListener('keydown', handleKeyboard);
-            document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+            document.getElementById('confirm-selection-btn').addEventListener('click', exportVideo);
 
             // New control buttons
             document.getElementById('delete-frame-btn').addEventListener('click', handleDeleteFrame);
@@ -904,7 +904,7 @@
                     behavior: 'smooth'
                 });
             } else if (e.key === 'Enter') {
-                confirmSelection();
+                exportVideo();
             }
         }
 
@@ -956,18 +956,68 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
 
-        function confirmSelection() {
-            if (state.frames.length === 0) return;
+        async function exportVideo() {
+            if (state.frames.length === 0) {
+                alert('No frames to export');
+                return;
+            }
 
-            const selected = state.frames[state.currentIndex];
-            if (window.opener && !window.opener.closed) {
-                window.opener.postMessage({
-                    type: 'FRAME_SELECTED',
-                    frame: selected
-                }, '*');
-                window.close();
-            } else {
-                alert(`Selected Frame ${selected.frame_number} at ${selected.timestamp}\n(Parent window not found, cannot return selection)`);
+            const exportBtn = document.getElementById('confirm-selection-btn');
+            const originalText = exportBtn.textContent;
+
+            try {
+                // Show loading state
+                exportBtn.disabled = true;
+                exportBtn.textContent = 'Exporting...';
+
+                // Prepare frames data
+                const framesData = state.frames.map(frame => ({
+                    path: frame.path,
+                    url: frame.src
+                }));
+
+                // Send request to backend
+                const response = await fetch('/frames/export-video', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        frames: framesData,
+                        frame_duration: 2.0,  // 2 seconds per frame
+                        fps: 30
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Update button text
+                    exportBtn.textContent = 'Download Video';
+
+                    // Download the video
+                    const link = document.createElement('a');
+                    link.href = result.video_url;
+                    link.download = `exported_video_${Date.now()}.mp4`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    // Reset button after a delay
+                    setTimeout(() => {
+                        exportBtn.textContent = originalText;
+                        exportBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    alert(`Export failed: ${result.message}`);
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert(`Export failed: ${error.message}`);
+                exportBtn.textContent = originalText;
+                exportBtn.disabled = false;
             }
         }
 
