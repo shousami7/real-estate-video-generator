@@ -48,6 +48,10 @@ os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 SUPABASE_REQUIRED = is_supabase_required()
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
 ALLOWED_VIDEO_MIME_PREFIXES = ("video/",)
+
+# Frame extraction limits
+FRAME_EXTRACTION_HARD_CAP = 150  # Server-side absolute maximum frames
+FRAME_EXTRACTION_DEFAULT_MAX = 100  # Default max frames if not specified by client
 MAX_VIDEO_UPLOAD_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(500 * 1024 * 1024)))  # 500MB default
 
 if is_supabase_configured():
@@ -740,7 +744,8 @@ def extract_frames():
         video_path = data.get('video_path')
         requested_frame_count = data.get('frame_count')
         requested_fps = data.get('fps', 1)
-        max_frames = data.get('max_frames', 300)
+        # Use default max, but always enforce server-side HARD_CAP
+        client_max_frames = data.get('max_frames', FRAME_EXTRACTION_DEFAULT_MAX)
 
         if not video_path:
             return jsonify({
@@ -792,14 +797,22 @@ def extract_frames():
 
             frame_count = int(video_duration * fps_value)
 
-        # Ensure at least one frame and apply safety cap
+        # Ensure at least one frame and apply safety caps
         frame_count = max(1, frame_count)
+
+        # Apply client-requested max_frames (if valid)
         try:
-            cap = int(max_frames)
-            if cap > 0:
-                frame_count = min(frame_count, cap)
+            client_cap = int(client_max_frames)
+            if client_cap > 0:
+                frame_count = min(frame_count, client_cap)
         except (TypeError, ValueError):
             pass
+
+        # Always enforce server-side HARD_CAP regardless of client request
+        frame_count = min(frame_count, FRAME_EXTRACTION_HARD_CAP)
+
+        logger.debug(f"Frame extraction: requested_fps={requested_fps}, "
+                     f"client_max={client_max_frames}, final_count={frame_count}")
 
         frames = editor.extract_frames(frame_count=frame_count)
 

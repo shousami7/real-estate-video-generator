@@ -87,13 +87,21 @@ class FrameEditor:
         # Let exceptions propagate - returning 0.0 causes confusing errors downstream
         return probe_video_duration(self.video_path, ffmpeg_path=self.ffmpeg_path)
 
-    def extract_frames(self, frame_count: int = None, fps: float = 5.0) -> List[Dict[str, Any]]:
+    def extract_frames(
+        self,
+        frame_count: int = None,
+        fps: float = 5.0,
+        thumbnail_width: int = 320,
+        jpeg_quality: int = 8
+    ) -> List[Dict[str, Any]]:
         """
-        Extract frames from video at regular intervals
+        Extract frames from video using batch ffmpeg processing (single invocation).
 
         Args:
             frame_count: Number of frames to extract (if specified, takes priority over fps)
             fps: Frames per second to extract (default: 5.0, used only if frame_count is None)
+            thumbnail_width: Width of thumbnail in pixels (default: 320, height auto-calculated)
+            jpeg_quality: JPEG quality for ffmpeg (2-31, lower is better quality, default: 8)
 
         Returns:
             List of frame information (path, timestamp, base64)
@@ -107,63 +115,83 @@ class FrameEditor:
         if duration <= 0:
             raise RuntimeError(f"Invalid video duration: {duration}")
 
-        # Calculate frame count and interval based on parameters
+        # Calculate frame count based on parameters
         if frame_count is not None:
             # If frame_count is specified, use it directly
             actual_frame_count = max(1, min(frame_count, int(duration * 60)))  # Cap at 60fps equivalent
-            interval = duration / actual_frame_count if actual_frame_count > 0 else 1.0
             logger.debug(f"Extracting {actual_frame_count} frames from video (frame_count specified)...")
         else:
             # Otherwise, use fps to calculate frame count
-            interval = calculate_frame_interval(fps)
             actual_frame_count = max(1, int(duration * fps))
             logger.debug(f"Extracting frames at {fps} fps from video ({actual_frame_count} frames total)...")
 
-        self.frames = []
+        # Calculate fps for ffmpeg filter based on frame count and duration
+        extract_fps = actual_frame_count / duration if duration > 0 else 1.0
 
-        for i in range(actual_frame_count):
-            timestamp = interval * i  # Using common calculation: interval * frame_index
-            # Avoid requesting a frame exactly at the video end when using integer math
+        # Output pattern for batch extraction (JPEG format for smaller file size)
+        output_pattern = str(self.output_dir / "frame_%04d.jpg")
+
+        # Build ffmpeg command for batch extraction
+        # Using fps filter to extract frames at calculated intervals
+        # scale filter resizes to thumbnail width while maintaining aspect ratio
+        vf_filters = f"fps={extract_fps:.6f},scale={thumbnail_width}:-1"
+
+        cmd = [
+            self.ffmpeg_path,
+            "-i", self.video_path,
+            "-vf", vf_filters,
+            "-q:v", str(jpeg_quality),  # JPEG quality (2-31, lower is better)
+            "-y",  # Overwrite output files
+            output_pattern
+        ]
+
+        logger.debug(f"Running batch ffmpeg extraction: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                check=True,
+                timeout=120  # Longer timeout for batch processing
+            )
+            logger.debug(f"ffmpeg stdout: {result.stdout.decode('utf-8', errors='ignore')}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg batch extraction failed: {e.stderr.decode('utf-8', errors='ignore')}")
+            raise RuntimeError(f"Frame extraction failed: {e}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Frame extraction timed out (120s limit)")
+
+        # Collect generated frame files
+        frame_files = sorted(self.output_dir.glob("frame_*.jpg"))
+
+        if not frame_files:
+            raise RuntimeError("No frames were extracted")
+
+        logger.debug(f"Found {len(frame_files)} extracted frame files")
+
+        # Build frame information list
+        self.frames = []
+        actual_extracted = len(frame_files)
+        interval = duration / actual_extracted if actual_extracted > 0 else 1.0
+
+        for i, frame_path in enumerate(frame_files):
+            timestamp = interval * i
+            # Ensure timestamp doesn't exceed duration
             if timestamp >= duration:
                 timestamp = max(duration - 0.001, 0)
-            frame_path = self.output_dir / f"extracted_frame_{i + 1:03d}.png"
 
-            # FFmpegでフレームを抽出
-            cmd = [
-                self.ffmpeg_path,
-                "-ss", str(timestamp),
-                "-i", self.video_path,
-                "-vframes", "1",
-                "-q:v", "2",
-                "-y",
-                str(frame_path)
-            ]
+            frame_info = {
+                "frame_id": i,
+                "name": f"extracted frame {i + 1}",
+                "path": str(frame_path),
+                "timestamp": self._format_timestamp(timestamp),
+                "seconds": timestamp,
+                "base64": f"data:image/jpeg;base64,{self._image_to_base64(str(frame_path))}"
+            }
+            self.frames.append(frame_info)
+            logger.debug(f"Processed frame {i} at {frame_info['timestamp']}")
 
-            try:
-                subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    check=True,
-                    timeout=30
-                )
-
-                # フレーム情報を保存
-                frame_info = {
-                    "frame_id": i,
-                    "name": f"extracted frame {i + 1}",
-                    "path": str(frame_path),
-                    "timestamp": self._format_timestamp(timestamp),
-                    "seconds": timestamp,
-                    "base64": f"data:image/png;base64,{self._image_to_base64(str(frame_path))}"
-                }
-                self.frames.append(frame_info)
-                logger.debug(f"Extracted frame {i} at {frame_info['timestamp']}")
-
-            except Exception as e:
-                logger.error(f"Error extracting frame {i}: {e}")
-                raise
-
-        logger.debug(f"Successfully extracted {len(self.frames)} frames")
+        logger.info(f"Successfully extracted {len(self.frames)} frames (batch mode, JPEG {thumbnail_width}px)")
         return self.frames
 
     def get_frame_by_id(self, frame_id: int) -> Optional[Dict[str, Any]]:
