@@ -837,11 +837,11 @@
                 </div>
                 <span class="tool-label">Download</span>
             </button>
-            <button class="tool-btn" id="edit-frames-btn" title="Edit frames with AI">
+            <button class="tool-btn" id="edit-frames-btn" title="Edit current frame with AI">
                 <div class="tool-icon-box">
                     <span class="material-symbols-outlined">auto_fix_high</span>
                 </div>
-                <span class="tool-label">Edit</span>
+                <span class="tool-label">Edit Frame</span>
             </button>
         </div>
     </div>
@@ -880,7 +880,7 @@
                     <label for="edit-prompt">
                         Edit Prompt
                         <span style="color: rgba(255, 255, 255, 0.5); font-size: 12px; text-transform: none; font-weight: 400;">
-                            Describe how you want to edit your frames
+                            Describe how you want to edit the current frame
                         </span>
                     </label>
                     <textarea
@@ -1498,8 +1498,24 @@
                 return;
             }
 
+            const currentFrame = state.frames[state.currentIndex];
             const modal = document.getElementById('edit-modal');
             modal.classList.add('active');
+
+            // Update modal title to show current frame number
+            const modalTitle = modal.querySelector('.modal-header h2');
+            const frameInfo = document.createElement('span');
+            frameInfo.style.fontSize = '14px';
+            frameInfo.style.color = 'rgba(255, 255, 255, 0.6)';
+            frameInfo.style.fontWeight = '400';
+            frameInfo.textContent = ` - Frame #${currentFrame.frame_number}`;
+
+            // Remove old frame info if exists
+            const oldFrameInfo = modalTitle.querySelector('span[style*="font-size: 14px"]');
+            if (oldFrameInfo) {
+                oldFrameInfo.remove();
+            }
+            modalTitle.appendChild(frameInfo);
 
             // Focus on the textarea for immediate input
             setTimeout(() => {
@@ -1525,6 +1541,13 @@
                 return;
             }
 
+            // Get current frame only
+            const currentFrame = state.frames[state.currentIndex];
+            if (!currentFrame) {
+                alert('No frame selected');
+                return;
+            }
+
             const submitBtn = document.getElementById('modal-submit-btn');
             const submitBtnText = document.getElementById('submit-btn-text');
             const submitBtnSpinner = document.getElementById('submit-btn-spinner');
@@ -1535,12 +1558,12 @@
                 submitBtnText.textContent = 'Processing...';
                 submitBtnSpinner.style.display = 'inline-block';
 
-                // Prepare frames data for editing
-                const framesData = state.frames.map(frame => ({
-                    path: frame.path,
-                    url: frame.src,
-                    frame_number: frame.frame_number
-                }));
+                // Prepare current frame data only
+                const framesData = [{
+                    path: currentFrame.path,
+                    url: currentFrame.src,
+                    frame_number: currentFrame.frame_number
+                }];
 
                 // Send edit request to backend
                 const response = await fetch('/frames/edit-with-ai', {
@@ -1558,19 +1581,17 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    // Update frames with edited versions
+                    // Update current frame with edited version
                     if (result.edited_frames && result.edited_frames.length > 0) {
-                        result.edited_frames.forEach((editedFrame, index) => {
-                            if (state.frames[index]) {
-                                state.frames[index].src = editedFrame.url;
-                                // Optionally update path if backend provides new path
-                                if (editedFrame.path) {
-                                    state.frames[index].path = editedFrame.path;
-                                }
-                            }
-                        });
+                        const editedFrame = result.edited_frames[0];
 
-                        // Re-render timeline with edited frames
+                        // Update the current frame in state
+                        state.frames[state.currentIndex].src = editedFrame.url;
+                        if (editedFrame.path) {
+                            state.frames[state.currentIndex].path = editedFrame.path;
+                        }
+
+                        // Re-render timeline with edited frame
                         renderTimeline();
                         setActiveIndex(state.currentIndex, { force: true, scroll: true });
                         requestAnimationFrame(updateCardTransforms);
@@ -1579,9 +1600,9 @@
                         closeEditModal();
 
                         // Show success message
-                        alert(`Successfully edited ${result.edited_frames.length} frames!`);
+                        alert(`Successfully edited frame #${currentFrame.frame_number}!`);
                     } else {
-                        alert('No edited frames were returned. Please try again.');
+                        alert('No edited frame was returned. Please try again.');
                     }
                 } else {
                     alert(`Edit failed: ${result.message || 'Unknown error'}`);
