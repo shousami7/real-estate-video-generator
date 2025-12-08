@@ -48,6 +48,10 @@ os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 SUPABASE_REQUIRED = is_supabase_required()
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
 ALLOWED_VIDEO_MIME_PREFIXES = ("video/",)
+
+# Frame extraction limits
+FRAME_EXTRACTION_HARD_CAP = 150  # Server-side absolute maximum frames
+FRAME_EXTRACTION_DEFAULT_MAX = 100  # Default max frames if not specified by client
 MAX_VIDEO_UPLOAD_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(500 * 1024 * 1024)))  # 500MB default
 
 if is_supabase_configured():
@@ -740,7 +744,8 @@ def extract_frames():
         video_path = data.get('video_path')
         requested_frame_count = data.get('frame_count')
         requested_fps = data.get('fps', 1)
-        max_frames = data.get('max_frames', 300)
+        # Use default max, but always enforce server-side HARD_CAP
+        client_max_frames = data.get('max_frames', FRAME_EXTRACTION_DEFAULT_MAX)
 
         if not video_path:
             return jsonify({
@@ -792,40 +797,48 @@ def extract_frames():
 
             frame_count = int(video_duration * fps_value)
 
-        # Ensure at least one frame and apply safety cap
+        # Ensure at least one frame and apply safety caps
         frame_count = max(1, frame_count)
+
+        # Apply client-requested max_frames (if valid)
         try:
-            cap = int(max_frames)
-            if cap > 0:
-                frame_count = min(frame_count, cap)
+            client_cap = int(client_max_frames)
+            if client_cap > 0:
+                frame_count = min(frame_count, client_cap)
         except (TypeError, ValueError):
             pass
 
+        # Always enforce server-side HARD_CAP regardless of client request
+        frame_count = min(frame_count, FRAME_EXTRACTION_HARD_CAP)
+
+        logger.debug(f"Frame extraction: requested_fps={requested_fps}, "
+                     f"client_max={client_max_frames}, final_count={frame_count}")
+
         frames = editor.extract_frames(frame_count=frame_count)
 
-        # セッションにはパス情報のみ保存（base64データは除外）
-        frames_for_session = [
+        # セッションとクライアント両方に同じ形式で保存（base64は除外、URLを追加）
+        frames_for_response = [
             {
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
                 "timestamp": frame['timestamp'],
                 "seconds": frame['seconds'],
-                "name": frame.get('name')
-                # base64 は含まない
+                "name": frame.get('name'),
+                "url": f"/frames/image/{frame['frame_id']}"  # base64の代わりにURL
             }
             for frame in frames
         ]
 
-        session['editor_frames'] = frames_for_session
+        session['editor_frames'] = frames_for_response
         session['editor_frames_dir'] = frames_dir
         session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
-        logger.info(f"Extracted {len(frames)} frames")
+        logger.info(f"Extracted {len(frames)} frames (URL-based response)")
 
-        # クライアントにはbase64付きの完全なデータを返す
+        # クライアントにはURL付きデータを返す（base64なしで軽量）
         return jsonify({
             "status": "success",
-            "frames": frames,  # base64を含む完全なデータ
+            "frames": frames_for_response,
             "frame_count": len(frames)
         })
 
@@ -867,7 +880,9 @@ def get_frame_image(frame_id):
 
         directory = os.path.dirname(frame_path)
         filename = os.path.basename(frame_path)
-        return send_from_directory(directory, filename, mimetype='image/png')
+        # Detect mimetype based on file extension
+        mimetype = 'image/jpeg' if filename.lower().endswith('.jpg') else 'image/png'
+        return send_from_directory(directory, filename, mimetype=mimetype)
 
     except Exception as e:
         logger.error(f"Error getting frame image: {e}", exc_info=True)
