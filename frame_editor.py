@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import timedelta
 
 from utils.video_duration import probe_video_duration
+from utils.frame_utils import calculate_frame_timestamp, calculate_frame_interval
 
 # PIL is optional - only needed if image resizing is required
 try:
@@ -91,14 +92,12 @@ class FrameEditor:
         Extract frames from video at regular intervals
 
         Args:
-            frame_count: Number of frames to extract (legacy, ignored if fps is set)
-            fps: Frames per second to extract (default: 5.0 for smooth video-like navigation)
+            frame_count: Number of frames to extract (if specified, takes priority over fps)
+            fps: Frames per second to extract (default: 5.0, used only if frame_count is None)
 
         Returns:
             List of frame information (path, timestamp, base64)
         """
-        logger.debug(f"Extracting frames at {fps} fps from video...")
-
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
 
@@ -108,13 +107,22 @@ class FrameEditor:
         if duration <= 0:
             raise RuntimeError(f"Invalid video duration: {duration}")
 
-        # Calculate frame count based on fps (3 frames per second)
-        interval = 1.0 / fps  # e.g., 0.333 seconds for 3 fps
-        actual_frame_count = max(1, int(duration * fps))
+        # Calculate frame count and interval based on parameters
+        if frame_count is not None:
+            # If frame_count is specified, use it directly
+            actual_frame_count = max(1, min(frame_count, int(duration * 60)))  # Cap at 60fps equivalent
+            interval = duration / actual_frame_count if actual_frame_count > 0 else 1.0
+            logger.debug(f"Extracting {actual_frame_count} frames from video (frame_count specified)...")
+        else:
+            # Otherwise, use fps to calculate frame count
+            interval = calculate_frame_interval(fps)
+            actual_frame_count = max(1, int(duration * fps))
+            logger.debug(f"Extracting frames at {fps} fps from video ({actual_frame_count} frames total)...")
+
         self.frames = []
 
         for i in range(actual_frame_count):
-            timestamp = interval * i  # Start from 0, not interval
+            timestamp = interval * i  # Using common calculation: interval * frame_index
             # Avoid requesting a frame exactly at the video end when using integer math
             if timestamp >= duration:
                 timestamp = max(duration - 0.001, 0)
