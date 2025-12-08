@@ -1006,8 +1006,15 @@ def export_frames_to_video():
             }), 500
 
         # Return success with download URL
-        normalized_path = output_path.replace('\\', '/')
-        video_url = f"/{normalized_path}"
+        # Build a URL that is actually served by our output route
+        output_root = os.path.abspath('output')
+        normalized_path = os.path.abspath(output_path)
+        try:
+            relative_path = os.path.relpath(normalized_path, output_root)
+            video_url = url_for('web_ui.serve_output_file', filename=relative_path)
+        except ValueError:
+            # Fallback: still expose the absolute path, but this shouldn't normally happen
+            video_url = f"/output/{os.path.basename(output_path)}"
 
         logger.info(f"Video exported successfully: {output_path} ({file_size} bytes)")
 
