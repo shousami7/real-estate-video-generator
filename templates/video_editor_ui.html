@@ -1784,12 +1784,30 @@
                 <div class="w-full shrink-0" id="video-frames-section">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-white text-lg font-bold">Upload Videos</h3>
-                        <button id="extract-all-frames-btn"
-                            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Extract frames from uploaded videos">
-                            <span class="material-symbols-outlined !text-base">auto_awesome</span>
-                            <span class="text-sm font-medium">Extract Frames</span>
-                        </button>
+                        <div class="flex items-center gap-3">
+                            <!-- Frame Extraction Settings -->
+                            <div class="flex items-center gap-2 text-sm">
+                                <label class="text-gray-400">FPS:</label>
+                                <select id="frame-fps-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="0.5">0.5</option>
+                                    <option value="1" selected>1</option>
+                                    <option value="2">2</option>
+                                    <option value="4">4</option>
+                                </select>
+                                <label class="text-gray-400 ml-2">Max:</label>
+                                <select id="frame-max-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="50">50</option>
+                                    <option value="100" selected>100</option>
+                                    <option value="150">150</option>
+                                </select>
+                            </div>
+                            <button id="extract-all-frames-btn"
+                                class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Extract frames from uploaded videos">
+                                <span class="material-symbols-outlined !text-base">auto_awesome</span>
+                                <span class="text-sm font-medium">Extract Frames</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
                         <!-- 6 video frame slots will be inserted here by JS -->
@@ -2134,6 +2152,26 @@
             availableFps: [0.5, 1, 2, 4],  // 選択可能なFPS値
             availableMaxFrames: [50, 100, 150]  // 選択可能な最大フレーム数
         };
+
+        // フレーム抽出設定UIの初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            const fpsSelect = document.getElementById('frame-fps-select');
+            const maxSelect = document.getElementById('frame-max-select');
+
+            if (fpsSelect) {
+                fpsSelect.addEventListener('change', (e) => {
+                    FRAME_CONFIG.fps = parseFloat(e.target.value);
+                    console.log('Frame FPS updated:', FRAME_CONFIG.fps);
+                });
+            }
+
+            if (maxSelect) {
+                maxSelect.addEventListener('change', (e) => {
+                    FRAME_CONFIG.maxFrames = parseInt(e.target.value, 10);
+                    console.log('Max frames updated:', FRAME_CONFIG.maxFrames);
+                });
+            }
+        });
 
         // ==================== DOM要素 ====================
         const uploadZone = document.getElementById('upload-zone');
