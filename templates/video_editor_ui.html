@@ -2154,6 +2154,7 @@
         const attachedImagePreview = document.getElementById('attached-image-preview');
         const previewImg = document.getElementById('preview-img');
         const removeImageBtn = document.getElementById('remove-image-btn');
+        const pickFrameBtn = document.getElementById('pick-frame-btn');
         const selectFrameBtn = document.getElementById('select-frame-btn');
         const paymentModal = document.getElementById('payment-modal');
         const closePaymentModalBtn = document.getElementById('close-payment-modal');
@@ -5120,6 +5121,10 @@
                 if (data.status === 'success' && data.frames && data.frames.length > 0) {
                     allExtractedFrames = data.frames;
 
+                    if (pickFrameBtn) {
+                        pickFrameBtn.disabled = false;
+                    }
+
                     // Open fullscreen timeline mode instead of inline timeline
                     openFullscreenTimeline(allExtractedFrames);
                 } else {
@@ -5513,7 +5518,6 @@
             closeFullscreenTimeline();
 
             // Enable the edit button in main UI
-            const pickFrameBtn = document.getElementById('pick-frame-btn');
             if (pickFrameBtn) {
                 pickFrameBtn.disabled = false;
             }
@@ -5549,6 +5553,16 @@
 
         // "Use This Frame" button
         fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
+
+        if (pickFrameBtn) {
+            pickFrameBtn.addEventListener('click', () => {
+                if (allExtractedFrames.length > 0) {
+                    openFullscreenTimeline(allExtractedFrames);
+                } else {
+                    alert('Please extract frames first to choose one for editing.');
+                }
+            });
+        }
 
         // Chat input in fullscreen mode - forward to main chat
         fullscreenSendBtn.addEventListener('click', () => {
