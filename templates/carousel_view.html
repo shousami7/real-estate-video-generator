@@ -476,6 +476,35 @@
             pointer-events: none;
             z-index: 0;
         }
+
+        /* Delete button danger state */
+        #delete-frame-btn:hover {
+            color: #ef4444;
+        }
+
+        #delete-frame-btn:hover .tool-icon-box {
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Insert button highlight */
+        #insert-frame-btn:hover {
+            color: #10b981;
+        }
+
+        #insert-frame-btn:hover .tool-icon-box {
+            background: rgba(16, 185, 129, 0.15);
+        }
+
+        /* Download buttons highlight */
+        #download-frame-btn:hover,
+        #download-all-btn:hover {
+            color: #3b82f6;
+        }
+
+        #download-frame-btn:hover .tool-icon-box,
+        #download-all-btn:hover .tool-icon-box {
+            background: rgba(59, 130, 246, 0.15);
+        }
     </style>
 </head>
 
@@ -537,41 +566,44 @@
 
         <!-- Glass Controls Toolbar -->
         <div class="nle-glass-toolbar">
-            <button class="tool-btn">
+            <button class="tool-btn" id="delete-frame-btn" title="Delete current frame">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">content_cut</span>
+                    <span class="material-symbols-outlined">delete</span>
                 </div>
-                <span class="tool-label">Split</span>
+                <span class="tool-label">Delete</span>
             </button>
-            <button class="tool-btn">
+            <button class="tool-btn" id="insert-frame-btn" title="Insert new frame">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">volume_up</span>
+                    <span class="material-symbols-outlined">add_photo_alternate</span>
                 </div>
-                <span class="tool-label">Audio</span>
+                <span class="tool-label">Insert</span>
             </button>
 
             <div class="tool-separator"></div>
 
-            <button class="play-btn-large">
+            <button class="play-btn-large" id="play-pause-btn">
                 <span class="material-symbols-outlined" style="font-size: 28px;">play_arrow</span>
             </button>
 
             <div class="tool-separator"></div>
 
-            <button class="tool-btn">
+            <button class="tool-btn" id="download-frame-btn" title="Download current frame">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">layers</span>
+                    <span class="material-symbols-outlined">download</span>
                 </div>
-                <span class="tool-label">Layers</span>
+                <span class="tool-label">Download</span>
             </button>
-            <button class="tool-btn">
+            <button class="tool-btn" id="download-all-btn" title="Download all frames">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">monitor</span>
+                    <span class="material-symbols-outlined">folder_zip</span>
                 </div>
-                <span class="tool-label">Preview</span>
+                <span class="tool-label">Download All</span>
             </button>
         </div>
     </div>
+
+    <!-- Hidden file input for frame insertion -->
+    <input type="file" id="frame-file-input" accept="image/*" style="display: none;">
 
     <script>
         // --- State Management ---
@@ -637,6 +669,13 @@
         viewport.addEventListener('scroll', handleScroll);
         document.addEventListener('keydown', handleKeyboard);
         document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+
+        // New control buttons
+        document.getElementById('delete-frame-btn').addEventListener('click', handleDeleteFrame);
+        document.getElementById('insert-frame-btn').addEventListener('click', handleInsertFrame);
+        document.getElementById('download-frame-btn').addEventListener('click', handleDownloadFrame);
+        document.getElementById('download-all-btn').addEventListener('click', handleDownloadAll);
+        document.getElementById('frame-file-input').addEventListener('change', handleFileSelected);
         }
 
         function renderTimeline() {
@@ -931,6 +970,151 @@
             } else {
                 alert(`Selected Frame ${selected.frame_number} at ${selected.timestamp}\n(Parent window not found, cannot return selection)`);
             }
+        }
+
+        // --- New Control Functions ---
+
+        function handleDeleteFrame() {
+            if (state.frames.length === 0) return;
+
+            const currentFrame = state.frames[state.currentIndex];
+            const confirmed = confirm(`Delete Frame #${currentFrame.frame_number}?\n\nThis action cannot be undone.`);
+
+            if (!confirmed) return;
+
+            // Remove frame from state
+            state.frames.splice(state.currentIndex, 1);
+
+            // Re-number remaining frames
+            state.frames.forEach((frame, index) => {
+                frame.frame_number = index + 1;
+            });
+
+            // Update current index if needed
+            if (state.currentIndex >= state.frames.length) {
+                state.currentIndex = Math.max(0, state.frames.length - 1);
+            }
+
+            // Re-render timeline
+            if (state.frames.length > 0) {
+                renderTimeline();
+                setActiveIndex(state.currentIndex, { force: true, scroll: true, instant: true });
+                requestAnimationFrame(updateCardTransforms);
+            } else {
+                inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
+                mainPlayerImg.src = '';
+                frameBadgeEl.textContent = 'Frame #-- / 0';
+                timecodeEl.textContent = '00:00:00:00';
+            }
+        }
+
+        function handleInsertFrame() {
+            // Trigger file input dialog
+            const fileInput = document.getElementById('frame-file-input');
+            fileInput.click();
+        }
+
+        function handleFileSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file.');
+                return;
+            }
+
+            // Create a local URL for the image
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imageUrl = e.target.result;
+
+                // Calculate insertion point (after current frame)
+                const insertIndex = state.currentIndex + 1;
+
+                // Calculate timestamp for new frame
+                let newTimestamp = '0:00';
+                let newSeconds = 0;
+
+                if (state.frames.length > 0) {
+                    const currentFrame = state.frames[state.currentIndex];
+                    const nextFrame = state.frames[insertIndex];
+
+                    if (nextFrame) {
+                        // Insert between current and next - average the timestamps
+                        newSeconds = (currentFrame.seconds + nextFrame.seconds) / 2;
+                    } else {
+                        // Insert at end - add 1 second to current
+                        newSeconds = currentFrame.seconds + 1;
+                    }
+                    newTimestamp = formatTimestamp(newSeconds);
+                }
+
+                // Create new frame object
+                const newFrame = {
+                    id: `inserted_${Date.now()}`,
+                    src: imageUrl,
+                    timestamp: newTimestamp,
+                    frame_number: insertIndex + 1,
+                    seconds: newSeconds,
+                    path: file.name,
+                    isLocal: true // Flag to indicate this is a locally inserted frame
+                };
+
+                // Insert into frames array
+                state.frames.splice(insertIndex, 0, newFrame);
+
+                // Re-number frames after insertion point
+                for (let i = insertIndex + 1; i < state.frames.length; i++) {
+                    state.frames[i].frame_number = i + 1;
+                }
+
+                // Re-render timeline
+                renderTimeline();
+
+                // Navigate to newly inserted frame
+                state.currentIndex = insertIndex;
+                setActiveIndex(insertIndex, { force: true, scroll: true });
+                requestAnimationFrame(updateCardTransforms);
+            };
+
+            reader.readAsDataURL(file);
+
+            // Reset file input so same file can be selected again
+            event.target.value = '';
+        }
+
+        function handleDownloadFrame() {
+            if (state.frames.length === 0) return;
+
+            const currentFrame = state.frames[state.currentIndex];
+
+            // Create a temporary link and trigger download
+            const link = document.createElement('a');
+            link.href = currentFrame.src;
+            link.download = `frame_${currentFrame.frame_number}_${currentFrame.timestamp.replace(':', '-')}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function handleDownloadAll() {
+            if (state.frames.length === 0) return;
+
+            const confirmed = confirm(`Download all ${state.frames.length} frames?\n\nThis will download each frame individually.`);
+            if (!confirmed) return;
+
+            // Download each frame with a small delay to avoid browser blocking
+            state.frames.forEach((frame, index) => {
+                setTimeout(() => {
+                    const link = document.createElement('a');
+                    link.href = frame.src;
+                    link.download = `frame_${frame.frame_number}_${frame.timestamp.replace(':', '-')}.jpg`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }, index * 200); // 200ms delay between downloads
+            });
         }
 
         // Initialize on DOM ready
