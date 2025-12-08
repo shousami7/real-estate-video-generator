@@ -539,39 +539,83 @@ def frame_selection_view():
     if 'editor_frames' not in session:
         # Fallback or redirect if no frames are in session
         return redirect(url_for('web_ui.video_editor'))
-    
+
     frames_data = session['editor_frames']
-    
+
     # We need to map the file paths to accessible URLs
     # The current frame data has 'path' which is absolute file path
     # accessible via /frames/<filename>
-    
+
     frames_dir_abs = os.path.abspath('frames')
-    
+
+    def _format_timestamp_label(seconds_value: float) -> str:
+        try:
+            safe_seconds = max(0.0, float(seconds_value))
+        except (TypeError, ValueError):
+            return "0:00"
+
+        minutes = int(safe_seconds // 60)
+        secs = int(safe_seconds % 60)
+        return f"{minutes}:{secs:02d}"
+
     view_frames = []
-    for frame in frames_data:
+    for idx, frame in enumerate(frames_data):
         path = frame.get('path')
-        if path:
-            # path is absolute path, we need relative to 'frames' dir
-            # e.g. /abs/path/to/frames/session/editor/img.jpg -> session/editor/img.jpg
+        if not path:
+            logger.warning("Skipping frame with missing path at index %s", idx)
+            continue
+
+        # path is absolute path, we need relative to 'frames' dir
+        # e.g. /abs/path/to/frames/session/editor/img.jpg -> session/editor/img.jpg
+        try:
+            if os.path.isabs(path):
+                filename = os.path.relpath(path, frames_dir_abs)
+                absolute_path = path
+            else:
+                absolute_path = os.path.abspath(path)
+                filename = os.path.relpath(absolute_path, frames_dir_abs)
+        except ValueError:
+            # If path is not under frames dir
+            filename = os.path.basename(path)
+            absolute_path = os.path.abspath(path)
+
+        frame_id = frame.get('frame_id', frame.get('id', idx))
+        try:
+            frame_id = int(frame_id)
+        except (TypeError, ValueError):
+            frame_id = idx
+
+        seconds_value = frame.get('seconds')
+        if seconds_value is None:
+            raw_timestamp = frame.get('timestamp')
+            if isinstance(raw_timestamp, (int, float)):
+                seconds_value = float(raw_timestamp)
+            else:
+                seconds_value = float(idx)
+        else:
             try:
-                if os.path.isabs(path):
-                    filename = os.path.relpath(path, frames_dir_abs)
-                else:
-                    # If it's already relative (maybe?), just assume it might be relative to frames?
-                    # Or relative to CWD. Let's assume absolute as per logic.
-                    # Fallback to basename if common prefix fails or just use it.
-                    # But safest is relpath if we know it is inside frames_dir_abs
-                    filename = os.path.relpath(os.path.abspath(path), frames_dir_abs)
-            except ValueError:
-                # If path is not under frames dir
-                filename = os.path.basename(path)
-                
-            # Create a shallow copy for display
-            view_frame = frame.copy()
-            view_frame['url'] = url_for('web_ui.serve_frame_file', filename=filename)
-            view_frames.append(view_frame)
-            
+                seconds_value = float(seconds_value)
+            except (TypeError, ValueError):
+                logger.warning("Invalid seconds value for frame %s; defaulting to index", frame_id)
+                seconds_value = float(idx)
+
+        timestamp_label = frame.get('timestamp')
+        if isinstance(timestamp_label, (int, float)):
+            timestamp_label = _format_timestamp_label(timestamp_label)
+        elif not timestamp_label:
+            timestamp_label = _format_timestamp_label(seconds_value)
+
+        view_frame = {
+            'frame_id': frame_id,
+            'path': absolute_path,
+            'url': url_for('web_ui.serve_frame_file', filename=filename),
+            'timestamp': timestamp_label,
+            'seconds': seconds_value,
+            'name': frame.get('name'),
+        }
+
+        view_frames.append(view_frame)
+
     return render_template('carousel_view.html', frames=view_frames)
 
 

@@ -629,53 +629,52 @@
         // --- Initialize ---
         function init() {
             // Data passed from server via Jinja2
-            const serverFrames = {{ frames | tojson | safe
-        }};
+            const serverFrames = {{ frames | default([]) | tojson | safe }};
 
-        if (serverFrames && serverFrames.length > 0) {
-            state.frames = serverFrames.map((f, i) => ({
-                id: f.frame_id,
-                src: f.url,
-                timestamp: f.timestamp,
-                frame_number: i + 1,
-                seconds: f.seconds,
-                path: f.path
-            }));
-        } else {
-            console.warn("No frames provided from server");
-            state.frames = [];
-        }
+            if (serverFrames && serverFrames.length > 0) {
+                state.frames = serverFrames.map((f, i) => ({
+                    id: f.frame_id,
+                    src: f.url,
+                    timestamp: f.timestamp,
+                    frame_number: i + 1,
+                    seconds: f.seconds,
+                    path: f.path
+                }));
+            } else {
+                console.warn("No frames provided from server");
+                state.frames = [];
+            }
 
-        if (state.frames.length > 0) {
-            renderTimeline();
-            setActiveIndex(0, { force: true, instant: true });
+            if (state.frames.length > 0) {
+                renderTimeline();
+                setActiveIndex(0, { force: true, instant: true });
 
-            // Set inner padding to center first/last cards
-            const viewportWidth = window.innerWidth;
-            const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
-            inner.style.paddingLeft = `${sidePadding}px`;
-            inner.style.paddingRight = `${sidePadding}px`;
+                // Set inner padding to center first/last cards
+                const viewportWidth = window.innerWidth;
+                const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+                inner.style.paddingLeft = `${sidePadding}px`;
+                inner.style.paddingRight = `${sidePadding}px`;
 
-            // Set initial scroll position to 0 to center the first frame
-            viewport.scrollLeft = 0;
+                // Set initial scroll position to 0 to center the first frame
+                viewport.scrollLeft = 0;
 
-            // Initial Transform Update
-            requestAnimationFrame(updateCardTransforms);
-        } else {
-            inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
-        }
+                // Initial Transform Update
+                requestAnimationFrame(updateCardTransforms);
+            } else {
+                inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
+            }
 
-        // Event Listeners
-        viewport.addEventListener('scroll', handleScroll);
-        document.addEventListener('keydown', handleKeyboard);
-        document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+            // Event Listeners
+            viewport.addEventListener('scroll', handleScroll);
+            document.addEventListener('keydown', handleKeyboard);
+            document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
 
-        // New control buttons
-        document.getElementById('delete-frame-btn').addEventListener('click', handleDeleteFrame);
-        document.getElementById('insert-frame-btn').addEventListener('click', handleInsertFrame);
-        document.getElementById('download-frame-btn').addEventListener('click', handleDownloadFrame);
-        document.getElementById('download-all-btn').addEventListener('click', handleDownloadAll);
-        document.getElementById('frame-file-input').addEventListener('change', handleFileSelected);
+            // New control buttons
+            document.getElementById('delete-frame-btn').addEventListener('click', handleDeleteFrame);
+            document.getElementById('insert-frame-btn').addEventListener('click', handleInsertFrame);
+            document.getElementById('download-frame-btn').addEventListener('click', handleDownloadFrame);
+            document.getElementById('download-all-btn').addEventListener('click', handleDownloadAll);
+            document.getElementById('frame-file-input').addEventListener('change', handleFileSelected);
         }
 
         function renderTimeline() {
