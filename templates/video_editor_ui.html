@@ -1305,10 +1305,10 @@
             overflow: hidden;
             cursor: pointer;
             scroll-snap-align: center;
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-                opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-                filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-            will-change: transform, opacity, filter;
+            /* Removed filter transition - blur was causing performance issues */
+            transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform, opacity;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             background: #1a1a1a;
         }
@@ -5210,6 +5210,11 @@
         const CINEMA_CARD_WIDTH = 500;
         const CINEMA_CARD_GAP = 60;
 
+        // Performance optimization: cache DOM elements and prevent scroll cascade
+        let cachedCinemaCards = null;
+        let cachedFullscreenThumbs = null;
+        let isProgrammaticScroll = false; // Flag to skip scroll handler during programmatic scrolls
+
         function openFullscreenTimeline(frames) {
             isFullscreenTimelineOpen = true;
             currentFocusedFrameIndex = 0;
@@ -5246,6 +5251,10 @@
             // Set padding on viewport
             cinemaTimelineViewport.style.paddingLeft = `${sidePadding}px`;
             cinemaTimelineViewport.style.paddingRight = `${sidePadding}px`;
+
+            // Cache DOM elements for performance (avoid repeated querySelectorAll)
+            cachedCinemaCards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            cachedFullscreenThumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
 
             // Update frame counter
             fullscreenFrameCounter.textContent = `Frame #1 / ${frames.length}`;
@@ -5304,7 +5313,8 @@
             const viewportWidth = viewport.clientWidth;
             const centerX = scrollX + (viewportWidth / 2);
 
-            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            // Use cached cards for performance (avoids DOM query on every scroll)
+            const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
 
             cards.forEach((card, index) => {
                 const cardWidth = CINEMA_CARD_WIDTH;
@@ -5328,13 +5338,13 @@
                 // Z translation for depth
                 const translateZ = -Math.abs(normalizedDistance) * 150;
 
-                // Opacity: 1 at center, 0.1 at edges
-                const opacity = Math.max(0.1, 1 - (clampedDistance * 0.45));
+                // Opacity: 1 at center, 0.3 at edges (increased minimum for better visibility)
+                const opacity = Math.max(0.3, 1 - (clampedDistance * 0.35));
 
-                // Blur: 0 at center, 12px at edges
-                const blur = clampedDistance * 6;
+                // NOTE: Blur filter removed - it was causing severe performance issues
+                // Each blur calculation on 100+ cards per scroll frame caused UI jitter
 
-                // Apply transforms
+                // Apply transforms using will-change optimized properties
                 card.style.transform = `
                     perspective(1500px)
                     translateX(${translateX}px)
@@ -5343,7 +5353,7 @@
                     scale(${scale})
                 `;
                 card.style.opacity = opacity;
-                card.style.filter = `blur(${blur}px)`;
+                // Removed: card.style.filter = `blur(${blur}px)` - performance killer
                 card.style.zIndex = Math.round(50 - absDistance * 20);
 
                 // Toggle active class
@@ -5355,16 +5365,23 @@
             if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
 
             fullscreenScrollRaf = requestAnimationFrame(() => {
-                // Update 3D transforms
+                // Update 3D transforms (always needed for visual effect)
                 updateCinemaCardTransforms();
 
-                // Find closest card to center
+                // Skip state updates during programmatic scrolls (keyboard nav, etc.)
+                // This prevents cascade: scrollToCinemaCard() -> scroll event -> state update -> more updates
+                if (isProgrammaticScroll) {
+                    return;
+                }
+
+                // Find closest card to center (only for user-initiated scrolls)
                 const viewport = cinemaTimelineViewport;
                 const scrollX = viewport.scrollLeft;
                 const viewportWidth = viewport.clientWidth;
                 const centerX = scrollX + (viewportWidth / 2);
 
-                const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+                // Use cached cards for performance
+                const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
                 let closestIndex = 0;
                 let closestDistance = Infinity;
 
@@ -5401,7 +5418,8 @@
         }
 
         function scrollToCinemaCard(index) {
-            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            // Use cached cards for performance
+            const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
             const targetCard = cards[index];
             if (!targetCard) return;
 
@@ -5409,7 +5427,14 @@
             const viewportWidth = viewport.clientWidth;
             const scrollOffset = targetCard.offsetLeft - (viewportWidth / 2) + (CINEMA_CARD_WIDTH / 2);
 
+            // Set flag to prevent scroll handler cascade during programmatic scroll
+            isProgrammaticScroll = true;
             viewport.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+
+            // Reset flag after scroll animation completes (smooth scroll takes ~300-500ms)
+            setTimeout(() => {
+                isProgrammaticScroll = false;
+            }, 350);
         }
 
         function closeFullscreenTimeline() {
@@ -5434,6 +5459,11 @@
             fullscreenScrollRaf = null;
             fullscreenScrollSettleTimeout = null;
             pendingScrollIndex = null;
+
+            // Clear DOM caches
+            cachedCinemaCards = null;
+            cachedFullscreenThumbs = null;
+            isProgrammaticScroll = false;
         }
 
         function updateFullscreenPreview(index) {
@@ -5483,14 +5513,16 @@
         }
 
         function setActiveFullscreenThumb(index) {
-            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            // Use cached thumbs for performance
+            const thumbs = cachedFullscreenThumbs || fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
             thumbs.forEach((thumb, i) => {
                 thumb.classList.toggle('active', i === index);
             });
         }
 
         function scrollToFullscreenThumb(index) {
-            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            // Use cached thumbs for performance
+            const thumbs = cachedFullscreenThumbs || fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
             const targetThumb = thumbs[index];
             if (!targetThumb) return;
 
