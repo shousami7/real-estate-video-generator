@@ -73,6 +73,24 @@ class FrameEditor:
         except subprocess.TimeoutExpired:
             raise RuntimeError("FFmpeg verification timed out")
 
+    def _cleanup_old_frames(self):
+        """Delete old frame files from the output directory before extracting new ones."""
+        try:
+            # Delete all existing frame files (jpg and png)
+            deleted_count = 0
+            for pattern in ["frame_*.jpg", "frame_*.png"]:
+                for frame_file in self.output_dir.glob(pattern):
+                    try:
+                        frame_file.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to delete old frame {frame_file}: {e}")
+            
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} old frame files from {self.output_dir}")
+        except Exception as e:
+            logger.warning(f"Error during frame cleanup: {e}")
+
     def get_video_duration(self) -> float:
         """
         Get video duration in seconds
@@ -108,6 +126,9 @@ class FrameEditor:
         """
         if not os.path.exists(self.video_path):
             raise FileNotFoundError(f"Video not found: {self.video_path}")
+
+        # Clean up old frames before extracting new ones
+        self._cleanup_old_frames()
 
         # get_video_duration raises FileNotFoundError or RuntimeError if it fails
         duration = self.get_video_duration()
