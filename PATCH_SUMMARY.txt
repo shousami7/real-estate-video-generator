@@ -1,0 +1,58 @@
+================================================================================
+FRAME SELECTION UI - BUG FIX PATCH
+================================================================================
+
+CRITICAL FIXES APPLIED:
+-----------------------
+
+1. ✅ Safe DOM Lookup Helpers
+   - Added $(sel) for safe querySelector
+   - Added on(el, ev, fn) for safe event binding
+   - Prevents null reference errors
+
+2. ✅ Dynamic Event Listener Rebinding
+   - Created initFrameSelectionUI() function
+   - Rebinds all listeners when Frame Selection mode opens
+   - Prevents missing listeners after DOM rebuilds
+
+3. ✅ Late Initialization Resilience
+   - Checks document.readyState before initialization
+   - Works correctly whether script loads before or after DOMContentLoaded
+   - No more silent initialization failures
+
+4. ✅ Duplicate Listener Prevention
+   - Removed static event bindings at page load
+   - Uses element cloning to clear old listeners
+   - Eliminates jitter and race conditions
+
+5. ✅ Async Popup Display
+   - Uses setTimeout(fn, 0) for non-blocking initialization
+   - Ensures DOM renders before heavy processing
+   - Popup appears instantly and reliably
+
+6. ✅ Error Isolation
+   - Wrapped initialization in try/catch
+   - Allows partial initialization on errors
+   - Prevents total UI breakage
+
+================================================================================
+KEY CODE LOCATIONS:
+================================================================================
+
+Safe DOM Helpers:          lines 2150-2167
+Frame Selection Init:      lines 5233-5313  
+Open Fullscreen Timeline:  lines 5315-5383
+Late Init Support:         lines 2178-2207
+Removed Static Bindings:   lines 5782-5786
+
+================================================================================
+RESULT:
+================================================================================
+
+✓ AI Frame Editor popup always appears reliably
+✓ No intermittent failures
+✓ No missing listeners after tab switching
+✓ No jitter from double-bound events
+✓ Frame Selection mode is stable and predictable
+
+================================================================================

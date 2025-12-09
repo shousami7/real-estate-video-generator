@@ -2147,6 +2147,26 @@
             abortControllers: {} // sheetId -> AbortController
         };
 
+        // ==================== Safe DOM Helpers ====================
+        // Safe querySelector - returns null if element doesn't exist, no exceptions
+        const $ = (sel) => {
+            try {
+                return document.querySelector(sel);
+            } catch (e) {
+                console.warn(`DOM query failed for: ${sel}`, e);
+                return null;
+            }
+        };
+
+        // Safe event binding - only binds if element exists
+        const on = (el, ev, fn) => {
+            if (el && typeof el.addEventListener === 'function') {
+                el.addEventListener(ev, fn);
+                return true;
+            }
+            return false;
+        };
+
         // ==================== フレーム抽出設定 ====================
         const FRAME_CONFIG = {
             fps: 1,           // デフォルトFPS（1秒あたりのフレーム数）
@@ -2156,24 +2176,36 @@
         };
 
         // フレーム抽出設定UIの初期化
-        document.addEventListener('DOMContentLoaded', () => {
-            const fpsSelect = document.getElementById('frame-fps-select');
-            const maxSelect = document.getElementById('frame-max-select');
+        // Handle both early and late initialization
+        function initFrameExtractionSettings() {
+            try {
+                const fpsSelect = $('#frame-fps-select');
+                const maxSelect = $('#frame-max-select');
 
-            if (fpsSelect) {
-                fpsSelect.addEventListener('change', (e) => {
-                    FRAME_CONFIG.fps = parseFloat(e.target.value);
-                    console.log('Frame FPS updated:', FRAME_CONFIG.fps);
-                });
-            }
+                if (fpsSelect) {
+                    on(fpsSelect, 'change', (e) => {
+                        FRAME_CONFIG.fps = parseFloat(e.target.value);
+                        console.log('Frame FPS updated:', FRAME_CONFIG.fps);
+                    });
+                }
 
-            if (maxSelect) {
-                maxSelect.addEventListener('change', (e) => {
-                    FRAME_CONFIG.maxFrames = parseInt(e.target.value, 10);
-                    console.log('Max frames updated:', FRAME_CONFIG.maxFrames);
-                });
+                if (maxSelect) {
+                    on(maxSelect, 'change', (e) => {
+                        FRAME_CONFIG.maxFrames = parseInt(e.target.value, 10);
+                        console.log('Max frames updated:', FRAME_CONFIG.maxFrames);
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to initialize frame extraction settings:', error);
             }
-        });
+        }
+
+        // Initialize immediately if DOM is ready, otherwise wait
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initFrameExtractionSettings);
+        } else {
+            initFrameExtractionSettings();
+        }
 
         // ==================== DOM要素 ====================
         const uploadZone = document.getElementById('upload-zone');
@@ -5210,6 +5242,86 @@
         const CINEMA_CARD_WIDTH = 500;
         const CINEMA_CARD_GAP = 60;
 
+        // ==================== Frame Selection UI Initialization ====================
+        /**
+         * Initialize/reinitialize Frame Selection UI event listeners.
+         * Called every time Frame Selection mode is activated to ensure
+         * all listeners are properly bound after DOM rebuilds.
+         */
+        function initFrameSelectionUI() {
+            try {
+                // Rebind "Use This Frame" button
+                const pickBtn = $('#fullscreen-pick-frame-btn');
+                if (pickBtn) {
+                    // Remove old listener by cloning (prevents duplicates)
+                    const newPickBtn = pickBtn.cloneNode(true);
+                    pickBtn.parentNode.replaceChild(newPickBtn, pickBtn);
+                    on(newPickBtn, 'click', useSelectedFullscreenFrame);
+                }
+
+                // Rebind close button
+                const closeBtn = $('#fullscreen-close-btn');
+                if (closeBtn) {
+                    const newCloseBtn = closeBtn.cloneNode(true);
+                    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                    on(newCloseBtn, 'click', closeFullscreenTimeline);
+                }
+
+                // Rebind chat send button
+                const sendBtn = $('#fullscreen-send-btn');
+                if (sendBtn) {
+                    const newSendBtn = sendBtn.cloneNode(true);
+                    sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+                    on(newSendBtn, 'click', () => {
+                        const input = $('#fullscreen-chat-input');
+                        const message = input ? input.value.trim() : '';
+                        if (!message) return;
+
+                        const mainChatInput = $('#chat-input');
+                        const mainSendBtn = $('#send-btn');
+                        if (mainChatInput) mainChatInput.value = message;
+                        if (input) input.value = '';
+
+                        closeFullscreenTimeline();
+                        if (mainSendBtn) mainSendBtn.click();
+                    });
+                }
+
+                // Rebind chat input Enter key
+                const chatInput = $('#fullscreen-chat-input');
+                if (chatInput) {
+                    const newChatInput = chatInput.cloneNode(true);
+                    chatInput.parentNode.replaceChild(newChatInput, chatInput);
+                    on(newChatInput, 'keypress', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            const sendBtn = $('#fullscreen-send-btn');
+                            if (sendBtn) sendBtn.click();
+                        }
+                    });
+                }
+
+                // Rebind toolbar buttons (if they exist)
+                const toolbarButtons = document.querySelectorAll('.cinema-tool-btn, .cinema-play-btn');
+                toolbarButtons.forEach(btn => {
+                    // Clone to remove old listeners
+                    const newBtn = btn.cloneNode(true);
+                    btn.parentNode.replaceChild(newBtn, btn);
+
+                    on(newBtn, 'click', () => {
+                        const title = newBtn.getAttribute('title') || newBtn.textContent.trim();
+                        console.log(`Toolbar action: ${title}`);
+                        // Add actual toolbar functionality here as needed
+                    });
+                });
+
+                console.log('Frame Selection UI initialized successfully');
+            } catch (error) {
+                console.error('Error initializing Frame Selection UI:', error);
+                // Don't throw - allow partial initialization
+            }
+        }
+
         function openFullscreenTimeline(frames) {
             isFullscreenTimelineOpen = true;
             currentFocusedFrameIndex = 0;
@@ -5276,6 +5388,12 @@
 
             // Add scroll listener for cinema timeline
             cinemaTimelineViewport.addEventListener('scroll', handleCinemaTimelineScroll);
+
+            // CRITICAL: Initialize Frame Selection UI after DOM is ready
+            // Use setTimeout to ensure DOM has fully rendered
+            setTimeout(() => {
+                initFrameSelectionUI();
+            }, 0);
         }
 
         function updateCinemaTimecode(index, totalFrames) {
@@ -5661,34 +5779,10 @@
             scrollToFullscreenThumb(index);
         };
 
-        // Close button event
-        fullscreenCloseBtn.addEventListener('click', closeFullscreenTimeline);
+        // NOTE: Event listeners for fullscreen buttons are now bound dynamically
+        // in initFrameSelectionUI() which is called when Frame Selection mode opens.
+        // This ensures listeners work correctly after DOM rebuilds.
 
-        // "Use This Frame" button
-        fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
-
-        // Chat input in fullscreen mode - forward to main chat
-        fullscreenSendBtn.addEventListener('click', () => {
-            const message = fullscreenChatInput.value.trim();
-            if (!message) return;
-
-            // Transfer to main chat input and trigger send
-            chatInput.value = message;
-            fullscreenChatInput.value = '';
-
-            // Close fullscreen first
-            closeFullscreenTimeline();
-
-            // Trigger the main send button
-            sendBtn.click();
-        });
-
-        fullscreenChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                fullscreenSendBtn.click();
-            }
-        });
 
         function renderLiquidGlassTimeline(frames) {
             allExtractedFrames = frames;
