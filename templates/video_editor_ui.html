@@ -1784,12 +1784,30 @@
                 <div class="w-full shrink-0" id="video-frames-section">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-white text-lg font-bold">Upload Videos</h3>
-                        <button id="extract-all-frames-btn"
-                            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Extract frames from uploaded videos">
-                            <span class="material-symbols-outlined !text-base">auto_awesome</span>
-                            <span class="text-sm font-medium">Extract Frames</span>
-                        </button>
+                        <div class="flex items-center gap-3">
+                            <!-- Frame Extraction Settings -->
+                            <div class="flex items-center gap-2 text-sm">
+                                <label class="text-gray-400">FPS:</label>
+                                <select id="frame-fps-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="0.5">0.5</option>
+                                    <option value="1" selected>1</option>
+                                    <option value="2">2</option>
+                                    <option value="4">4</option>
+                                </select>
+                                <label class="text-gray-400 ml-2">Max:</label>
+                                <select id="frame-max-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="50">50</option>
+                                    <option value="100" selected>100</option>
+                                    <option value="150">150</option>
+                                </select>
+                            </div>
+                            <button id="extract-all-frames-btn"
+                                class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Extract frames from uploaded videos">
+                                <span class="material-symbols-outlined !text-base">auto_awesome</span>
+                                <span class="text-sm font-medium">Extract Frames</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
                         <!-- 6 video frame slots will be inserted here by JS -->
@@ -2079,7 +2097,6 @@
 
     <script>
         // ==================== グローバル変数 ====================
-        const FRAME_EXTRACTION_FPS = 24;
         const state = {
             // 複数動画フレーム管理
             videoFrames: {
@@ -2127,6 +2144,34 @@
             isAgentMode: false,   // Agent (MCP) mode toggle
             abortControllers: {} // sheetId -> AbortController
         };
+
+        // ==================== フレーム抽出設定 ====================
+        const FRAME_CONFIG = {
+            fps: 1,           // デフォルトFPS（1秒あたりのフレーム数）
+            maxFrames: 100,   // デフォルト最大フレーム数
+            availableFps: [0.5, 1, 2, 4],  // 選択可能なFPS値
+            availableMaxFrames: [50, 100, 150]  // 選択可能な最大フレーム数
+        };
+
+        // フレーム抽出設定UIの初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            const fpsSelect = document.getElementById('frame-fps-select');
+            const maxSelect = document.getElementById('frame-max-select');
+
+            if (fpsSelect) {
+                fpsSelect.addEventListener('change', (e) => {
+                    FRAME_CONFIG.fps = parseFloat(e.target.value);
+                    console.log('Frame FPS updated:', FRAME_CONFIG.fps);
+                });
+            }
+
+            if (maxSelect) {
+                maxSelect.addEventListener('change', (e) => {
+                    FRAME_CONFIG.maxFrames = parseInt(e.target.value, 10);
+                    console.log('Max frames updated:', FRAME_CONFIG.maxFrames);
+                });
+            }
+        });
 
         // ==================== DOM要素 ====================
         const uploadZone = document.getElementById('upload-zone');
@@ -2723,8 +2768,8 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success' && data.frames && data.frames.length > 0) {
-                        // フレーム0のBase64画像をサムネイルとして使用
-                        frameData.thumbnail = data.frames[0].base64;
+                        // フレーム0のURL画像をサムネイルとして使用
+                        frameData.thumbnail = data.frames[0].url;
                         frameData.isProcessing = false;
                         renderVideoFrames();
                     } else {
@@ -2808,7 +2853,11 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend, fps: FRAME_EXTRACTION_FPS })
+                body: JSON.stringify({
+                    video_path: videoPathForBackend,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3093,11 +3142,15 @@
                 ? frameData.videoPath.substring(1)
                 : frameData.videoPath;
 
-        const extractionPromise = fetch('/frames/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_path: videoPath, fps: FRAME_EXTRACTION_FPS })
-        })
+            const extractionPromise = fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -3129,7 +3182,7 @@
             frameGrid.innerHTML = state.frames.map((frame, index) => `
                 <div class="frame-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
                      data-frame-id="${index}">
-                    <img src="${frame.base64}" class="w-full h-full object-cover" />
+                    <img src="${frame.url}" class="w-full h-full object-cover" />
                     <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                         <span class="text-white font-bold">Select</span>
                     </div>
@@ -3416,11 +3469,15 @@
                 ? frameData.videoPath.substring(1)
                 : frameData.videoPath;
 
-        fetch('/frames/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_path: videoPath, fps: FRAME_EXTRACTION_FPS })
-        })
+            fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -3452,7 +3509,7 @@
             frameGrid.innerHTML = state.frames.map((frame, index) => `
                 <div class="adjust-frame-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
                      data-frame-id="${index}">
-                    <img src="${frame.base64}" class="w-full h-full object-cover" />
+                    <img src="${frame.url}" class="w-full h-full object-cover" />
                     <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                         <span class="text-white font-bold">Select</span>
                     </div>
@@ -3502,7 +3559,7 @@
             modal.querySelector('#adjust-image-upload-area').classList.remove('hidden');
 
             // Set frame preview
-            modal.querySelector('#adjust-frame-preview').src = frame.base64;
+            modal.querySelector('#adjust-frame-preview').src = frame.url;
             modal.querySelector('#adjust-frame-time').textContent = `Frame at ${frame.timestamp}`;
             modal.querySelector('#adjust-selected-frame-label').textContent = `Frame ${frameId + 1}`;
 
@@ -3953,11 +4010,15 @@
                 ? state.videoPath.substring(1)
                 : state.videoPath;
 
-        fetch('/frames/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_path: videoPathForBackend, fps: FRAME_EXTRACTION_FPS })
-        })
+            fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_path: videoPathForBackend,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -3988,7 +4049,7 @@
                 if (editedImageUrl) {
                     frameCard.style.backgroundImage = `url('${editedImageUrl}')`;
                 } else {
-                    frameCard.style.backgroundImage = `url('${frame.base64}')`;
+                    frameCard.style.backgroundImage = `url('${frame.url}')`;
                 }
 
                 frameCard.addEventListener('click', () => selectFrame(index));
@@ -4016,7 +4077,7 @@
             state.selectedFrame = frameId;
             const frame = state.frames[frameId];
 
-            const imageUrl = state.editedFrames[frameId] || frame.base64;
+            const imageUrl = state.editedFrames[frameId] || frame.url;
 
             chatContainer.innerHTML = '';
 
@@ -5107,14 +5168,15 @@
                     videoPath = videoPath.substring(1);
                 }
 
-            const response = await fetch('/frames/extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    video_path: videoPath,
-                    fps: FRAME_EXTRACTION_FPS  // 24fps extraction for 5s clips (~120 frames)
-                })
-            });
+                const response = await fetch('/frames/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        fps: FRAME_CONFIG.fps,
+                        max_frames: FRAME_CONFIG.maxFrames
+                    })
+                });
 
                 const data = await response.json();
 
@@ -5159,7 +5221,7 @@
                 <div class="cinema-frame-card ${index === 0 ? 'active' : ''}"
                      data-index="${index}"
                      onclick="selectCinemaFrame(${index})">
-                    <img src="${frame.base64}" alt="Frame ${index + 1}" draggable="false">
+                    <img src="${frame.url}" alt="Frame ${index + 1}" draggable="false">
                     <div class="cinema-frame-metadata">
                         <p>
                             <span>Clip ${index + 1}</span>
@@ -5175,7 +5237,7 @@
                      data-index="${index}"
                      style="position: relative; display: none;"
                      onclick="selectFullscreenFrame(${index})">
-                    <img src="${frame.base64}" alt="Frame ${index + 1}">
+                    <img src="${frame.url}" alt="Frame ${index + 1}">
                 </div>
             `).join('');
 
@@ -5380,7 +5442,7 @@
                 };
 
                 fullscreenPreviewImg.addEventListener('load', handleLoad);
-                fullscreenPreviewImg.src = frame.base64;
+                fullscreenPreviewImg.src = frame.url;
                 fullscreenPreviewImg.dataset.index = String(index);
 
                 if (fullscreenPreviewImg.complete) {
@@ -5403,7 +5465,7 @@
             // Update state.selectedFrame for potential editing
             state.selectedFrame = {
                 index,
-                base64: frame.base64,
+                url: frame.url,
                 timestamp: frame.timestamp || formatTimestamp(frame.seconds)
             };
         }
@@ -5528,7 +5590,7 @@
             if (placeholder) {
                 placeholder.innerHTML = `
                     <div class="selected-frame-indicator">
-                        <div class="selected-frame-thumbnail" style="background-image: url('${frame.base64}')"></div>
+                        <div class="selected-frame-thumbnail" style="background-image: url('${frame.url}')"></div>
                         <div class="selected-frame-info">
                             <div class="selected-frame-title">Frame ${frame.index + 1} Selected</div>
                             <div class="selected-frame-timestamp">${frame.timestamp}</div>
@@ -5579,7 +5641,7 @@
 
             // Pre-render all frames without focus state
             liquidGlassTimeline.innerHTML = frames.map((frame, index) => {
-                const imgSrc = frame.base64;
+                const imgSrc = frame.url;
                 return `
                 <div class="liquid-frame"
                      data-index="${index}"
@@ -5742,7 +5804,7 @@
                     const frame = allExtractedFrames[index];
                     state.selectedFrame = {
                         index: index,
-                        base64: frame.base64,
+                        url: frame.url,
                         timestamp: frame.timestamp || formatTimestamp(frame.seconds)
                     };
                 }

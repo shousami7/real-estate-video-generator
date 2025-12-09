@@ -48,10 +48,11 @@ os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 SUPABASE_REQUIRED = is_supabase_required()
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
 ALLOWED_VIDEO_MIME_PREFIXES = ("video/",)
+
+# Frame extraction limits
+FRAME_EXTRACTION_HARD_CAP = 150  # Server-side absolute maximum frames
+FRAME_EXTRACTION_DEFAULT_MAX = 100  # Default max frames if not specified by client
 MAX_VIDEO_UPLOAD_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(500 * 1024 * 1024)))  # 500MB default
-# UI frame extraction defaults (5s clips -> 120 frames @24fps)
-DEFAULT_EDITOR_FRAME_EXTRACTION_FPS = 24
-MAX_EDITOR_FRAME_EXTRACTION_FPS = 30
 
 if is_supabase_configured():
     logger.info("✓ Supabase client ready (web process)")
@@ -742,8 +743,9 @@ def extract_frames():
         data = request.get_json()
         video_path = data.get('video_path')
         requested_frame_count = data.get('frame_count')
-        requested_fps = data.get('fps', DEFAULT_EDITOR_FRAME_EXTRACTION_FPS)
-        max_frames = data.get('max_frames', 300)
+        requested_fps = data.get('fps', 1)
+        # Use default max, but always enforce server-side HARD_CAP
+        client_max_frames = data.get('max_frames', FRAME_EXTRACTION_DEFAULT_MAX)
 
         if not video_path:
             return jsonify({
@@ -788,48 +790,55 @@ def extract_frames():
             try:
                 fps_value = float(requested_fps)
             except (TypeError, ValueError):
-                fps_value = float(DEFAULT_EDITOR_FRAME_EXTRACTION_FPS)
+                fps_value = 1.0
 
             if fps_value <= 0:
-                fps_value = float(DEFAULT_EDITOR_FRAME_EXTRACTION_FPS)
+                fps_value = 1.0
 
-            fps_value = min(fps_value, float(MAX_EDITOR_FRAME_EXTRACTION_FPS))
             frame_count = int(video_duration * fps_value)
 
-        # Ensure at least one frame and apply safety cap
+        # Ensure at least one frame and apply safety caps
         frame_count = max(1, frame_count)
+
+        # Apply client-requested max_frames (if valid)
         try:
-            cap = int(max_frames)
-            if cap > 0:
-                frame_count = min(frame_count, cap)
+            client_cap = int(client_max_frames)
+            if client_cap > 0:
+                frame_count = min(frame_count, client_cap)
         except (TypeError, ValueError):
             pass
 
+        # Always enforce server-side HARD_CAP regardless of client request
+        frame_count = min(frame_count, FRAME_EXTRACTION_HARD_CAP)
+
+        logger.debug(f"Frame extraction: requested_fps={requested_fps}, "
+                     f"client_max={client_max_frames}, final_count={frame_count}")
+
         frames = editor.extract_frames(frame_count=frame_count)
 
-        # セッションにはパス情報のみ保存（base64データは除外）
-        frames_for_session = [
+        # セッションとクライアント両方に同じ形式で保存（base64は除外、URLを追加）
+        frames_for_response = [
             {
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
                 "timestamp": frame['timestamp'],
                 "seconds": frame['seconds'],
-                "name": frame.get('name')
-                # base64 は含まない
+                "name": frame.get('name'),
+                "url": f"/frames/image/{frame['frame_id']}"  # base64の代わりにURL
             }
             for frame in frames
         ]
 
-        session['editor_frames'] = frames_for_session
+        session['editor_frames'] = frames_for_response
         session['editor_frames_dir'] = frames_dir
         session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
-        logger.info(f"Extracted {len(frames)} frames")
+        logger.info(f"Extracted {len(frames)} frames (URL-based response)")
 
-        # クライアントにはbase64付きの完全なデータを返す
+        # クライアントにはURL付きデータを返す（base64なしで軽量）
         return jsonify({
             "status": "success",
-            "frames": frames,  # base64を含む完全なデータ
+            "frames": frames_for_response,
             "frame_count": len(frames)
         })
 
@@ -871,7 +880,9 @@ def get_frame_image(frame_id):
 
         directory = os.path.dirname(frame_path)
         filename = os.path.basename(frame_path)
-        return send_from_directory(directory, filename, mimetype='image/png')
+        # Detect mimetype based on file extension
+        mimetype = 'image/jpeg' if filename.lower().endswith('.jpg') else 'image/png'
+        return send_from_directory(directory, filename, mimetype=mimetype)
 
     except Exception as e:
         logger.error(f"Error getting frame image: {e}", exc_info=True)
@@ -888,14 +899,14 @@ def export_frames_to_video():
     Request JSON: {
         "frames": [{"path": "...", "url": "..."}, ...],
         "frame_duration": 2.0,  // seconds per frame (default: 2.0)
-        "fps": 24  // output fps (default: 24)
+        "fps": 30  // output fps (default: 30)
     }
     """
     try:
         data = request.get_json()
         frames = data.get('frames', [])
         frame_duration = float(data.get('frame_duration', 2.0))
-        output_fps = int(data.get('fps', 24))
+        output_fps = int(data.get('fps', 30))
 
         if not frames or len(frames) == 0:
             return jsonify({
@@ -958,19 +969,14 @@ def export_frames_to_video():
                     escaped_path = frame_path.replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
 
-        ffmpeg_bin = os.environ.get("FFMPEG_PATH", "ffmpeg")
-
-        # Build FFmpeg commands (primary + fallback for newer FFmpeg versions)
-        base_cmd = [
-            ffmpeg_bin,
+        # Build FFmpeg command
+        cmd = [
+            'ffmpeg',
             '-y',  # Overwrite output file
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file_path,
-        ]
-
-        # Primary command: constant frame rate output
-        cmd = base_cmd + [
+            '-vsync', 'vfr',
             '-r', str(output_fps),
             '-pix_fmt', 'yuv420p',
             '-c:v', 'libx264',
@@ -981,55 +987,19 @@ def export_frames_to_video():
 
         logger.info(f"Running FFmpeg to export video: {' '.join(cmd)}")
 
-        def _run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minutes timeout
-            )
+        # Execute FFmpeg
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minutes timeout
+        )
 
+        # Clean up concat file
         try:
-            result = _run_ffmpeg(cmd)
-            # If the primary command fails due to newer FFmpeg vsync/fps semantics, retry without -r
-            if result.returncode != 0:
-                stderr_text = result.stderr or ""
-                logger.warning(f"FFmpeg export failed (primary attempt): {stderr_text}")
-
-                fallback_cmd = base_cmd + [
-                    '-pix_fmt', 'yuv420p',
-                    '-c:v', 'libx264',
-                    '-preset', 'medium',
-                    '-crf', '23',
-                    output_path
-                ]
-                logger.info("Retrying FFmpeg export without frame rate override for compatibility...")
-
-                try:
-                    result = _run_ffmpeg(fallback_cmd)
-                except subprocess.TimeoutExpired:
-                    logger.error("FFmpeg export timed out on fallback")
-                    return jsonify({
-                        "status": "error",
-                        "message": "Video export timed out. Too many frames or frames too large."
-                    }), 500
-        except FileNotFoundError:
-            return jsonify({
-                "status": "error",
-                "message": "FFmpeg binary not found. Install FFmpeg or set FFMPEG_PATH to the binary location."
-            }), 500
-        except subprocess.TimeoutExpired:
-            logger.error("FFmpeg export timed out")
-            return jsonify({
-                "status": "error",
-                "message": "Video export timed out. Too many frames or frames too large."
-            }), 500
-        finally:
-            # Clean up concat file even if FFmpeg failed early
-            try:
-                os.remove(concat_file_path)
-            except Exception:
-                pass
+            os.remove(concat_file_path)
+        except:
+            pass
 
         if result.returncode != 0:
             logger.error(f"FFmpeg error: {result.stderr}")
@@ -2835,7 +2805,7 @@ def api_extract_frames():
 
     Request (JSON):
         - video_id: str (required) - Video/session ID
-        - fps: int (optional) - Frames per second to extract (1-30, default: 24)
+        - fps: int (optional) - Frames per second to extract (1-30, default: 2)
 
     Returns (200 OK):
         {
@@ -2860,7 +2830,7 @@ def api_extract_frames():
         # Parse request data
         data = request.get_json() or {}
         video_id = data.get('video_id')
-        fps = data.get('fps', DEFAULT_EDITOR_FRAME_EXTRACTION_FPS)
+        fps = data.get('fps', 1)
 
         # Validate video_id
         if not video_id:
@@ -2875,9 +2845,10 @@ def api_extract_frames():
         # Parse fps
         try:
             fps_value = int(fps)
+            if fps_value < 1 or fps_value > 30:
+                fps_value = 1
         except (ValueError, TypeError):
-            fps_value = DEFAULT_EDITOR_FRAME_EXTRACTION_FPS
-        fps_value = max(1, min(MAX_EDITOR_FRAME_EXTRACTION_FPS, fps_value))
+            fps_value = 1
 
         # Get scene manager and last scene
         scene_manager = SceneManager(video_id)

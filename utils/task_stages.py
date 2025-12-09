@@ -7,13 +7,19 @@ and time-remaining estimates.
 
 import time
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Only import for type checking, not at runtime
+    import redis
 
 try:
     import redis
     HAS_REDIS = True
 except ImportError:
     HAS_REDIS = False
+    # Create a dummy type for when redis is not available
+    redis = type('redis', (), {'Redis': type('Redis', (), {})})  # type: ignore
 
 logger = logging.getLogger(__name__)
 
