@@ -202,7 +202,7 @@ class VideoComposer:
             # Trim each video to its exact duration to prevent timing issues
             scale_filters.append(
                 f"[{i}:v]trim=duration={video_durations[i]},scale={width}:{height}:force_original_aspect_ratio=decrease,"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v{i}]"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24[v{i}]"
             )
 
         # Build transition chain with proper offset calculation

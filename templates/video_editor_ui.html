@@ -2079,6 +2079,7 @@
 
     <script>
         // ==================== グローバル変数 ====================
+        const FRAME_EXTRACTION_FPS = 24;
         const state = {
             // 複数動画フレーム管理
             videoFrames: {
@@ -2807,7 +2808,7 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
+                body: JSON.stringify({ video_path: videoPathForBackend, fps: FRAME_EXTRACTION_FPS })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3092,11 +3093,11 @@
                 ? frameData.videoPath.substring(1)
                 : frameData.videoPath;
 
-            const extractionPromise = fetch('/frames/extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPath, fps: 1 })
-            })
+        const extractionPromise = fetch('/frames/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video_path: videoPath, fps: FRAME_EXTRACTION_FPS })
+        })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -3415,11 +3416,11 @@
                 ? frameData.videoPath.substring(1)
                 : frameData.videoPath;
 
-            fetch('/frames/extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPath, fps: 1 })
-            })
+        fetch('/frames/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video_path: videoPath, fps: FRAME_EXTRACTION_FPS })
+        })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -3952,11 +3953,11 @@
                 ? state.videoPath.substring(1)
                 : state.videoPath;
 
-            fetch('/frames/extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
-            })
+        fetch('/frames/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video_path: videoPathForBackend, fps: FRAME_EXTRACTION_FPS })
+        })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
@@ -5106,14 +5107,14 @@
                     videoPath = videoPath.substring(1);
                 }
 
-                const response = await fetch('/frames/extract', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        video_path: videoPath,
-                        fps: 1  // 1-second timeline extraction
-                    })
-                });
+            const response = await fetch('/frames/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    fps: FRAME_EXTRACTION_FPS  // 24fps extraction for 5s clips (~120 frames)
+                })
+            });
 
                 const data = await response.json();
 

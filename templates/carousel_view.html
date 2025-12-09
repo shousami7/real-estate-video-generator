@@ -291,6 +291,15 @@
             color: white;
         }
 
+        .tool-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .tool-btn:disabled .tool-icon-box {
+            background: none !important;
+        }
+
         .tool-icon-box {
             padding: 8px;
             border-radius: 12px;
@@ -403,8 +412,14 @@
             /* gray-900 */
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             /* shadow-2xl */
+            opacity: 0;
+            transition: opacity 0.3s ease;
             will-change: transform, opacity, filter;
-            /* No CSS transition for transform/opacity/filter as we use JS for physics */
+            /* JS handles transforms/filter; opacity fades in once initialized */
+        }
+
+        .cinema-frame-card.initialized {
+            opacity: 1;
         }
 
         /* Glass Reflection Layer */
@@ -921,6 +936,20 @@
         const mainPlayerImg = document.getElementById('main-player-image');
         const frameBadgeEl = document.getElementById('frame-position-badge');
 
+        function updateControlStates() {
+            const hasFrames = state.frames.length > 0;
+            const buttons = [
+                document.getElementById('delete-frame-btn'),
+                document.getElementById('confirm-selection-btn'),
+                document.getElementById('download-frame-btn'),
+                document.getElementById('edit-frames-btn'),
+            ];
+
+            buttons.forEach(btn => {
+                if (btn) btn.disabled = !hasFrames;
+            });
+        }
+
         // --- Initialize ---
         function init() {
             // Data passed from server via Jinja2
@@ -978,6 +1007,8 @@
             document.getElementById('edit-modal').addEventListener('click', (e) => {
                 if (e.target.id === 'edit-modal') closeEditModal();
             });
+
+            updateControlStates();
         }
 
         function renderTimeline() {
@@ -1016,6 +1047,10 @@
             const cards = inner.querySelectorAll('.cinema-frame-card');
 
             cards.forEach((card, index) => {
+                if (!card.classList.contains('initialized')) {
+                    card.classList.add('initialized');
+                }
+
                 const cardCenter = card.offsetLeft + (CARD_WIDTH / 2);
                 const distance = cardCenter - centerX;
                 const normalizedDistance = distance / STRIDE;
@@ -1288,7 +1323,7 @@
                     body: JSON.stringify({
                         frames: framesData,
                         frame_duration: 2.0,  // 2 seconds per frame
-                        fps: 30
+                        fps: 24
                     })
                 });
 
@@ -1342,6 +1377,10 @@
                 frame.frame_number = index + 1;
             });
 
+            // Reset navigation state so keyboard/scroll sync stays sane
+            state.targetIndex = Math.min(state.currentIndex, Math.max(0, state.frames.length - 1));
+            state.isNavigating = false;
+
             // Update current index if needed
             if (state.currentIndex >= state.frames.length) {
                 state.currentIndex = Math.max(0, state.frames.length - 1);
@@ -1358,6 +1397,8 @@
                 frameBadgeEl.textContent = 'Frame #-- / 0';
                 timecodeEl.textContent = '00:00:00:00';
             }
+
+            updateControlStates();
         }
 
         function handleInsertFrame() {
@@ -1444,6 +1485,7 @@
                 state.currentIndex = insertIndex;
                 setActiveIndex(insertIndex, { force: true, scroll: true });
                 requestAnimationFrame(updateCardTransforms);
+                updateControlStates();
             };
 
             reader.readAsDataURL(file);

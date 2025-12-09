@@ -127,7 +127,7 @@ real-estate-video-generator/
   "video_info": {
     "width": 1280,
     "height": 720,
-    "fps": 30.0,
+    "fps": 24.0,
     "duration": 24.0
   },
   "frames": {
