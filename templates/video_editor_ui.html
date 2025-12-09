@@ -6045,6 +6045,201 @@
             liquidGlassTimeline.innerHTML = '';
         });
 
+        // ==================== On-Demand Frame Extraction (Timeline Click) ====================
+
+        /**
+         * Timeline click handler for on-demand frame extraction
+         * Double-click on timeline to extract frame at that specific timestamp
+         */
+        liquidGlassTimeline.addEventListener('dblclick', async (e) => {
+            // Get the clicked position relative to timeline container
+            const rect = liquidGlassTimeline.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+
+            // Get current expanded video
+            if (state.expandedFrameId === null) {
+                console.warn('No video expanded for timeline');
+                return;
+            }
+
+            const frameData = state.videoFrames[state.expandedFrameId];
+            if (!frameData || !frameData.videoPath) {
+                console.error('No video path for expanded frame');
+                return;
+            }
+
+            // Calculate timestamp based on click position
+            // We need to know the video duration
+            // For now, estimate from existing frames if available
+            let videoDuration = 0;
+
+            if (allExtractedFrames && allExtractedFrames.length > 0) {
+                // Get duration from last frame
+                const lastFrame = allExtractedFrames[allExtractedFrames.length - 1];
+                videoDuration = lastFrame.seconds || 0;
+            }
+
+            if (videoDuration === 0) {
+                console.warn('Cannot determine video duration');
+                return;
+            }
+
+            // Calculate timestamp based on timeline scroll position and click position
+            const scrollLeft = liquidGlassTimeline.scrollLeft;
+            const scrollWidth = liquidGlassTimeline.scrollWidth;
+            const clientWidth = liquidGlassTimeline.clientWidth;
+
+            // Total scrollable content position
+            const totalPosition = scrollLeft + clickX;
+
+            // Calculate percentage through timeline
+            const percentage = totalPosition / scrollWidth;
+
+            // Calculate timestamp
+            const timestamp = videoDuration * percentage;
+
+            console.log(`Timeline clicked: position=${clickX}, scroll=${scrollLeft}, percentage=${(percentage * 100).toFixed(1)}%, timestamp=${timestamp.toFixed(2)}s`);
+
+            // Extract frame at this timestamp
+            await extractFrameAtTimestamp(frameData.videoPath, timestamp);
+        });
+
+        /**
+         * Extract a single frame at specific timestamp (on-demand)
+         */
+        async function extractFrameAtTimestamp(videoPath, timestamp) {
+            try {
+                // Show loading indicator
+                const loadingMsg = showTimelineLoadingMessage(`Extracting frame at ${formatTimestamp(timestamp)}...`);
+
+                // Normalize video path
+                const videoPathForBackend = videoPath?.startsWith('/')
+                    ? videoPath.substring(1)
+                    : videoPath;
+
+                // Call backend API
+                const response = await fetch('/frames/extract_at_time', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPathForBackend,
+                        timestamp: timestamp
+                    })
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                hideTimelineLoadingMessage(loadingMsg);
+
+                if (data.status === 'success' && data.frame) {
+                    // Show frame preview modal
+                    showFramePreviewModal(data.frame, videoPath);
+                } else {
+                    alert('Frame extraction failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error extracting frame at timestamp:', error);
+                alert('Error extracting frame: ' + error.message);
+            }
+        }
+
+        /**
+         * Show loading message on timeline
+         */
+        function showTimelineLoadingMessage(message) {
+            const loading = document.createElement('div');
+            loading.className = 'fixed inset-0 bg-black/60 z-50 flex items-center justify-center';
+            loading.innerHTML = `
+                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-md">
+                    <div class="flex items-center gap-4">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <p class="text-white text-lg">${message}</p>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loading);
+            return loading;
+        }
+
+        /**
+         * Hide loading message
+         */
+        function hideTimelineLoadingMessage(loadingElement) {
+            if (loadingElement && loadingElement.parentNode) {
+                loadingElement.parentNode.removeChild(loadingElement);
+            }
+        }
+
+        /**
+         * Show frame preview modal with extracted frame
+         */
+        function showFramePreviewModal(frame, videoPath) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-2xl w-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-white">Frame at ${frame.timestamp}</h3>
+                        <button class="close-modal text-gray-400 hover:text-white">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <div class="mb-4">
+                        <img src="${frame.base64}"
+                             class="w-full rounded-lg border-2 border-primary"
+                             alt="Extracted frame">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+                        <div class="bg-[#2a2a2a] p-3 rounded">
+                            <div class="text-gray-400 mb-1">Timestamp</div>
+                            <div class="text-white font-mono">${frame.timestamp}</div>
+                        </div>
+                        <div class="bg-[#2a2a2a] p-3 rounded">
+                            <div class="text-gray-400 mb-1">Seconds</div>
+                            <div class="text-white font-mono">${frame.seconds.toFixed(2)}s</div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button class="edit-frame-btn flex-1 px-4 py-3 bg-primary text-black rounded-lg hover:opacity-90 transition-opacity font-bold">
+                            <span class="material-symbols-outlined !text-base mr-2">edit</span>
+                            Edit This Frame
+                        </button>
+                        <button class="close-modal px-4 py-3 bg-[#374151] text-white rounded-lg hover:bg-[#4B5563] transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Close button handlers
+            modal.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modal.remove();
+                });
+            });
+
+            // Edit button handler
+            modal.querySelector('.edit-frame-btn').addEventListener('click', () => {
+                modal.remove();
+                // TODO: Open frame editor with this frame
+                console.log('Edit frame:', frame);
+                alert('Frame editing will be implemented in next step!');
+            });
+
+            // Click outside to close
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+
         // ==================== ページ初期化 ====================
         document.addEventListener('DOMContentLoaded', () => {
             initializeVideoFrames();
