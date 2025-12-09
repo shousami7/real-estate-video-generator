@@ -1788,14 +1788,16 @@
                             <!-- Frame Extraction Settings -->
                             <div class="flex items-center gap-2 text-sm">
                                 <label class="text-gray-400">FPS:</label>
-                                <select id="frame-fps-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                <select id="frame-fps-select"
+                                    class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
                                     <option value="0.5">0.5</option>
                                     <option value="1" selected>1</option>
                                     <option value="2">2</option>
                                     <option value="4">4</option>
                                 </select>
                                 <label class="text-gray-400 ml-2">Max:</label>
-                                <select id="frame-max-select" class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                <select id="frame-max-select"
+                                    class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
                                     <option value="50">50</option>
                                     <option value="100" selected>100</option>
                                     <option value="150">150</option>
@@ -5270,6 +5272,7 @@
 
             // Add keyboard listener
             document.addEventListener('keydown', handleFullscreenKeyboard);
+            document.addEventListener('keyup', handleFullscreenKeyboardUp);
 
             // Add scroll listener for cinema timeline
             cinemaTimelineViewport.addEventListener('scroll', handleCinemaTimelineScroll);
@@ -5414,6 +5417,15 @@
             fullscreenTimelineMode.classList.add('hidden');
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleFullscreenKeyboard);
+            document.removeEventListener('keyup', handleFullscreenKeyboardUp);
+
+            // Clear navigation intervals to prevent residual timers
+            if (fullscreenNavInterval) {
+                clearInterval(fullscreenNavInterval);
+                fullscreenNavInterval = null;
+            }
+            fullscreenNavDirection = 0;
+
             // Remove both legacy and cinema timeline scroll listeners
             fullscreenTimelineScroll.removeEventListener('scroll', handleFullscreenTimelineScroll);
             cinemaTimelineViewport.removeEventListener('scroll', handleCinemaTimelineScroll);
@@ -5490,41 +5502,83 @@
             container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
         }
 
+        // Navigation state for fullscreen mode - prevents jitter from native key repeat
+        let fullscreenNavInterval = null;
+        let fullscreenNavDirection = 0; // -1 for left, +1 for right, 0 for none
+
         function handleFullscreenKeyboard(e) {
             if (!isFullscreenTimelineOpen) return;
 
-            switch (e.key) {
-                case 'ArrowLeft':
+            // Handle non-arrow keys immediately
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeFullscreenTimeline();
+                return;
+            }
+
+            if (e.key === 'Enter') {
+                if (document.activeElement !== fullscreenChatInput) {
                     e.preventDefault();
-                    if (currentFocusedFrameIndex > 0) {
-                        const newIndex = currentFocusedFrameIndex - 1;
-                        updateFullscreenPreview(newIndex);
-                        scrollToFullscreenThumb(newIndex);
-                        scrollToCinemaCard(newIndex);
-                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
-                    }
-                    break;
-                case 'ArrowRight':
-                    e.preventDefault();
-                    if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
-                        const newIndex = currentFocusedFrameIndex + 1;
-                        updateFullscreenPreview(newIndex);
-                        scrollToFullscreenThumb(newIndex);
-                        scrollToCinemaCard(newIndex);
-                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
-                    }
-                    break;
-                case 'Escape':
-                    e.preventDefault();
-                    closeFullscreenTimeline();
-                    break;
-                case 'Enter':
-                    if (document.activeElement !== fullscreenChatInput) {
-                        e.preventDefault();
-                        // Use current frame (same as clicking "Use This Frame")
-                        useSelectedFullscreenFrame();
-                    }
-                    break;
+                    useSelectedFullscreenFrame();
+                }
+                return;
+            }
+
+            // Arrow key handling with repeat suppression
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+
+                // CRITICAL: Ignore native key repeat events to prevent jitter
+                if (e.repeat) return;
+
+                // Determine direction
+                const direction = e.key === 'ArrowLeft' ? -1 : 1;
+
+                // If direction changed, clear previous interval for clean switching
+                if (fullscreenNavDirection !== 0 && fullscreenNavDirection !== direction) {
+                    clearInterval(fullscreenNavInterval);
+                    fullscreenNavInterval = null;
+                }
+
+                fullscreenNavDirection = direction;
+
+                // Execute first move immediately for responsive feel
+                moveFullscreenFrame(direction);
+
+                // Start controlled interval for smooth continuous navigation
+                if (!fullscreenNavInterval) {
+                    fullscreenNavInterval = setInterval(() => {
+                        moveFullscreenFrame(fullscreenNavDirection);
+                    }, 60); // 60ms = ~16 frames per second, smooth but not too fast
+                }
+            }
+        }
+
+        // Separate function to handle frame movement logic
+        function moveFullscreenFrame(direction) {
+            const newIndex = currentFocusedFrameIndex + direction;
+
+            // Boundary check to prevent overshooting
+            if (newIndex < 0 || newIndex >= allExtractedFrames.length) {
+                return;
+            }
+
+            // Update all related UI elements atomically
+            updateFullscreenPreview(newIndex);
+            scrollToFullscreenThumb(newIndex);
+            scrollToCinemaCard(newIndex);
+            updateCinemaTimecode(newIndex, allExtractedFrames.length);
+        }
+
+        // Keyup handler to stop navigation cleanly
+        function handleFullscreenKeyboardUp(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                // Clear interval and reset state to stop movement immediately
+                if (fullscreenNavInterval) {
+                    clearInterval(fullscreenNavInterval);
+                    fullscreenNavInterval = null;
+                }
+                fullscreenNavDirection = 0;
             }
         }
 
@@ -5684,12 +5738,17 @@
             // Set initial focus
             updateFocusedFrame(0);
 
-            // Add keyboard navigation
+            // Attach keyboard handler globally once
             if (!window.timelineKeyboardHandlerAttached) {
                 document.addEventListener('keydown', handleTimelineKeyboard);
+                document.addEventListener('keyup', handleTimelineKeyboardUp);
                 window.timelineKeyboardHandlerAttached = true;
             }
         }
+
+        // Navigation state for regular timeline mode - prevents jitter from native key repeat
+        let timelineNavInterval = null;
+        let timelineNavDirection = 0; // -1 for left, +1 for right, 0 for none
 
         function handleTimelineKeyboard(e) {
             // Only handle if timeline is visible and not in fullscreen mode
@@ -5703,14 +5762,56 @@
             // Ignore if typing in input
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-            if (e.key === 'ArrowRight') {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
-                const nextIndex = Math.min(currentFocusedFrameIndex + 1, allExtractedFrames.length - 1);
-                selectTimelineFrame(nextIndex);
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                const prevIndex = Math.max(currentFocusedFrameIndex - 1, 0);
-                selectTimelineFrame(prevIndex);
+
+                // CRITICAL: Ignore native key repeat events to prevent jitter
+                if (e.repeat) return;
+
+                // Determine direction
+                const direction = e.key === 'ArrowLeft' ? -1 : 1;
+
+                // If direction changed, clear previous interval for clean switching
+                if (timelineNavDirection !== 0 && timelineNavDirection !== direction) {
+                    clearInterval(timelineNavInterval);
+                    timelineNavInterval = null;
+                }
+
+                timelineNavDirection = direction;
+
+                // Execute first move immediately for responsive feel
+                moveTimelineFrame(direction);
+
+                // Start controlled interval for smooth continuous navigation
+                if (!timelineNavInterval) {
+                    timelineNavInterval = setInterval(() => {
+                        moveTimelineFrame(timelineNavDirection);
+                    }, 60); // 60ms = ~16 frames per second
+                }
+            }
+        }
+
+        // Separate function to handle timeline frame movement
+        function moveTimelineFrame(direction) {
+            const newIndex = currentFocusedFrameIndex + direction;
+
+            // Boundary check to prevent overshooting
+            if (newIndex < 0 || newIndex >= allExtractedFrames.length) {
+                return;
+            }
+
+            selectTimelineFrame(newIndex);
+        }
+
+        // Keyup handler for regular timeline to stop navigation cleanly
+        function handleTimelineKeyboardUp(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                // Clear interval and reset state to stop movement immediately
+                if (timelineNavInterval) {
+                    clearInterval(timelineNavInterval);
+                    timelineNavInterval = null;
+                }
+                timelineNavDirection = 0;
             }
         }
 
