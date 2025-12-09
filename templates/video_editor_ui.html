@@ -5667,6 +5667,16 @@
         // "Use This Frame" button
         fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
 
+        // "Edit Frame" button in main UI
+        const pickFrameBtn = document.getElementById('pick-frame-btn');
+        if (pickFrameBtn) {
+            pickFrameBtn.addEventListener('click', () => {
+                if (allExtractedFrames && allExtractedFrames.length > 0) {
+                    openFullscreenTimeline(allExtractedFrames);
+                }
+            });
+        }
+
         // Chat input in fullscreen mode - forward to main chat
         fullscreenSendBtn.addEventListener('click', () => {
             const message = fullscreenChatInput.value.trim();
