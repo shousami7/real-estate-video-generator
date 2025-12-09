@@ -5,7 +5,6 @@ Unit tests for Veo API retry logic with exponential backoff
 import pytest
 import time
 from unittest.mock import Mock, patch
-from google.api_core import exceptions as google_exceptions
 import requests
 
 # Import the functions we need to test
@@ -18,6 +17,7 @@ from veo_generator import (
     _is_non_retriable_error,
     _format_user_error,
     RETRY_CONFIG,
+    google_exceptions,  # Import from veo_generator which has fallback support
 )
 
 
