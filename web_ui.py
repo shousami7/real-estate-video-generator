@@ -850,6 +850,112 @@ def extract_frames():
         }), 500
 
 
+@web_ui_blueprint.route('/frames/extract_at_time', methods=['POST'])
+def extract_frame_at_timestamp():
+    """
+    Extract a single frame at a specific timestamp (on-demand extraction).
+
+    This is optimized for timeline-based UI where users click on a specific
+    moment to extract only that frame, avoiding the overhead of extracting
+    all frames.
+
+    Request JSON:
+    {
+        "video_path": "uploads/.../video.mp4",
+        "timestamp": 3.5  // seconds
+    }
+
+    Response JSON:
+    {
+        "status": "success",
+        "frame": {
+            "frame_id": 0,
+            "path": "frames/.../frame_at_3500ms.jpg",
+            "timestamp": "0:03.5",
+            "seconds": 3.5,
+            "url": "/frames/..."
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        video_path = data.get('video_path')
+        timestamp = data.get('timestamp')
+
+        if not video_path:
+            return jsonify({
+                "status": "error",
+                "message": "video_path is required"
+            }), 400
+
+        if timestamp is None:
+            return jsonify({
+                "status": "error",
+                "message": "timestamp is required"
+            }), 400
+
+        try:
+            timestamp = float(timestamp)
+        except (TypeError, ValueError):
+            return jsonify({
+                "status": "error",
+                "message": "timestamp must be a number"
+            }), 400
+
+        # Normalize video path (same logic as /frames/extract)
+        normalized_path = video_path
+
+        if normalized_path.startswith("uploads/") or normalized_path.startswith("/uploads/"):
+            project_root = os.path.dirname(LOCAL_UPLOAD_ROOT)
+            if normalized_path.startswith("/"):
+                normalized_path = normalized_path[1:]
+            normalized_path = os.path.join(project_root, normalized_path)
+        elif not os.path.isabs(normalized_path):
+            normalized_path = os.path.join(LOCAL_UPLOAD_ROOT, video_path)
+
+        if not os.path.exists(normalized_path):
+            logger.error(f"Video not found: {video_path} -> {normalized_path}")
+            return jsonify({
+                "status": "error",
+                "message": f"Video not found: {video_path}"
+            }), 404
+
+        # Create session-specific frames directory
+        session_id = session.get('session_id', 'default')
+        frames_dir = os.path.join('frames', session_id, 'timeline')
+
+        # Extract single frame at timestamp
+        editor = FrameEditor(normalized_path, frames_dir)
+        frame = editor.extract_frame_at_timestamp(timestamp)
+
+        logger.info(f"Extracted frame at {timestamp}s from {video_path}")
+
+        # Return frame data (with base64 for immediate display)
+        return jsonify({
+            "status": "success",
+            "frame": frame
+        })
+
+    except ValueError as e:
+        logger.warning(f"Invalid timestamp: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 404
+    except Exception as e:
+        logger.error(f"Error extracting frame at timestamp: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 @web_ui_blueprint.route('/frames/image/<int:frame_id>')
 def get_frame_image(frame_id):
     """

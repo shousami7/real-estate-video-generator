@@ -260,6 +260,90 @@ class FrameEditor:
             logger.error(f"Error converting image to base64: {e}")
             return ""
 
+    def extract_frame_at_timestamp(
+        self,
+        timestamp: float,
+        thumbnail_width: int = 320,
+        jpeg_quality: int = 8
+    ) -> Dict[str, Any]:
+        """
+        Extract a single frame at a specific timestamp (on-demand extraction).
+
+        Args:
+            timestamp: Time in seconds to extract frame from
+            thumbnail_width: Width of thumbnail in pixels (default: 320)
+            jpeg_quality: JPEG quality for ffmpeg (2-31, lower is better, default: 8)
+
+        Returns:
+            Frame information dictionary with path, timestamp, and base64 data
+
+        Raises:
+            ValueError: If timestamp is invalid
+            RuntimeError: If frame extraction fails
+        """
+        if not os.path.exists(self.video_path):
+            raise FileNotFoundError(f"Video not found: {self.video_path}")
+
+        duration = self.get_video_duration()
+
+        if timestamp < 0 or timestamp > duration:
+            raise ValueError(f"Invalid timestamp {timestamp}s (video duration: {duration}s)")
+
+        # Generate unique filename based on timestamp
+        timestamp_ms = int(timestamp * 1000)
+        frame_filename = f"frame_at_{timestamp_ms}ms.jpg"
+        output_path = str(self.output_dir / frame_filename)
+
+        # Extract single frame at timestamp using FFmpeg
+        extract_cmd = [
+            self.ffmpeg_path,
+            "-y",  # Overwrite if exists
+            "-ss", str(timestamp),
+            "-i", self.video_path,
+            "-vframes", "1",
+            "-vf", f"scale={thumbnail_width}:-1",
+            "-q:v", str(jpeg_quality),
+            output_path
+        ]
+
+        logger.info(f"Extracting frame at {timestamp}s: {' '.join(extract_cmd)}")
+
+        try:
+            result = subprocess.run(
+                extract_cmd,
+                capture_output=True,
+                check=True,
+                timeout=30
+            )
+            logger.debug(f"ffmpeg stdout: {result.stdout.decode('utf-8', errors='ignore')}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg frame extraction failed: {e.stderr.decode('utf-8', errors='ignore')}")
+            raise RuntimeError(f"Frame extraction at {timestamp}s failed: {e}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Frame extraction timed out (30s limit)")
+
+        # Validate output
+        if not os.path.exists(output_path):
+            raise RuntimeError(f"Frame extraction failed - no output file created")
+
+        file_size = os.path.getsize(output_path)
+        if file_size == 0:
+            raise RuntimeError(f"Frame extraction failed - empty file created")
+
+        logger.info(f"Successfully extracted frame at {timestamp}s ({file_size} bytes)")
+
+        # Build frame information
+        frame_info = {
+            "frame_id": 0,  # Single frame, ID is always 0
+            "name": f"frame at {self._format_timestamp(timestamp)}",
+            "path": output_path,
+            "timestamp": self._format_timestamp(timestamp),
+            "seconds": timestamp,
+            "base64": f"data:image/jpeg;base64,{self._image_to_base64(output_path)}"
+        }
+
+        return frame_info
+
 
 class AIFrameEditor:
     """
