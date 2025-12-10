@@ -32,12 +32,11 @@ def extract_frames_ffmpeg(input_path: str, output_dir: str, fps: int = 4) -> Lis
     command = [
         "ffmpeg",
         "-y",  # overwrite existing files
-        "-i",
-        input_path,
-        "-vf",
-        f"fps={fps}",
+        "-i", input_path,
+        "-vf", f"fps={fps}",
         output_pattern,
     ]
+
 
     logger.info("Running ffmpeg for frame extraction: %s", " ".join(command))
 

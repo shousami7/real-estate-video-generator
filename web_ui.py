@@ -2,6 +2,8 @@ import os
 import json
 import uuid
 import logging
+import subprocess
+import base64
 from typing import Any, Dict, List, Optional
 from google import genai
 
@@ -46,6 +48,10 @@ os.makedirs(LOCAL_UPLOAD_ROOT, exist_ok=True)
 SUPABASE_REQUIRED = is_supabase_required()
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
 ALLOWED_VIDEO_MIME_PREFIXES = ("video/",)
+
+# Frame extraction limits
+FRAME_EXTRACTION_HARD_CAP = 150  # Server-side absolute maximum frames
+FRAME_EXTRACTION_DEFAULT_MAX = 100  # Default max frames if not specified by client
 MAX_VIDEO_UPLOAD_BYTES = int(os.getenv("VIDEO_UPLOAD_MAX_BYTES", str(500 * 1024 * 1024)))  # 500MB default
 
 if is_supabase_configured():
@@ -539,39 +545,83 @@ def frame_selection_view():
     if 'editor_frames' not in session:
         # Fallback or redirect if no frames are in session
         return redirect(url_for('web_ui.video_editor'))
-    
+
     frames_data = session['editor_frames']
-    
+
     # We need to map the file paths to accessible URLs
     # The current frame data has 'path' which is absolute file path
     # accessible via /frames/<filename>
-    
+
     frames_dir_abs = os.path.abspath('frames')
-    
+
+    def _format_timestamp_label(seconds_value: float) -> str:
+        try:
+            safe_seconds = max(0.0, float(seconds_value))
+        except (TypeError, ValueError):
+            return "0:00"
+
+        minutes = int(safe_seconds // 60)
+        secs = int(safe_seconds % 60)
+        return f"{minutes}:{secs:02d}"
+
     view_frames = []
-    for frame in frames_data:
+    for idx, frame in enumerate(frames_data):
         path = frame.get('path')
-        if path:
-            # path is absolute path, we need relative to 'frames' dir
-            # e.g. /abs/path/to/frames/session/editor/img.jpg -> session/editor/img.jpg
+        if not path:
+            logger.warning("Skipping frame with missing path at index %s", idx)
+            continue
+
+        # path is absolute path, we need relative to 'frames' dir
+        # e.g. /abs/path/to/frames/session/editor/img.jpg -> session/editor/img.jpg
+        try:
+            if os.path.isabs(path):
+                filename = os.path.relpath(path, frames_dir_abs)
+                absolute_path = path
+            else:
+                absolute_path = os.path.abspath(path)
+                filename = os.path.relpath(absolute_path, frames_dir_abs)
+        except ValueError:
+            # If path is not under frames dir
+            filename = os.path.basename(path)
+            absolute_path = os.path.abspath(path)
+
+        frame_id = frame.get('frame_id', frame.get('id', idx))
+        try:
+            frame_id = int(frame_id)
+        except (TypeError, ValueError):
+            frame_id = idx
+
+        seconds_value = frame.get('seconds')
+        if seconds_value is None:
+            raw_timestamp = frame.get('timestamp')
+            if isinstance(raw_timestamp, (int, float)):
+                seconds_value = float(raw_timestamp)
+            else:
+                seconds_value = float(idx)
+        else:
             try:
-                if os.path.isabs(path):
-                    filename = os.path.relpath(path, frames_dir_abs)
-                else:
-                    # If it's already relative (maybe?), just assume it might be relative to frames?
-                    # Or relative to CWD. Let's assume absolute as per logic.
-                    # Fallback to basename if common prefix fails or just use it.
-                    # But safest is relpath if we know it is inside frames_dir_abs
-                    filename = os.path.relpath(os.path.abspath(path), frames_dir_abs)
-            except ValueError:
-                # If path is not under frames dir
-                filename = os.path.basename(path)
-                
-            # Create a shallow copy for display
-            view_frame = frame.copy()
-            view_frame['url'] = url_for('web_ui.serve_frame_file', filename=filename)
-            view_frames.append(view_frame)
-            
+                seconds_value = float(seconds_value)
+            except (TypeError, ValueError):
+                logger.warning("Invalid seconds value for frame %s; defaulting to index", frame_id)
+                seconds_value = float(idx)
+
+        timestamp_label = frame.get('timestamp')
+        if isinstance(timestamp_label, (int, float)):
+            timestamp_label = _format_timestamp_label(timestamp_label)
+        elif not timestamp_label:
+            timestamp_label = _format_timestamp_label(seconds_value)
+
+        view_frame = {
+            'frame_id': frame_id,
+            'path': absolute_path,
+            'url': url_for('web_ui.serve_frame_file', filename=filename),
+            'timestamp': timestamp_label,
+            'seconds': seconds_value,
+            'name': frame.get('name'),
+        }
+
+        view_frames.append(view_frame)
+
     return render_template('carousel_view.html', frames=view_frames)
 
 
@@ -685,6 +735,63 @@ def load_frame_session():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@web_ui_blueprint.route('/frames/get_session_frames', methods=['POST'])
+def get_session_frames():
+    """
+    Get frame data with URLs for a loaded session (for displaying in the main editor grid).
+    """
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({"status": "error", "message": "No session_id provided"}), 400
+        
+        upload_root = os.environ.get('LOCAL_UPLOAD_ROOT', os.getcwd())
+        editor_path = os.path.join(upload_root, 'frames', session_id, 'editor')
+        
+        if not os.path.isdir(editor_path):
+            return jsonify({"status": "error", "message": "Session not found"}), 404
+        
+        # Read frame order from frames.txt if it exists
+        frame_files = read_frames_txt(editor_path)
+        
+        if not frame_files:
+            # Fall back to alphabetical order
+            valid_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+            frame_files = sorted([f for f in os.listdir(editor_path) 
+                                 if os.path.splitext(f)[1].lower() in valid_extensions])
+        
+        if not frame_files:
+            return jsonify({"status": "error", "message": "No frames found in session"}), 400
+        
+        frames = []
+        for idx, filename in enumerate(frame_files):
+            file_path = os.path.join(editor_path, filename)
+            if os.path.exists(file_path):
+                # Build URL to serve the frame
+                frame_url = url_for('web_ui.serve_frame_file', 
+                                   filename=f"{session_id}/editor/{filename}")
+                frames.append({
+                    'id': idx,
+                    'url': frame_url,
+                    'path': file_path,
+                    'filename': filename,
+                    'timestamp': f"Frame {idx + 1}"
+                })
+        
+        return jsonify({
+            "status": "success",
+            "frames": frames,
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting session frames: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 def write_frames_txt(editor_path, filenames):
     """Helper function to write frames.txt with the current frame order."""
     frames_txt_path = os.path.join(editor_path, 'frames.txt')
@@ -775,9 +882,11 @@ def export_video_from_frames():
                 '-preset', 'medium',
                 '-crf', '23',
                 '-r', str(fps),  # Output framerate
-                '-movflags', '+faststart',
+                '-movflags', '+faststart',  # Enable fast start for web playback
                 output_path
             ]
+
+
             
             logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
             
@@ -978,7 +1087,8 @@ def extract_frames():
         video_path = data.get('video_path')
         requested_frame_count = data.get('frame_count')
         requested_fps = data.get('fps', 1)
-        max_frames = data.get('max_frames', 300)
+        # Use default max, but always enforce server-side HARD_CAP
+        client_max_frames = data.get('max_frames', FRAME_EXTRACTION_DEFAULT_MAX)
 
         if not video_path:
             return jsonify({
@@ -1030,45 +1140,159 @@ def extract_frames():
 
             frame_count = int(video_duration * fps_value)
 
-        # Ensure at least one frame and apply safety cap
+        # Ensure at least one frame and apply safety caps
         frame_count = max(1, frame_count)
+
+        # Apply client-requested max_frames (if valid)
         try:
-            cap = int(max_frames)
-            if cap > 0:
-                frame_count = min(frame_count, cap)
+            client_cap = int(client_max_frames)
+            if client_cap > 0:
+                frame_count = min(frame_count, client_cap)
         except (TypeError, ValueError):
             pass
 
+        # Always enforce server-side HARD_CAP regardless of client request
+        frame_count = min(frame_count, FRAME_EXTRACTION_HARD_CAP)
+
+        logger.debug(f"Frame extraction: requested_fps={requested_fps}, "
+                     f"client_max={client_max_frames}, final_count={frame_count}")
+
         frames = editor.extract_frames(frame_count=frame_count)
 
-        # セッションにはパス情報のみ保存（base64データは除外）
-        frames_for_session = [
+        # セッションとクライアント両方に同じ形式で保存（base64は除外、URLを追加）
+        frames_for_response = [
             {
                 "frame_id": frame['frame_id'],
                 "path": frame['path'],
                 "timestamp": frame['timestamp'],
                 "seconds": frame['seconds'],
-                "name": frame.get('name')
-                # base64 は含まない
+                "name": frame.get('name'),
+                "url": f"/frames/image/{frame['frame_id']}"  # base64の代わりにURL
             }
             for frame in frames
         ]
 
-        session['editor_frames'] = frames_for_session
+        session['editor_frames'] = frames_for_response
         session['editor_frames_dir'] = frames_dir
         session['editor_video_path'] = normalized_path  # FrameEditorの再作成用
 
-        logger.info(f"Extracted {len(frames)} frames")
+        logger.info(f"Extracted {len(frames)} frames (URL-based response)")
 
-        # クライアントにはbase64付きの完全なデータを返す
+        # クライアントにはURL付きデータを返す（base64なしで軽量）
         return jsonify({
             "status": "success",
-            "frames": frames,  # base64を含む完全なデータ
+            "frames": frames_for_response,
             "frame_count": len(frames)
         })
 
     except Exception as e:
         logger.error(f"Error extracting frames: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/extract_at_time', methods=['POST'])
+def extract_frame_at_timestamp():
+    """
+    Extract a single frame at a specific timestamp (on-demand extraction).
+
+    This is optimized for timeline-based UI where users click on a specific
+    moment to extract only that frame, avoiding the overhead of extracting
+    all frames.
+
+    Request JSON:
+    {
+        "video_path": "uploads/.../video.mp4",
+        "timestamp": 3.5  // seconds
+    }
+
+    Response JSON:
+    {
+        "status": "success",
+        "frame": {
+            "frame_id": 0,
+            "path": "frames/.../frame_at_3500ms.jpg",
+            "timestamp": "0:03.5",
+            "seconds": 3.5,
+            "url": "/frames/..."
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        video_path = data.get('video_path')
+        timestamp = data.get('timestamp')
+
+        if not video_path:
+            return jsonify({
+                "status": "error",
+                "message": "video_path is required"
+            }), 400
+
+        if timestamp is None:
+            return jsonify({
+                "status": "error",
+                "message": "timestamp is required"
+            }), 400
+
+        try:
+            timestamp = float(timestamp)
+        except (TypeError, ValueError):
+            return jsonify({
+                "status": "error",
+                "message": "timestamp must be a number"
+            }), 400
+
+        # Normalize video path (same logic as /frames/extract)
+        normalized_path = video_path
+
+        if normalized_path.startswith("uploads/") or normalized_path.startswith("/uploads/"):
+            project_root = os.path.dirname(LOCAL_UPLOAD_ROOT)
+            if normalized_path.startswith("/"):
+                normalized_path = normalized_path[1:]
+            normalized_path = os.path.join(project_root, normalized_path)
+        elif not os.path.isabs(normalized_path):
+            normalized_path = os.path.join(LOCAL_UPLOAD_ROOT, video_path)
+
+        if not os.path.exists(normalized_path):
+            logger.error(f"Video not found: {video_path} -> {normalized_path}")
+            return jsonify({
+                "status": "error",
+                "message": f"Video not found: {video_path}"
+            }), 404
+
+        # Create session-specific frames directory
+        session_id = session.get('session_id', 'default')
+        frames_dir = os.path.join('frames', session_id, 'timeline')
+
+        # Extract single frame at timestamp
+        editor = FrameEditor(normalized_path, frames_dir)
+        frame = editor.extract_frame_at_timestamp(timestamp)
+
+        logger.info(f"Extracted frame at {timestamp}s from {video_path}")
+
+        # Return frame data (with base64 for immediate display)
+        return jsonify({
+            "status": "success",
+            "frame": frame
+        })
+
+    except ValueError as e:
+        logger.warning(f"Invalid timestamp: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 404
+    except Exception as e:
+        logger.error(f"Error extracting frame at timestamp: {e}", exc_info=True)
         return jsonify({
             "status": "error",
             "message": str(e)
@@ -1105,10 +1329,334 @@ def get_frame_image(frame_id):
 
         directory = os.path.dirname(frame_path)
         filename = os.path.basename(frame_path)
-        return send_from_directory(directory, filename, mimetype='image/png')
+        # Detect mimetype based on file extension
+        mimetype = 'image/jpeg' if filename.lower().endswith('.jpg') else 'image/png'
+        return send_from_directory(directory, filename, mimetype=mimetype)
 
     except Exception as e:
         logger.error(f"Error getting frame image: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/export-video', methods=['POST'])
+def export_frames_to_video():
+    """
+    Export frames to video using FFmpeg
+    Request JSON: {
+        "frames": [{"path": "...", "url": "..."}, ...],
+        "frame_duration": 2.0,  // seconds per frame (default: 2.0)
+        "fps": 30  // output fps (default: 30)
+    }
+    """
+    try:
+        data = request.get_json()
+        frames = data.get('frames', [])
+        frame_duration = float(data.get('frame_duration', 2.0))
+        output_fps = int(data.get('fps', 30))
+
+        if not frames or len(frames) == 0:
+            return jsonify({
+                "status": "error",
+                "message": "No frames provided"
+            }), 400
+
+        # Create output directory
+        session_id = session.get('session_id', 'default')
+        output_dir = os.path.join('output', session_id, 'exported')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate unique output filename
+        timestamp = int(datetime.now().timestamp())
+        output_filename = f"exported_video_{timestamp}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+
+        # Create concat file for FFmpeg
+        concat_file_path = os.path.join(output_dir, f"concat_{timestamp}.txt")
+
+        with open(concat_file_path, 'w') as f:
+            for frame in frames:
+                # Get frame path from URL or path
+                frame_path = frame.get('path')
+                if not frame_path:
+                    # Try to extract path from URL
+                    frame_url = frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]  # Remove leading /
+                    else:
+                        continue
+
+                # Normalize path
+                if not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if not os.path.exists(frame_path):
+                    logger.warning(f"Frame not found: {frame_path}")
+                    continue
+
+                # Write to concat file
+                # Use absolute path and escape single quotes
+                escaped_path = frame_path.replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
+                f.write(f"duration {frame_duration}\n")
+
+            # Add last frame again without duration (FFmpeg concat requirement)
+            if frames:
+                last_frame = frames[-1]
+                frame_path = last_frame.get('path')
+                if not frame_path:
+                    frame_url = last_frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]
+
+                if frame_path and not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if frame_path and os.path.exists(frame_path):
+                    escaped_path = frame_path.replace("'", "'\\''")
+                    f.write(f"file '{escaped_path}'\n")
+
+        # Build FFmpeg command
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output file
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file_path,
+            '-vsync', 'vfr',
+            '-r', str(output_fps),
+            '-pix_fmt', 'yuv420p',
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            output_path
+        ]
+
+        logger.info(f"Running FFmpeg to export video: {' '.join(cmd)}")
+
+        # Execute FFmpeg
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minutes timeout
+        )
+
+        # Clean up concat file
+        try:
+            os.remove(concat_file_path)
+        except:
+            pass
+
+        if result.returncode != 0:
+            logger.error(f"FFmpeg error: {result.stderr}")
+            return jsonify({
+                "status": "error",
+                "message": f"Video export failed: {result.stderr}"
+            }), 500
+
+        # Verify output file
+        if not os.path.exists(output_path):
+            return jsonify({
+                "status": "error",
+                "message": "Video file was not created"
+            }), 500
+
+        file_size = os.path.getsize(output_path)
+        if file_size == 0:
+            return jsonify({
+                "status": "error",
+                "message": "Video file is empty"
+            }), 500
+
+        # Return success with download URL
+        # Build a URL that is actually served by our output route
+        output_root = os.path.abspath('output')
+        normalized_path = os.path.abspath(output_path)
+        try:
+            relative_path = os.path.relpath(normalized_path, output_root)
+            video_url = url_for('web_ui.serve_output_file', filename=relative_path)
+        except ValueError:
+            # Fallback: still expose the absolute path, but this shouldn't normally happen
+            video_url = f"/output/{os.path.basename(output_path)}"
+
+        logger.info(f"Video exported successfully: {output_path} ({file_size} bytes)")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Video exported successfully ({len(frames)} frames)",
+            "video_url": video_url,
+            "video_path": output_path,
+            "file_size": file_size
+        })
+
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg export timed out")
+        return jsonify({
+            "status": "error",
+            "message": "Video export timed out. Too many frames or frames too large."
+        }), 500
+    except Exception as e:
+        logger.error(f"Error exporting video: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@web_ui_blueprint.route('/frames/edit-with-ai', methods=['POST'])
+def edit_frames_with_ai():
+    """
+    Edit multiple frames using AI with a specified model and prompt
+    Request JSON: {
+        "frames": [{"path": "...", "url": "...", "frame_number": 1}, ...],
+        "model": "nanobanana-pro",
+        "prompt": "Enhance colors and brightness, add a cinematic look"
+    }
+    """
+    try:
+        data = request.get_json()
+        frames = data.get('frames', [])
+        model = data.get('model', 'nanobanana-pro')
+        prompt = data.get('prompt', '')
+
+        if not frames or len(frames) == 0:
+            return jsonify({
+                "status": "error",
+                "message": "No frames provided"
+            }), 400
+
+        if not prompt:
+            return jsonify({
+                "status": "error",
+                "message": "Prompt is required"
+            }), 400
+
+        # Get API key
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "Google API key not configured"
+            }), 500
+
+        # Initialize AI editor
+        ai_editor = AIFrameEditor(api_key=api_key)
+
+        # Create output directory for edited frames
+        session_id = session.get('session_id', str(uuid.uuid4()))
+        session['session_id'] = session_id
+
+        edited_frames_dir = os.path.join('frames', session_id, 'ai_edited')
+        os.makedirs(edited_frames_dir, exist_ok=True)
+
+        edited_frames = []
+        successful_edits = 0
+        failed_edits = 0
+
+        # Process each frame
+        for frame in frames:
+            try:
+                # Get frame path
+                frame_path = frame.get('path')
+                frame_number = frame.get('frame_number', 0)
+
+                if not frame_path:
+                    # Try to extract path from URL
+                    frame_url = frame.get('url', '')
+                    if frame_url.startswith('/frames/'):
+                        frame_path = frame_url[1:]  # Remove leading /
+                    else:
+                        logger.warning(f"Could not determine path for frame {frame_number}")
+                        failed_edits += 1
+                        continue
+
+                # Normalize path
+                if not os.path.isabs(frame_path):
+                    frame_path = os.path.abspath(frame_path)
+
+                if not os.path.exists(frame_path):
+                    logger.warning(f"Frame not found: {frame_path}")
+                    failed_edits += 1
+                    continue
+
+                logger.info(f"Editing frame {frame_number} with model {model} and prompt: {prompt}")
+
+                # Generate edited frame using AI
+                # Use generate_frame_variations to get AI-edited versions
+                variations = ai_editor.generate_frame_variations(
+                    base_image_path=frame_path,
+                    prompt=prompt,
+                    variation_count=1  # Only need one edited version
+                )
+
+                if variations and len(variations) > 0:
+                    # Save the first variation as the edited frame
+                    variation_data = variations[0]
+
+                    # Extract base64 image data
+                    if variation_data.startswith('data:image'):
+                        base64_str = variation_data.split(',')[1]
+                        image_data = base64.b64decode(base64_str)
+
+                        # Save to file
+                        timestamp = int(datetime.now().timestamp())
+                        edited_filename = f"edited_frame_{frame_number}_{timestamp}.png"
+                        edited_path = os.path.join(edited_frames_dir, edited_filename)
+
+                        with open(edited_path, 'wb') as f:
+                            f.write(image_data)
+
+                        # Build URL for the edited frame
+                        frames_root = os.path.abspath('frames')
+                        normalized_path = os.path.abspath(edited_path)
+
+                        try:
+                            relative_path = os.path.relpath(normalized_path, frames_root)
+                            edited_url = url_for('web_ui.serve_frame', filename=relative_path)
+                        except ValueError:
+                            edited_url = f"/frames/{edited_filename}"
+
+                        edited_frames.append({
+                            'frame_number': frame_number,
+                            'path': edited_path,
+                            'url': edited_url
+                        })
+
+                        successful_edits += 1
+                        logger.info(f"Successfully edited frame {frame_number}")
+                    else:
+                        logger.warning(f"Invalid variation data format for frame {frame_number}")
+                        failed_edits += 1
+                else:
+                    logger.warning(f"No variations generated for frame {frame_number}")
+                    failed_edits += 1
+
+            except Exception as e:
+                logger.error(f"Error editing frame {frame_number}: {e}", exc_info=True)
+                failed_edits += 1
+                continue
+
+        if successful_edits == 0:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to edit any frames. {failed_edits} frames failed."
+            }), 500
+
+        logger.info(f"Successfully edited {successful_edits} frames, {failed_edits} failed")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Edited {successful_edits} frames using {model}",
+            "edited_frames": edited_frames,
+            "successful_edits": successful_edits,
+            "failed_edits": failed_edits
+        })
+
+    except Exception as e:
+        logger.error(f"Error in edit_frames_with_ai: {e}", exc_info=True)
         return jsonify({
             "status": "error",
             "message": str(e)

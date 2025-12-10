@@ -1,0 +1,149 @@
+================================================================================
+CRITICAL CHANGE: Frame Selection UI Initialization
+================================================================================
+
+BEFORE (❌ BROKEN):
+-------------------
+Event listeners bound ONCE at page load, outside any function:
+
+```javascript
+// At page load (line ~5783)
+fullscreenCloseBtn.addEventListener('click', closeFullscreenTimeline);
+fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
+fullscreenSendBtn.addEventListener('click', () => { ... });
+fullscreenChatInput.addEventListener('keypress', (e) => { ... });
+```
+
+function openFullscreenTimeline(frames) {
+    // Render new DOM
+    cinemaTimelineInner.innerHTML = frames.map(...);
+    
+    // Show UI
+    fullscreenTimelineMode.classList.remove('hidden');
+    
+    // ❌ NO RE-INITIALIZATION OF LISTENERS
+    // Old listeners are now attached to orphaned DOM nodes!
+}
+
+PROBLEMS:
+- Listeners attached to elements that get replaced
+- After DOM rebuild, buttons have NO listeners
+- Clicks do nothing
+- Silent failures
+
+
+AFTER (✅ FIXED):
+-----------------
+Event listeners bound DYNAMICALLY every time mode opens:
+
+```javascript
+// Centralized initialization function
+function initFrameSelectionUI() {
+    try {
+        // Rebind "Use This Frame" button
+        const pickBtn = $('#fullscreen-pick-frame-btn');
+        if (pickBtn) {
+            // Clone to remove old listeners (prevents duplicates)
+            const newPickBtn = pickBtn.cloneNode(true);
+            pickBtn.parentNode.replaceChild(newPickBtn, pickBtn);
+            on(newPickBtn, 'click', useSelectedFullscreenFrame);
+        }
+
+        // Rebind close button
+        const closeBtn = $('#fullscreen-close-btn');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            on(newCloseBtn, 'click', closeFullscreenTimeline);
+        }
+
+        // Rebind chat send button
+        const sendBtn = $('#fullscreen-send-btn');
+        if (sendBtn) {
+            const newSendBtn = sendBtn.cloneNode(true);
+            sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+            on(newSendBtn, 'click', () => {
+                const input = $('#fullscreen-chat-input');
+                const message = input ? input.value.trim() : '';
+                if (!message) return;
+                // ... handle send ...
+            });
+        }
+
+        // Rebind chat input Enter key
+        const chatInput = $('#fullscreen-chat-input');
+        if (chatInput) {
+            const newChatInput = chatInput.cloneNode(true);
+            chatInput.parentNode.replaceChild(newChatInput, chatInput);
+            on(newChatInput, 'keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const sendBtn = $('#fullscreen-send-btn');
+                    if (sendBtn) sendBtn.click();
+                }
+            });
+        }
+
+        // Rebind toolbar buttons
+        const toolbarButtons = document.querySelectorAll('.cinema-tool-btn, .cinema-play-btn');
+        toolbarButtons.forEach(btn => {
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            on(newBtn, 'click', () => {
+                const title = newBtn.getAttribute('title') || newBtn.textContent.trim();
+                console.log(`Toolbar action: ${title}`);
+            });
+        });
+
+        console.log('Frame Selection UI initialized successfully');
+    } catch (error) {
+        console.error('Error initializing Frame Selection UI:', error);
+        // Don't throw - allow partial initialization
+    }
+}
+```
+
+function openFullscreenTimeline(frames) {
+    // Render new DOM
+    cinemaTimelineInner.innerHTML = frames.map(...);
+    
+    // Show UI
+    fullscreenTimelineMode.classList.remove('hidden');
+    
+    // ✅ RE-INITIALIZE LISTENERS AFTER DOM IS READY
+    setTimeout(() => {
+        initFrameSelectionUI();
+    }, 0);
+}
+
+BENEFITS:
+- Listeners always attached to current DOM elements
+- Works after any DOM rebuild
+- No duplicate listeners (cloning removes old ones)
+- Safe null checks prevent errors
+- Error isolation prevents total breakage
+- Async initialization prevents blocking
+
+
+================================================================================
+WHY CLONING?
+================================================================================
+
+Q: Why clone elements instead of just adding listeners?
+
+A: Cloning is the ONLY reliable way to remove ALL old event listeners.
+
+Without cloning:
+  element.addEventListener('click', handler1);  // First call
+  element.addEventListener('click', handler2);  // Second call
+  // Now BOTH handlers fire on click! ❌
+
+With cloning:
+  const newElement = element.cloneNode(true);
+  element.parentNode.replaceChild(newElement, element);
+  newElement.addEventListener('click', handler2);
+  // Only handler2 fires ✅
+
+Cloning creates a fresh element with NO listeners, preventing duplicates.
+
+================================================================================

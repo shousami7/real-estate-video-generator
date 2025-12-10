@@ -173,6 +173,67 @@
             box-shadow: 0 4px 14px rgba(52, 211, 153, 0.35);
         }
 
+        /* Modal styling & performance helpers */
+        .modal-backdrop {
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(3px);
+            will-change: opacity, backdrop-filter;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .modal-backdrop.is-visible {
+            opacity: 1;
+        }
+
+        .modal-container {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 16px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s;
+            opacity: 0;
+            transform: translateY(8px);
+        }
+
+        .modal-backdrop.is-visible .modal-container {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Frame image skeletons */
+        .frame-thumb-wrapper {
+            position: relative;
+        }
+
+        .frame-thumb-skeleton {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, #2f2f2f 0%, #3a3a3a 50%, #2f2f2f 100%);
+            background-size: 200% 100%;
+            animation: skeletonPulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes skeletonPulse {
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        .lazy-fade-image {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .lazy-fade-image.is-loaded {
+            opacity: 1;
+        }
+
         .video-mode-option.muted {
             opacity: 0.55;
         }
@@ -1305,10 +1366,10 @@
             overflow: hidden;
             cursor: pointer;
             scroll-snap-align: center;
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-                opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1),
-                filter 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-            will-change: transform, opacity, filter;
+            /* Removed filter transition - blur was causing performance issues */
+            transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+                opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform, opacity;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             background: #1a1a1a;
         }
@@ -1784,12 +1845,32 @@
                 <div class="w-full shrink-0" id="video-frames-section">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-white text-lg font-bold">Upload Videos</h3>
-                        <button id="extract-all-frames-btn"
-                            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Extract frames from uploaded videos">
-                            <span class="material-symbols-outlined !text-base">auto_awesome</span>
-                            <span class="text-sm font-medium">Extract Frames</span>
-                        </button>
+                        <div class="flex items-center gap-3">
+                            <!-- Frame Extraction Settings -->
+                            <div class="flex items-center gap-2 text-sm">
+                                <label class="text-gray-400">FPS:</label>
+                                <select id="frame-fps-select"
+                                    class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="1" selected>1</option>
+                                    <option value="5">5</option>
+                                    <option value="10">10</option>
+                                    <option value="24">24</option>
+                                </select>
+                                <label class="text-gray-400 ml-2">Max:</label>
+                                <select id="frame-max-select"
+                                    class="bg-[#2a2a2a] text-white px-2 py-1 rounded border border-gray-600 text-sm">
+                                    <option value="50">50</option>
+                                    <option value="100" selected>100</option>
+                                    <option value="150">150</option>
+                                </select>
+                            </div>
+                            <button id="extract-all-frames-btn"
+                                class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Extract frames from uploaded videos">
+                                <span class="material-symbols-outlined !text-base">auto_awesome</span>
+                                <span class="text-sm font-medium">Extract Frames</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="video-frames-container">
                         <!-- 6 video frame slots will be inserted here by JS -->
@@ -2126,6 +2207,68 @@
             isAgentMode: false,   // Agent (MCP) mode toggle
             abortControllers: {} // sheetId -> AbortController
         };
+
+        const activeImageLoadControllers = new Set();
+
+        // ==================== Safe DOM Helpers ====================
+        // Safe querySelector - returns null if element doesn't exist, no exceptions
+        const $ = (sel) => {
+            try {
+                return document.querySelector(sel);
+            } catch (e) {
+                console.warn(`DOM query failed for: ${sel}`, e);
+                return null;
+            }
+        };
+
+        // Safe event binding - only binds if element exists
+        const on = (el, ev, fn) => {
+            if (el && typeof el.addEventListener === 'function') {
+                el.addEventListener(ev, fn);
+                return true;
+            }
+            return false;
+        };
+
+        // ==================== フレーム抽出設定 ====================
+        const FRAME_CONFIG = {
+            fps: 1,           // デフォルトFPS（1秒あたりのフレーム数）
+            maxFrames: 100,   // デフォルト最大フレーム数
+            availableFps: [0.5, 1, 2, 4],  // 選択可能なFPS値
+            availableMaxFrames: [50, 100, 150]  // 選択可能な最大フレーム数
+        };
+
+        // フレーム抽出設定UIの初期化
+        // Handle both early and late initialization
+        function initFrameExtractionSettings() {
+            try {
+                const fpsSelect = $('#frame-fps-select');
+                const maxSelect = $('#frame-max-select');
+
+                if (fpsSelect) {
+                    on(fpsSelect, 'change', (e) => {
+                        FRAME_CONFIG.fps = parseFloat(e.target.value);
+                        console.log('Frame FPS updated:', FRAME_CONFIG.fps);
+                    });
+                }
+
+                if (maxSelect) {
+                    on(maxSelect, 'change', (e) => {
+                        FRAME_CONFIG.maxFrames = parseInt(e.target.value, 10);
+                        console.log('Max frames updated:', FRAME_CONFIG.maxFrames);
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to initialize frame extraction settings:', error);
+            }
+        }
+
+        // Initialize immediately if DOM is ready, otherwise wait
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initFrameExtractionSettings);
+        } else {
+            initFrameExtractionSettings();
+        }
 
         // ==================== DOM要素 ====================
         const uploadZone = document.getElementById('upload-zone');
@@ -2722,8 +2865,8 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success' && data.frames && data.frames.length > 0) {
-                        // フレーム0のBase64画像をサムネイルとして使用
-                        frameData.thumbnail = data.frames[0].base64;
+                        // フレーム0のURL画像をサムネイルとして使用
+                        frameData.thumbnail = data.frames[0].url;
                         frameData.isProcessing = false;
                         renderVideoFrames();
                     } else {
@@ -2807,7 +2950,11 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
+                body: JSON.stringify({
+                    video_path: videoPathForBackend,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -2961,6 +3108,75 @@
         });
 
         // ==================== Extend Mode (Frame-Based) ====================
+        function cancelActiveImageLoads() {
+            activeImageLoadControllers.forEach(controller => controller.abort());
+            activeImageLoadControllers.clear();
+        }
+
+        async function decodeAndShowImage(imgEl, url, skeletonEl = null) {
+            if (!imgEl) return;
+
+            imgEl.classList.remove('is-loaded');
+            const skeleton = skeletonEl || imgEl.closest('.frame-thumb-wrapper')?.querySelector('.frame-thumb-skeleton');
+            if (skeleton) {
+                skeleton.classList.remove('hidden');
+            }
+
+            const controller = new AbortController();
+            activeImageLoadControllers.add(controller);
+
+            try {
+                const response = await fetch(url, { signal: controller.signal });
+                const blob = await response.blob();
+
+                if (window.createImageBitmap) {
+                    await createImageBitmap(blob);
+                }
+
+                const objectUrl = URL.createObjectURL(blob);
+                imgEl.onload = () => URL.revokeObjectURL(objectUrl);
+                imgEl.src = objectUrl;
+                imgEl.classList.add('is-loaded');
+
+                if (skeleton) {
+                    skeleton.classList.add('hidden');
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('Failed to decode image', err);
+                }
+            } finally {
+                activeImageLoadControllers.delete(controller);
+            }
+        }
+
+        function hydrateFrameGridImages(gridEl) {
+            const images = gridEl.querySelectorAll('img[data-src]');
+            images.forEach(img => {
+                const src = img.dataset.src;
+                img.removeAttribute('data-src');
+                decodeAndShowImage(img, src);
+            });
+        }
+
+        function renderFrameGridWithSkeleton(frameGrid, frames, baseClass) {
+            frameGrid.innerHTML = frames.map((frame, index) => `
+                <div class="${baseClass} frame-thumb-wrapper relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
+                     data-frame-id="${index}">
+                    <div class="frame-thumb-skeleton"></div>
+                    <img data-src="${frame.url}" class="lazy-fade-image frame-thumb-image w-full h-full object-cover" />
+                    <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <span class="text-white font-bold">Select</span>
+                    </div>
+                    <div class="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
+                        ${frame.timestamp}
+                    </div>
+                </div>
+            `).join('');
+
+            requestAnimationFrame(() => hydrateFrameGridImages(frameGrid));
+        }
+
         selectFrameBtn.addEventListener('click', () => {
             if (state.extendMode.enabled) {
                 openVideoFrameSelector();
@@ -2977,16 +3193,17 @@
 
             const modal = document.createElement('div');
             modal.id = 'video-frame-selector-modal';
-            modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+            modal.className = 'modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4';
             modal.innerHTML = generateVideoSelectorHTML();
 
             document.body.appendChild(modal);
+            requestAnimationFrame(() => modal.classList.add('is-visible'));
             setupModalEventHandlers(modal);
         }
 
         function generateVideoSelectorHTML() {
             return `
-                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-4xl w-full">
+                <div class="modal-container p-6 max-w-4xl w-full shadow-xl">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xl font-bold text-white">Select Video to Extend</h3>
                         <button class="close-modal text-gray-400 hover:text-white">
@@ -3095,7 +3312,11 @@
             const extractionPromise = fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPath, fps: 1 })
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3125,18 +3346,7 @@
             modal.querySelector('#selected-video-label').textContent = `Video ${slotId + 1}`;
 
             const frameGrid = modal.querySelector('#frame-grid');
-            frameGrid.innerHTML = state.frames.map((frame, index) => `
-                <div class="frame-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
-                     data-frame-id="${index}">
-                    <img src="${frame.base64}" class="w-full h-full object-cover" />
-                    <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <span class="text-white font-bold">Select</span>
-                    </div>
-                    <div class="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
-                        ${frame.timestamp}
-                    </div>
-                </div>
-            `).join('');
+            renderFrameGridWithSkeleton(frameGrid, state.frames, 'frame-card');
 
             frameGrid.querySelectorAll('.frame-card').forEach(card => {
                 card.addEventListener('click', () => {
@@ -3212,6 +3422,7 @@
         }
 
         function closeVideoFrameModal(modal) {
+            cancelActiveImageLoads();
             modal.remove();
             state.extendMode.isModalOpen = false;
             state.extendMode.modalStep = null;
@@ -3226,16 +3437,17 @@
 
             const modal = document.createElement('div');
             modal.id = 'adjust-frame-selector-modal';
-            modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+            modal.className = 'modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4';
             modal.innerHTML = generateAdjustModalHTML();
 
             document.body.appendChild(modal);
+            requestAnimationFrame(() => modal.classList.add('is-visible'));
             setupAdjustModalEventHandlers(modal);
         }
 
         function generateAdjustModalHTML() {
             return `
-                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="modal-container p-6 max-w-4xl w-full">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xl font-bold text-white">Adjust Mode - Insert Image</h3>
                         <button class="close-modal text-gray-400 hover:text-white">
@@ -3307,7 +3519,7 @@
                         <div class="mb-4 p-4 bg-[#2a2a2a] rounded-lg">
                             <p class="text-sm text-gray-400 mb-2">Insert point:</p>
                             <div class="flex items-center gap-4">
-                                <img id="adjust-frame-preview" src="" class="w-32 h-18 object-cover rounded border border-gray-600" />
+                                <img id="adjust-frame-preview" src="" class="lazy-fade-image w-32 h-18 object-cover rounded border border-gray-600" />
                                 <div>
                                     <p class="text-white font-medium" id="adjust-frame-time"></p>
                                     <p class="text-gray-400 text-sm">Your image will be inserted at this point</p>
@@ -3326,7 +3538,7 @@
                         <!-- Image preview (hidden initially) -->
                         <div id="adjust-image-preview-area" class="hidden mt-4">
                             <div class="relative inline-block">
-                                <img id="adjust-uploaded-image-preview" src="" class="max-w-full max-h-48 rounded-lg border border-primary" />
+                                <img id="adjust-uploaded-image-preview" src="" class="lazy-fade-image max-w-full max-h-48 rounded-lg border border-primary" />
                                 <button id="adjust-remove-image-btn" class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white flex items-center justify-center hover:bg-red-600">
                                     <span class="material-symbols-outlined !text-sm">close</span>
                                 </button>
@@ -3418,7 +3630,11 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPath, fps: 1 })
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3448,18 +3664,7 @@
             modal.querySelector('#adjust-selected-video-label').textContent = `Video ${slotId + 1}`;
 
             const frameGrid = modal.querySelector('#adjust-frame-grid');
-            frameGrid.innerHTML = state.frames.map((frame, index) => `
-                <div class="adjust-frame-card relative aspect-video bg-[#2a2a2a] rounded-lg overflow-hidden border-2 border-transparent cursor-pointer hover:border-primary transition-colors"
-                     data-frame-id="${index}">
-                    <img src="${frame.base64}" class="w-full h-full object-cover" />
-                    <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <span class="text-white font-bold">Select</span>
-                    </div>
-                    <div class="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
-                        ${frame.timestamp}
-                    </div>
-                </div>
-            `).join('');
+            renderFrameGridWithSkeleton(frameGrid, state.frames, 'adjust-frame-card');
 
             // Frame selection handlers
             frameGrid.querySelectorAll('.adjust-frame-card').forEach(card => {
@@ -3501,7 +3706,8 @@
             modal.querySelector('#adjust-image-upload-area').classList.remove('hidden');
 
             // Set frame preview
-            modal.querySelector('#adjust-frame-preview').src = frame.base64;
+            const adjustFramePreview = modal.querySelector('#adjust-frame-preview');
+            decodeAndShowImage(adjustFramePreview, frame.url);
             modal.querySelector('#adjust-frame-time').textContent = `Frame at ${frame.timestamp}`;
             modal.querySelector('#adjust-selected-frame-label').textContent = `Frame ${frameId + 1}`;
 
@@ -3555,6 +3761,8 @@
                 state.adjustMode.insertImageBase64 = null;
                 previewArea.classList.add('hidden');
                 dropZone.classList.remove('hidden');
+                previewImg.classList.remove('is-loaded');
+                previewImg.src = '';
                 confirmBtn.disabled = true;
             });
 
@@ -3588,6 +3796,8 @@
                 const dropZone = modal.querySelector('#adjust-image-drop-zone');
                 const confirmBtn = modal.querySelector('#adjust-confirm-btn');
 
+                previewImg.classList.remove('is-loaded');
+                previewImg.onload = () => previewImg.classList.add('is-loaded');
                 previewImg.src = e.target.result;
                 previewArea.classList.remove('hidden');
                 dropZone.classList.add('hidden');
@@ -3653,6 +3863,7 @@
         }
 
         function closeAdjustModal(modal) {
+            cancelActiveImageLoads();
             modal.remove();
             state.adjustMode.isModalOpen = false;
             state.adjustMode.modalStep = null;
@@ -3955,7 +4166,11 @@
             fetch('/frames/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_path: videoPathForBackend, fps: 1 })
+                body: JSON.stringify({
+                    video_path: videoPathForBackend,
+                    fps: FRAME_CONFIG.fps,
+                    max_frames: FRAME_CONFIG.maxFrames
+                })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -3987,7 +4202,7 @@
                 if (editedImageUrl) {
                     frameCard.style.backgroundImage = `url('${editedImageUrl}')`;
                 } else {
-                    frameCard.style.backgroundImage = `url('${frame.base64}')`;
+                    frameCard.style.backgroundImage = `url('${frame.url}')`;
                 }
 
                 frameCard.addEventListener('click', () => selectFrame(index));
@@ -4015,7 +4230,7 @@
             state.selectedFrame = frameId;
             const frame = state.frames[frameId];
 
-            const imageUrl = state.editedFrames[frameId] || frame.base64;
+            const imageUrl = state.editedFrames[frameId] || frame.url;
 
             chatContainer.innerHTML = '';
 
@@ -5111,7 +5326,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         video_path: videoPath,
-                        fps: 1  // 1-second timeline extraction
+                        fps: FRAME_CONFIG.fps,
+                        max_frames: FRAME_CONFIG.maxFrames
                     })
                 });
 
@@ -5145,6 +5361,91 @@
         const CINEMA_CARD_WIDTH = 500;
         const CINEMA_CARD_GAP = 60;
 
+        // ==================== Frame Selection UI Initialization ====================
+        /**
+         * Initialize/reinitialize Frame Selection UI event listeners.
+         * Called every time Frame Selection mode is activated to ensure
+         * all listeners are properly bound after DOM rebuilds.
+         */
+        function initFrameSelectionUI() {
+            try {
+                // Rebind "Use This Frame" button
+                const pickBtn = $('#fullscreen-pick-frame-btn');
+                if (pickBtn) {
+                    // Remove old listener by cloning (prevents duplicates)
+                    const newPickBtn = pickBtn.cloneNode(true);
+                    pickBtn.parentNode.replaceChild(newPickBtn, pickBtn);
+                    on(newPickBtn, 'click', useSelectedFullscreenFrame);
+                }
+
+                // Rebind close button
+                const closeBtn = $('#fullscreen-close-btn');
+                if (closeBtn) {
+                    const newCloseBtn = closeBtn.cloneNode(true);
+                    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                    on(newCloseBtn, 'click', closeFullscreenTimeline);
+                }
+
+                // Rebind chat send button
+                const sendBtn = $('#fullscreen-send-btn');
+                if (sendBtn) {
+                    const newSendBtn = sendBtn.cloneNode(true);
+                    sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+                    on(newSendBtn, 'click', () => {
+                        const input = $('#fullscreen-chat-input');
+                        const message = input ? input.value.trim() : '';
+                        if (!message) return;
+
+                        const mainChatInput = $('#chat-input');
+                        const mainSendBtn = $('#send-btn');
+                        if (mainChatInput) mainChatInput.value = message;
+                        if (input) input.value = '';
+
+                        closeFullscreenTimeline();
+                        if (mainSendBtn) mainSendBtn.click();
+                    });
+                }
+
+                // Rebind chat input Enter key
+                const chatInput = $('#fullscreen-chat-input');
+                if (chatInput) {
+                    const newChatInput = chatInput.cloneNode(true);
+                    chatInput.parentNode.replaceChild(newChatInput, chatInput);
+                    on(newChatInput, 'keypress', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            const sendBtn = $('#fullscreen-send-btn');
+                            if (sendBtn) sendBtn.click();
+                        }
+                    });
+                }
+
+                // Rebind toolbar buttons (if they exist)
+                const toolbarButtons = document.querySelectorAll('.cinema-tool-btn, .cinema-play-btn');
+                toolbarButtons.forEach(btn => {
+                    // Clone to remove old listeners
+                    const newBtn = btn.cloneNode(true);
+                    btn.parentNode.replaceChild(newBtn, btn);
+
+                    on(newBtn, 'click', () => {
+                        const title = newBtn.getAttribute('title') || newBtn.textContent.trim();
+                        console.log(`Toolbar action: ${title}`);
+                        // Add actual toolbar functionality here as needed
+                    });
+                });
+
+                console.log('Frame Selection UI initialized successfully');
+            } catch (error) {
+                console.error('Error initializing Frame Selection UI:', error);
+                // Don't throw - allow partial initialization
+            }
+        }
+
+        // Performance optimization: cache DOM elements and prevent scroll cascade
+        let cachedCinemaCards = null;
+        let cachedFullscreenThumbs = null;
+        let isProgrammaticScroll = false; // Flag to skip scroll handler during programmatic scrolls
+
         function openFullscreenTimeline(frames) {
             isFullscreenTimelineOpen = true;
             currentFocusedFrameIndex = 0;
@@ -5158,7 +5459,7 @@
                 <div class="cinema-frame-card ${index === 0 ? 'active' : ''}"
                      data-index="${index}"
                      onclick="selectCinemaFrame(${index})">
-                    <img src="${frame.base64}" alt="Frame ${index + 1}" draggable="false">
+                    <img src="${frame.url}" alt="Frame ${index + 1}" draggable="false">
                     <div class="cinema-frame-metadata">
                         <p>
                             <span>Clip ${index + 1}</span>
@@ -5174,13 +5475,17 @@
                      data-index="${index}"
                      style="position: relative; display: none;"
                      onclick="selectFullscreenFrame(${index})">
-                    <img src="${frame.base64}" alt="Frame ${index + 1}">
+                    <img src="${frame.url}" alt="Frame ${index + 1}">
                 </div>
             `).join('');
 
             // Set padding on viewport
             cinemaTimelineViewport.style.paddingLeft = `${sidePadding}px`;
             cinemaTimelineViewport.style.paddingRight = `${sidePadding}px`;
+
+            // Cache DOM elements for performance (avoid repeated querySelectorAll)
+            cachedCinemaCards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            cachedFullscreenThumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
 
             // Update frame counter
             fullscreenFrameCounter.textContent = `Frame #1 / ${frames.length}`;
@@ -5207,9 +5512,16 @@
 
             // Add keyboard listener
             document.addEventListener('keydown', handleFullscreenKeyboard);
+            document.addEventListener('keyup', handleFullscreenKeyboardUp);
 
             // Add scroll listener for cinema timeline
             cinemaTimelineViewport.addEventListener('scroll', handleCinemaTimelineScroll);
+
+            // CRITICAL: Initialize Frame Selection UI after DOM is ready
+            // Use setTimeout to ensure DOM has fully rendered
+            setTimeout(() => {
+                initFrameSelectionUI();
+            }, 0);
         }
 
         function updateCinemaTimecode(index, totalFrames) {
@@ -5238,7 +5550,8 @@
             const viewportWidth = viewport.clientWidth;
             const centerX = scrollX + (viewportWidth / 2);
 
-            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            // Use cached cards for performance (avoids DOM query on every scroll)
+            const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
 
             cards.forEach((card, index) => {
                 const cardWidth = CINEMA_CARD_WIDTH;
@@ -5262,13 +5575,13 @@
                 // Z translation for depth
                 const translateZ = -Math.abs(normalizedDistance) * 150;
 
-                // Opacity: 1 at center, 0.1 at edges
-                const opacity = Math.max(0.1, 1 - (clampedDistance * 0.45));
+                // Opacity: 1 at center, 0.3 at edges (increased minimum for better visibility)
+                const opacity = Math.max(0.3, 1 - (clampedDistance * 0.35));
 
-                // Blur: 0 at center, 12px at edges
-                const blur = clampedDistance * 6;
+                // NOTE: Blur filter removed - it was causing severe performance issues
+                // Each blur calculation on 100+ cards per scroll frame caused UI jitter
 
-                // Apply transforms
+                // Apply transforms using will-change optimized properties
                 card.style.transform = `
                     perspective(1500px)
                     translateX(${translateX}px)
@@ -5277,7 +5590,7 @@
                     scale(${scale})
                 `;
                 card.style.opacity = opacity;
-                card.style.filter = `blur(${blur}px)`;
+                // Removed: card.style.filter = `blur(${blur}px)` - performance killer
                 card.style.zIndex = Math.round(50 - absDistance * 20);
 
                 // Toggle active class
@@ -5289,16 +5602,23 @@
             if (fullscreenScrollRaf) cancelAnimationFrame(fullscreenScrollRaf);
 
             fullscreenScrollRaf = requestAnimationFrame(() => {
-                // Update 3D transforms
+                // Update 3D transforms (always needed for visual effect)
                 updateCinemaCardTransforms();
 
-                // Find closest card to center
+                // Skip state updates during programmatic scrolls (keyboard nav, etc.)
+                // This prevents cascade: scrollToCinemaCard() -> scroll event -> state update -> more updates
+                if (isProgrammaticScroll) {
+                    return;
+                }
+
+                // Find closest card to center (only for user-initiated scrolls)
                 const viewport = cinemaTimelineViewport;
                 const scrollX = viewport.scrollLeft;
                 const viewportWidth = viewport.clientWidth;
                 const centerX = scrollX + (viewportWidth / 2);
 
-                const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+                // Use cached cards for performance
+                const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
                 let closestIndex = 0;
                 let closestDistance = Infinity;
 
@@ -5335,7 +5655,8 @@
         }
 
         function scrollToCinemaCard(index) {
-            const cards = cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
+            // Use cached cards for performance
+            const cards = cachedCinemaCards || cinemaTimelineInner.querySelectorAll('.cinema-frame-card');
             const targetCard = cards[index];
             if (!targetCard) return;
 
@@ -5343,7 +5664,14 @@
             const viewportWidth = viewport.clientWidth;
             const scrollOffset = targetCard.offsetLeft - (viewportWidth / 2) + (CINEMA_CARD_WIDTH / 2);
 
+            // Set flag to prevent scroll handler cascade during programmatic scroll
+            isProgrammaticScroll = true;
             viewport.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+
+            // Reset flag after scroll animation completes (smooth scroll takes ~300-500ms)
+            setTimeout(() => {
+                isProgrammaticScroll = false;
+            }, 350);
         }
 
         function closeFullscreenTimeline() {
@@ -5351,6 +5679,15 @@
             fullscreenTimelineMode.classList.add('hidden');
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleFullscreenKeyboard);
+            document.removeEventListener('keyup', handleFullscreenKeyboardUp);
+
+            // Clear navigation intervals to prevent residual timers
+            if (fullscreenNavInterval) {
+                clearInterval(fullscreenNavInterval);
+                fullscreenNavInterval = null;
+            }
+            fullscreenNavDirection = 0;
+
             // Remove both legacy and cinema timeline scroll listeners
             fullscreenTimelineScroll.removeEventListener('scroll', handleFullscreenTimelineScroll);
             cinemaTimelineViewport.removeEventListener('scroll', handleCinemaTimelineScroll);
@@ -5359,6 +5696,11 @@
             fullscreenScrollRaf = null;
             fullscreenScrollSettleTimeout = null;
             pendingScrollIndex = null;
+
+            // Clear DOM caches
+            cachedCinemaCards = null;
+            cachedFullscreenThumbs = null;
+            isProgrammaticScroll = false;
         }
 
         function updateFullscreenPreview(index) {
@@ -5379,7 +5721,7 @@
                 };
 
                 fullscreenPreviewImg.addEventListener('load', handleLoad);
-                fullscreenPreviewImg.src = frame.base64;
+                fullscreenPreviewImg.src = frame.url;
                 fullscreenPreviewImg.dataset.index = String(index);
 
                 if (fullscreenPreviewImg.complete) {
@@ -5402,20 +5744,22 @@
             // Update state.selectedFrame for potential editing
             state.selectedFrame = {
                 index,
-                base64: frame.base64,
+                url: frame.url,
                 timestamp: frame.timestamp || formatTimestamp(frame.seconds)
             };
         }
 
         function setActiveFullscreenThumb(index) {
-            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            // Use cached thumbs for performance
+            const thumbs = cachedFullscreenThumbs || fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
             thumbs.forEach((thumb, i) => {
                 thumb.classList.toggle('active', i === index);
             });
         }
 
         function scrollToFullscreenThumb(index) {
-            const thumbs = fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
+            // Use cached thumbs for performance
+            const thumbs = cachedFullscreenThumbs || fullscreenTimelineScroll.querySelectorAll('.fullscreen-thumb');
             const targetThumb = thumbs[index];
             if (!targetThumb) return;
 
@@ -5427,41 +5771,83 @@
             container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
         }
 
+        // Navigation state for fullscreen mode - prevents jitter from native key repeat
+        let fullscreenNavInterval = null;
+        let fullscreenNavDirection = 0; // -1 for left, +1 for right, 0 for none
+
         function handleFullscreenKeyboard(e) {
             if (!isFullscreenTimelineOpen) return;
 
-            switch (e.key) {
-                case 'ArrowLeft':
+            // Handle non-arrow keys immediately
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeFullscreenTimeline();
+                return;
+            }
+
+            if (e.key === 'Enter') {
+                if (document.activeElement !== fullscreenChatInput) {
                     e.preventDefault();
-                    if (currentFocusedFrameIndex > 0) {
-                        const newIndex = currentFocusedFrameIndex - 1;
-                        updateFullscreenPreview(newIndex);
-                        scrollToFullscreenThumb(newIndex);
-                        scrollToCinemaCard(newIndex);
-                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
-                    }
-                    break;
-                case 'ArrowRight':
-                    e.preventDefault();
-                    if (currentFocusedFrameIndex < allExtractedFrames.length - 1) {
-                        const newIndex = currentFocusedFrameIndex + 1;
-                        updateFullscreenPreview(newIndex);
-                        scrollToFullscreenThumb(newIndex);
-                        scrollToCinemaCard(newIndex);
-                        updateCinemaTimecode(newIndex, allExtractedFrames.length);
-                    }
-                    break;
-                case 'Escape':
-                    e.preventDefault();
-                    closeFullscreenTimeline();
-                    break;
-                case 'Enter':
-                    if (document.activeElement !== fullscreenChatInput) {
-                        e.preventDefault();
-                        // Use current frame (same as clicking "Use This Frame")
-                        useSelectedFullscreenFrame();
-                    }
-                    break;
+                    useSelectedFullscreenFrame();
+                }
+                return;
+            }
+
+            // Arrow key handling with repeat suppression
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+
+                // CRITICAL: Ignore native key repeat events to prevent jitter
+                if (e.repeat) return;
+
+                // Determine direction
+                const direction = e.key === 'ArrowLeft' ? -1 : 1;
+
+                // If direction changed, clear previous interval for clean switching
+                if (fullscreenNavDirection !== 0 && fullscreenNavDirection !== direction) {
+                    clearInterval(fullscreenNavInterval);
+                    fullscreenNavInterval = null;
+                }
+
+                fullscreenNavDirection = direction;
+
+                // Execute first move immediately for responsive feel
+                moveFullscreenFrame(direction);
+
+                // Start controlled interval for smooth continuous navigation
+                if (!fullscreenNavInterval) {
+                    fullscreenNavInterval = setInterval(() => {
+                        moveFullscreenFrame(fullscreenNavDirection);
+                    }, 60); // 60ms = ~16 frames per second, smooth but not too fast
+                }
+            }
+        }
+
+        // Separate function to handle frame movement logic
+        function moveFullscreenFrame(direction) {
+            const newIndex = currentFocusedFrameIndex + direction;
+
+            // Boundary check to prevent overshooting
+            if (newIndex < 0 || newIndex >= allExtractedFrames.length) {
+                return;
+            }
+
+            // Update all related UI elements atomically
+            updateFullscreenPreview(newIndex);
+            scrollToFullscreenThumb(newIndex);
+            scrollToCinemaCard(newIndex);
+            updateCinemaTimecode(newIndex, allExtractedFrames.length);
+        }
+
+        // Keyup handler to stop navigation cleanly
+        function handleFullscreenKeyboardUp(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                // Clear interval and reset state to stop movement immediately
+                if (fullscreenNavInterval) {
+                    clearInterval(fullscreenNavInterval);
+                    fullscreenNavInterval = null;
+                }
+                fullscreenNavDirection = 0;
             }
         }
 
@@ -5527,7 +5913,7 @@
             if (placeholder) {
                 placeholder.innerHTML = `
                     <div class="selected-frame-indicator">
-                        <div class="selected-frame-thumbnail" style="background-image: url('${frame.base64}')"></div>
+                        <div class="selected-frame-thumbnail" style="background-image: url('${frame.url}')"></div>
                         <div class="selected-frame-info">
                             <div class="selected-frame-title">Frame ${frame.index + 1} Selected</div>
                             <div class="selected-frame-timestamp">${frame.timestamp}</div>
@@ -5544,41 +5930,17 @@
             scrollToFullscreenThumb(index);
         };
 
-        // Close button event
-        fullscreenCloseBtn.addEventListener('click', closeFullscreenTimeline);
+        // NOTE: Event listeners for fullscreen buttons are now bound dynamically
+        // in initFrameSelectionUI() which is called when Frame Selection mode opens.
+        // This ensures listeners work correctly after DOM rebuilds.
 
-        // "Use This Frame" button
-        fullscreenPickFrameBtn.addEventListener('click', useSelectedFullscreenFrame);
-
-        // Chat input in fullscreen mode - forward to main chat
-        fullscreenSendBtn.addEventListener('click', () => {
-            const message = fullscreenChatInput.value.trim();
-            if (!message) return;
-
-            // Transfer to main chat input and trigger send
-            chatInput.value = message;
-            fullscreenChatInput.value = '';
-
-            // Close fullscreen first
-            closeFullscreenTimeline();
-
-            // Trigger the main send button
-            sendBtn.click();
-        });
-
-        fullscreenChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                fullscreenSendBtn.click();
-            }
-        });
 
         function renderLiquidGlassTimeline(frames) {
             allExtractedFrames = frames;
 
             // Pre-render all frames without focus state
             liquidGlassTimeline.innerHTML = frames.map((frame, index) => {
-                const imgSrc = frame.base64;
+                const imgSrc = frame.url;
                 return `
                 <div class="liquid-frame"
                      data-index="${index}"
@@ -5621,12 +5983,17 @@
             // Set initial focus
             updateFocusedFrame(0);
 
-            // Add keyboard navigation
+            // Attach keyboard handler globally once
             if (!window.timelineKeyboardHandlerAttached) {
                 document.addEventListener('keydown', handleTimelineKeyboard);
+                document.addEventListener('keyup', handleTimelineKeyboardUp);
                 window.timelineKeyboardHandlerAttached = true;
             }
         }
+
+        // Navigation state for regular timeline mode - prevents jitter from native key repeat
+        let timelineNavInterval = null;
+        let timelineNavDirection = 0; // -1 for left, +1 for right, 0 for none
 
         function handleTimelineKeyboard(e) {
             // Only handle if timeline is visible and not in fullscreen mode
@@ -5640,14 +6007,56 @@
             // Ignore if typing in input
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-            if (e.key === 'ArrowRight') {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
-                const nextIndex = Math.min(currentFocusedFrameIndex + 1, allExtractedFrames.length - 1);
-                selectTimelineFrame(nextIndex);
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                const prevIndex = Math.max(currentFocusedFrameIndex - 1, 0);
-                selectTimelineFrame(prevIndex);
+
+                // CRITICAL: Ignore native key repeat events to prevent jitter
+                if (e.repeat) return;
+
+                // Determine direction
+                const direction = e.key === 'ArrowLeft' ? -1 : 1;
+
+                // If direction changed, clear previous interval for clean switching
+                if (timelineNavDirection !== 0 && timelineNavDirection !== direction) {
+                    clearInterval(timelineNavInterval);
+                    timelineNavInterval = null;
+                }
+
+                timelineNavDirection = direction;
+
+                // Execute first move immediately for responsive feel
+                moveTimelineFrame(direction);
+
+                // Start controlled interval for smooth continuous navigation
+                if (!timelineNavInterval) {
+                    timelineNavInterval = setInterval(() => {
+                        moveTimelineFrame(timelineNavDirection);
+                    }, 60); // 60ms = ~16 frames per second
+                }
+            }
+        }
+
+        // Separate function to handle timeline frame movement
+        function moveTimelineFrame(direction) {
+            const newIndex = currentFocusedFrameIndex + direction;
+
+            // Boundary check to prevent overshooting
+            if (newIndex < 0 || newIndex >= allExtractedFrames.length) {
+                return;
+            }
+
+            selectTimelineFrame(newIndex);
+        }
+
+        // Keyup handler for regular timeline to stop navigation cleanly
+        function handleTimelineKeyboardUp(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                // Clear interval and reset state to stop movement immediately
+                if (timelineNavInterval) {
+                    clearInterval(timelineNavInterval);
+                    timelineNavInterval = null;
+                }
+                timelineNavDirection = 0;
             }
         }
 
@@ -5741,7 +6150,7 @@
                     const frame = allExtractedFrames[index];
                     state.selectedFrame = {
                         index: index,
-                        base64: frame.base64,
+                        url: frame.url,
                         timestamp: frame.timestamp || formatTimestamp(frame.seconds)
                     };
                 }
@@ -5754,6 +6163,201 @@
             allExtractedFrames = [];
             liquidGlassTimeline.innerHTML = '';
         });
+
+        // ==================== On-Demand Frame Extraction (Timeline Click) ====================
+
+        /**
+         * Timeline click handler for on-demand frame extraction
+         * Double-click on timeline to extract frame at that specific timestamp
+         */
+        liquidGlassTimeline.addEventListener('dblclick', async (e) => {
+            // Get the clicked position relative to timeline container
+            const rect = liquidGlassTimeline.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+
+            // Get current expanded video
+            if (state.expandedFrameId === null) {
+                console.warn('No video expanded for timeline');
+                return;
+            }
+
+            const frameData = state.videoFrames[state.expandedFrameId];
+            if (!frameData || !frameData.videoPath) {
+                console.error('No video path for expanded frame');
+                return;
+            }
+
+            // Calculate timestamp based on click position
+            // We need to know the video duration
+            // For now, estimate from existing frames if available
+            let videoDuration = 0;
+
+            if (allExtractedFrames && allExtractedFrames.length > 0) {
+                // Get duration from last frame
+                const lastFrame = allExtractedFrames[allExtractedFrames.length - 1];
+                videoDuration = lastFrame.seconds || 0;
+            }
+
+            if (videoDuration === 0) {
+                console.warn('Cannot determine video duration');
+                return;
+            }
+
+            // Calculate timestamp based on timeline scroll position and click position
+            const scrollLeft = liquidGlassTimeline.scrollLeft;
+            const scrollWidth = liquidGlassTimeline.scrollWidth;
+            const clientWidth = liquidGlassTimeline.clientWidth;
+
+            // Total scrollable content position
+            const totalPosition = scrollLeft + clickX;
+
+            // Calculate percentage through timeline
+            const percentage = totalPosition / scrollWidth;
+
+            // Calculate timestamp
+            const timestamp = videoDuration * percentage;
+
+            console.log(`Timeline clicked: position=${clickX}, scroll=${scrollLeft}, percentage=${(percentage * 100).toFixed(1)}%, timestamp=${timestamp.toFixed(2)}s`);
+
+            // Extract frame at this timestamp
+            await extractFrameAtTimestamp(frameData.videoPath, timestamp);
+        });
+
+        /**
+         * Extract a single frame at specific timestamp (on-demand)
+         */
+        async function extractFrameAtTimestamp(videoPath, timestamp) {
+            try {
+                // Show loading indicator
+                const loadingMsg = showTimelineLoadingMessage(`Extracting frame at ${formatTimestamp(timestamp)}...`);
+
+                // Normalize video path
+                const videoPathForBackend = videoPath?.startsWith('/')
+                    ? videoPath.substring(1)
+                    : videoPath;
+
+                // Call backend API
+                const response = await fetch('/frames/extract_at_time', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPathForBackend,
+                        timestamp: timestamp
+                    })
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                hideTimelineLoadingMessage(loadingMsg);
+
+                if (data.status === 'success' && data.frame) {
+                    // Show frame preview modal
+                    showFramePreviewModal(data.frame, videoPath);
+                } else {
+                    alert('Frame extraction failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error extracting frame at timestamp:', error);
+                alert('Error extracting frame: ' + error.message);
+            }
+        }
+
+        /**
+         * Show loading message on timeline
+         */
+        function showTimelineLoadingMessage(message) {
+            const loading = document.createElement('div');
+            loading.className = 'fixed inset-0 bg-black/60 z-50 flex items-center justify-center';
+            loading.innerHTML = `
+                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-md">
+                    <div class="flex items-center gap-4">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <p class="text-white text-lg">${message}</p>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loading);
+            return loading;
+        }
+
+        /**
+         * Hide loading message
+         */
+        function hideTimelineLoadingMessage(loadingElement) {
+            if (loadingElement && loadingElement.parentNode) {
+                loadingElement.parentNode.removeChild(loadingElement);
+            }
+        }
+
+        /**
+         * Show frame preview modal with extracted frame
+         */
+        function showFramePreviewModal(frame, videoPath) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-[#1a1a1a] rounded-xl p-6 max-w-2xl w-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-white">Frame at ${frame.timestamp}</h3>
+                        <button class="close-modal text-gray-400 hover:text-white">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <div class="mb-4">
+                        <img src="${frame.base64}"
+                             class="w-full rounded-lg border-2 border-primary"
+                             alt="Extracted frame">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+                        <div class="bg-[#2a2a2a] p-3 rounded">
+                            <div class="text-gray-400 mb-1">Timestamp</div>
+                            <div class="text-white font-mono">${frame.timestamp}</div>
+                        </div>
+                        <div class="bg-[#2a2a2a] p-3 rounded">
+                            <div class="text-gray-400 mb-1">Seconds</div>
+                            <div class="text-white font-mono">${frame.seconds.toFixed(2)}s</div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button class="edit-frame-btn flex-1 px-4 py-3 bg-primary text-black rounded-lg hover:opacity-90 transition-opacity font-bold">
+                            <span class="material-symbols-outlined !text-base mr-2">edit</span>
+                            Edit This Frame
+                        </button>
+                        <button class="close-modal px-4 py-3 bg-[#374151] text-white rounded-lg hover:bg-[#4B5563] transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Close button handlers
+            modal.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modal.remove();
+                });
+            });
+
+            // Edit button handler
+            modal.querySelector('.edit-frame-btn').addEventListener('click', () => {
+                modal.remove();
+                // TODO: Open frame editor with this frame
+                console.log('Edit frame:', frame);
+                alert('Frame editing will be implemented in next step!');
+            });
+
+            // Click outside to close
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
 
         // ==================== ページ初期化 ====================
         document.addEventListener('DOMContentLoaded', () => {
@@ -5949,7 +6553,33 @@
                 const data = await response.json();
 
                 if (data.status === 'success') {
-                    window.location.href = '/frames/selection_view';
+                    // Close the modal
+                    if (modal) modal.remove();
+
+                    // Fetch the frame URLs to display in the main editor
+                    const framesResponse = await fetch('/frames/get_session_frames', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId })
+                    });
+                    const framesData = await framesResponse.json();
+
+                    if (framesData.status === 'success' && framesData.frames) {
+                        // Load frames into main editor state
+                        state.frames = framesData.frames.map((frame, idx) => ({
+                            id: idx,
+                            base64: frame.url,
+                            timestamp: frame.timestamp || `${idx + 1}`,
+                            path: frame.path,
+                            filename: frame.filename
+                        }));
+
+                        // Show the extracted frames section with imported frames
+                        state.expandedFrameId = sessionId;
+                        showExtractedFrames();
+                    } else {
+                        alert('Failed to load frame data: ' + (framesData.message || 'Unknown error'));
+                    }
                 } else {
                     alert('Failed to load session: ' + data.message);
                     if (modal) modal.remove();

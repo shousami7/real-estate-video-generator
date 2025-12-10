@@ -291,6 +291,15 @@
             color: white;
         }
 
+        .tool-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .tool-btn:disabled .tool-icon-box {
+            background: none !important;
+        }
+
         .tool-icon-box {
             padding: 8px;
             border-radius: 12px;
@@ -361,8 +370,8 @@
             align-items: center;
             overflow-x: auto;
             overflow-y: hidden;
-            scroll-snap-type: x mandatory;
-            scroll-behavior: smooth;
+            /* Removed scroll-snap-type to prevent conflict with JS scrollTo */
+            /* Removed scroll-behavior as JS handles smooth scrolling */
             scrollbar-width: none;
             -ms-overflow-style: none;
             cursor: grab;
@@ -398,13 +407,19 @@
             border-radius: 12px;
             overflow: hidden;
             cursor: pointer;
-            scroll-snap-align: center;
+            /* Removed scroll-snap-align as JS handles centering */
             background: #111827;
             /* gray-900 */
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             /* shadow-2xl */
+            opacity: 0;
+            transition: opacity 0.3s ease;
             will-change: transform, opacity, filter;
-            /* No CSS transition for transform/opacity/filter as we use JS for physics */
+            /* JS handles transforms/filter; opacity fades in once initialized */
+        }
+
+        .cinema-frame-card.initialized {
+            opacity: 1;
         }
 
         /* Glass Reflection Layer */
@@ -476,6 +491,279 @@
             pointer-events: none;
             z-index: 0;
         }
+
+        /* Delete button danger state */
+        #delete-frame-btn:hover {
+            color: #ef4444;
+        }
+
+        #delete-frame-btn:hover .tool-icon-box {
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Insert button highlight */
+        #insert-frame-btn:hover {
+            color: #10b981;
+        }
+
+        #insert-frame-btn:hover .tool-icon-box {
+            background: rgba(16, 185, 129, 0.15);
+        }
+
+        /* Download buttons highlight */
+        #download-frame-btn:hover,
+        #download-all-btn:hover {
+            color: #3b82f6;
+        }
+
+        #download-frame-btn:hover .tool-icon-box,
+        #download-all-btn:hover .tool-icon-box {
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        /* Edit button highlight */
+        #edit-frames-btn:hover {
+            color: #a78bfa;
+        }
+
+        #edit-frames-btn:hover .tool-icon-box {
+            background: rgba(167, 139, 250, 0.15);
+        }
+
+        /* Modal/Popup Styles */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, rgba(17, 24, 39, 0.98) 0%, rgba(31, 41, 55, 0.98) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 40px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease;
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .modal-header h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .modal-close-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .modal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .form-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: white;
+            font-size: 16px;
+            font-family: 'Space Grotesk', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='white' stroke-opacity='0.6' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+            padding-right: 40px;
+        }
+
+        .form-select:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: rgba(167, 139, 250, 0.5);
+            box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.1);
+        }
+
+        .form-textarea {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: white;
+            font-size: 16px;
+            font-family: 'Space Grotesk', sans-serif;
+            resize: vertical;
+            min-height: 120px;
+            transition: all 0.2s ease;
+        }
+
+        .form-textarea:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .form-textarea:focus {
+            outline: none;
+            border-color: rgba(167, 139, 250, 0.5);
+            box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.1);
+        }
+
+        .form-textarea::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 32px;
+        }
+
+        .btn-secondary {
+            padding: 12px 24px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .btn-primary {
+            padding: 12px 32px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+            border: none;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(167, 139, 250, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(167, 139, 250, 0.5);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .model-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(167, 139, 250, 0.1);
+            border: 1px solid rgba(167, 139, 250, 0.3);
+            border-radius: 8px;
+            font-size: 12px;
+            color: #a78bfa;
+            font-weight: 500;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
@@ -537,42 +825,93 @@
 
         <!-- Glass Controls Toolbar -->
         <div class="nle-glass-toolbar">
-            <!-- Hidden file input for image upload -->
-            <input type="file" id="add-frame-input" accept="image/*" style="display: none;">
-
-            <button class="tool-btn" id="add-frame-btn" title="Add a new frame">
+            <button class="tool-btn" id="delete-frame-btn" title="Delete current frame">
+                <div class="tool-icon-box">
+                    <span class="material-symbols-outlined">delete</span>
+                </div>
+                <span class="tool-label">Delete</span>
+            </button>
+            <button class="tool-btn" id="insert-frame-btn" title="Insert new frame">
                 <div class="tool-icon-box">
                     <span class="material-symbols-outlined">add_photo_alternate</span>
                 </div>
-                <span class="tool-label">Add Frame</span>
-            </button>
-            <button class="tool-btn" id="save-order-btn" title="Save current frame order">
-                <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">save</span>
-                </div>
-                <span class="tool-label">Save Order</span>
+                <span class="tool-label">Insert</span>
             </button>
 
             <div class="tool-separator"></div>
 
-            <button class="play-btn-large">
+            <button class="play-btn-large" id="play-pause-btn">
                 <span class="material-symbols-outlined" style="font-size: 28px;">play_arrow</span>
             </button>
 
             <div class="tool-separator"></div>
 
-            <button class="tool-btn">
+            <button class="tool-btn" id="download-frame-btn" title="Download current frame">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">layers</span>
+                    <span class="material-symbols-outlined">download</span>
                 </div>
-                <span class="tool-label">Layers</span>
+                <span class="tool-label">Download</span>
             </button>
-            <button class="tool-btn">
+            <button class="tool-btn" id="edit-frames-btn" title="Edit current frame with AI">
                 <div class="tool-icon-box">
-                    <span class="material-symbols-outlined">monitor</span>
+                    <span class="material-symbols-outlined">auto_fix_high</span>
                 </div>
-                <span class="tool-label">Preview</span>
+                <span class="tool-label">Edit Frame</span>
             </button>
+        </div>
+    </div>
+
+    <!-- Hidden file input for frame insertion -->
+    <input type="file" id="frame-file-input" accept="image/*" style="display: none;">
+
+    <!-- Edit Frames Modal -->
+    <div class="modal-overlay" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>
+                    <span class="material-symbols-outlined">auto_fix_high</span>
+                    AI Frame Editor
+                </h2>
+                <button class="modal-close-btn" id="modal-close-btn">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="model-select">
+                        Select AI Model
+                        <span class="model-badge">
+                            <span class="material-symbols-outlined" style="font-size: 14px;">psychology</span>
+                            Powered by Nanobanana
+                        </span>
+                    </label>
+                    <select class="form-select" id="model-select">
+                        <option value="nanobanana-pro">Nanobanana Pro (Recommended)</option>
+                        <option value="nanobanana-standard">Nanobanana Standard</option>
+                        <option value="nanobanana-creative">Nanobanana Creative</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-prompt">
+                        Edit Prompt
+                        <span style="color: rgba(255, 255, 255, 0.5); font-size: 12px; text-transform: none; font-weight: 400;">
+                            Describe how you want to edit the current frame
+                        </span>
+                    </label>
+                    <textarea
+                        class="form-textarea"
+                        id="edit-prompt"
+                        placeholder="Example: Enhance colors and brightness, add a cinematic look, remove background noise..."
+                    ></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="modal-cancel-btn">Cancel</button>
+                <button class="btn-primary" id="modal-submit-btn">
+                    <span id="submit-btn-text">Apply Edits</span>
+                    <span id="submit-btn-spinner" style="display: none;" class="loading-spinner"></span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -583,6 +922,7 @@
             currentIndex: 0,
             isNavigating: false,
             targetIndex: 0,
+            targetScroll: 0,
         };
 
         const CARD_WIDTH = 240;
@@ -597,49 +937,79 @@
         const mainPlayerImg = document.getElementById('main-player-image');
         const frameBadgeEl = document.getElementById('frame-position-badge');
 
+        function updateControlStates() {
+            const hasFrames = state.frames.length > 0;
+            const buttons = [
+                document.getElementById('delete-frame-btn'),
+                document.getElementById('confirm-selection-btn'),
+                document.getElementById('download-frame-btn'),
+                document.getElementById('edit-frames-btn'),
+            ];
+
+            buttons.forEach(btn => {
+                if (btn) btn.disabled = !hasFrames;
+            });
+        }
+
         // --- Initialize ---
         function init() {
             // Data passed from server via Jinja2
-            const serverFrames = {{ frames | tojson | safe
-        }};
+            const serverFrames = {{ frames | default([]) | tojson | safe }};
 
-        if (serverFrames && serverFrames.length > 0) {
-            state.frames = serverFrames.map((f, i) => ({
-                id: f.frame_id,
-                src: f.url,
-                timestamp: f.timestamp,
-                frame_number: i + 1,
-                seconds: f.seconds,
-                path: f.path
-            }));
-        } else {
-            console.warn("No frames provided from server");
-            state.frames = [];
-        }
+            if (serverFrames && serverFrames.length > 0) {
+                state.frames = serverFrames.map((f, i) => ({
+                    id: f.frame_id,
+                    src: f.url,
+                    timestamp: f.timestamp,
+                    frame_number: i + 1,
+                    seconds: f.seconds,
+                    path: f.path
+                }));
+            } else {
+                console.warn("No frames provided from server");
+                state.frames = [];
+            }
 
-        if (state.frames.length > 0) {
-            renderTimeline();
-            setActiveIndex(0, { force: true, instant: true });
+            if (state.frames.length > 0) {
+                renderTimeline();
+                setActiveIndex(0, { force: true, instant: true });
 
-            // Set inner padding to center first/last cards
-            const viewportWidth = window.innerWidth;
-            const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
-            inner.style.paddingLeft = `${sidePadding}px`;
-            inner.style.paddingRight = `${sidePadding}px`;
+                // Set inner padding to center first/last cards
+                const viewportWidth = window.innerWidth;
+                const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+                inner.style.paddingLeft = `${sidePadding}px`;
+                inner.style.paddingRight = `${sidePadding}px`;
 
-            // Set initial scroll position to 0 to center the first frame
-            viewport.scrollLeft = 0;
+                // Set initial scroll position to 0 to center the first frame
+                viewport.scrollLeft = 0;
 
-            // Initial Transform Update
-            requestAnimationFrame(updateCardTransforms);
-        } else {
-            inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
-        }
+                // Initial Transform Update
+                requestAnimationFrame(updateCardTransforms);
+            } else {
+                inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
+            }
 
-        // Event Listeners
-        viewport.addEventListener('scroll', handleScroll);
-        document.addEventListener('keydown', handleKeyboard);
-        document.getElementById('confirm-selection-btn').addEventListener('click', confirmSelection);
+            // Event Listeners
+            viewport.addEventListener('scroll', handleScroll);
+            document.addEventListener('keydown', handleKeyboard);
+            document.getElementById('confirm-selection-btn').addEventListener('click', exportVideo);
+
+            // New control buttons
+            document.getElementById('delete-frame-btn').addEventListener('click', handleDeleteFrame);
+            document.getElementById('insert-frame-btn').addEventListener('click', handleInsertFrame);
+            document.getElementById('download-frame-btn').addEventListener('click', handleDownloadFrame);
+            document.getElementById('edit-frames-btn').addEventListener('click', handleEditFramesOpen);
+            document.getElementById('frame-file-input').addEventListener('change', handleFileSelected);
+
+            // Modal event listeners
+            document.getElementById('modal-close-btn').addEventListener('click', closeEditModal);
+            document.getElementById('modal-cancel-btn').addEventListener('click', closeEditModal);
+            document.getElementById('modal-submit-btn').addEventListener('click', handleEditFramesSubmit);
+            document.getElementById('edit-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'edit-modal') closeEditModal();
+            });
+
+            updateControlStates();
         }
 
         function renderTimeline() {
@@ -667,10 +1037,11 @@
 
             // Check if keyboard navigation scroll has completed
             if (state.isNavigating) {
-                const targetScroll = state.targetIndex * STRIDE;
+                // Use stored clamped scroll position for accurate completion check
+                const targetScroll = state.targetScroll !== undefined ? state.targetScroll : state.targetIndex * STRIDE;
                 const scrollDiff = Math.abs(scrollX - targetScroll);
-                // Unlock when scroll is close enough to target (within 5px)
-                if (scrollDiff < 5) {
+                // Unlock when scroll is close enough to target (within 10px for smoother transition)
+                if (scrollDiff < 10) {
                     state.isNavigating = false;
                 }
             }
@@ -678,6 +1049,10 @@
             const cards = inner.querySelectorAll('.cinema-frame-card');
 
             cards.forEach((card, index) => {
+                if (!card.classList.contains('initialized')) {
+                    card.classList.add('initialized');
+                }
+
                 const cardCenter = card.offsetLeft + (CARD_WIDTH / 2);
                 const distance = cardCenter - centerX;
                 const normalizedDistance = distance / STRIDE;
@@ -776,13 +1151,20 @@
             if (!shouldForce && state.currentIndex === clamped) return;
 
             state.currentIndex = clamped;
+            state.targetIndex = clamped;
             updateTimecode();
             updateMainPlayer(clamped);
 
             if (options.scroll === true) {
                 const targetScroll = clamped * STRIDE;
+                const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+                const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
+                state.targetScroll = clampedScroll;
+                state.isNavigating = !options.instant; // Lock during smooth scroll only
+
                 viewport.scrollTo({
-                    left: targetScroll,
+                    left: clampedScroll,
                     behavior: options.instant ? 'auto' : 'smooth'
                 });
             }
@@ -792,8 +1174,8 @@
             if (!state.frames[index]) return;
             const frame = state.frames[index];
 
-            // Use dataset index for robust tracking
-            const currentIndex = parseInt(mainPlayerImg.dataset.index);
+            // Use dataset index for robust tracking (default to -1 if not set)
+            const currentIndex = mainPlayerImg.dataset.index ? parseInt(mainPlayerImg.dataset.index) : -1;
 
             if (currentIndex !== index) {
                 mainPlayerImg.style.opacity = '0.5';
@@ -830,46 +1212,26 @@
 
                 if (nextTarget === currentTarget) return;
 
-                // Set navigation lock - prevents scroll-based updates
-                state.isNavigating = true;
-                state.targetIndex = nextTarget;
-                state.currentIndex = nextTarget;
-                updateTimecode();
-                updateMainPlayer(nextTarget);
-
-                // Immediately apply "centered" visual state to target card
-                const cards = inner.querySelectorAll('.cinema-frame-card');
-                const targetCard = cards[nextTarget];
-                if (targetCard) {
-                    // Apply instant centered transforms
-                    targetCard.style.transform = `
-                        perspective(1500px)
-                        translateX(0px)
-                        translateZ(0px)
-                        rotateY(0deg)
-                        scale(1.1)
-                    `;
-                    targetCard.style.opacity = '1';
-                    targetCard.style.filter = 'blur(0px)';
-                    targetCard.style.zIndex = '50';
-
-                    const borderGlow = targetCard.querySelector('.card-border-glow');
-                    if (borderGlow) {
-                        borderGlow.style.opacity = '1';
-                    }
-                }
-
-                // Scroll to target (with clamping to prevent overscroll)
+                // Calculate clamped scroll position for completion check
                 const targetScroll = nextTarget * STRIDE;
                 const maxScroll = viewport.scrollWidth - viewport.clientWidth;
                 const clampedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
 
+                // Set navigation lock - prevents scroll-based updates
+                state.isNavigating = true;
+                state.targetIndex = nextTarget;
+                state.targetScroll = clampedScroll; // Store clamped scroll for completion check
+                state.currentIndex = nextTarget;
+                updateTimecode();
+                updateMainPlayer(nextTarget);
+
+                // Scroll to target
                 viewport.scrollTo({
                     left: clampedScroll,
                     behavior: 'smooth'
                 });
             } else if (e.key === 'Enter') {
-                confirmSelection();
+                exportVideo();
             }
         }
 
@@ -921,11 +1283,6 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
 
-        function confirmSelection() {
-            // Trigger video export
-            exportVideo();
-        }
-
         async function exportVideo() {
             if (state.frames.length === 0) {
                 alert('No frames to export');
@@ -934,146 +1291,361 @@
 
             const exportBtn = document.getElementById('confirm-selection-btn');
             const originalText = exportBtn.textContent;
-            exportBtn.textContent = 'Exporting...';
-            exportBtn.disabled = true;
-
-            // Show loading overlay
-            const overlay = document.createElement('div');
-            overlay.className = 'export-overlay';
-            overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000;';
-            overlay.innerHTML = `
-                <span class="material-symbols-outlined" style="font-size: 48px; color: white; animation: spin 1s linear infinite;">progress_activity</span>
-                <div style="color: white; margin-top: 16px; font-size: 18px;">Exporting ${state.frames.length} frames to video...</div>
-                <div style="color: #888; margin-top: 8px; font-size: 14px;">This may take a moment</div>
-            `;
-            document.body.appendChild(overlay);
-
-            // Add spin animation
-            const style = document.createElement('style');
-            style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
-            document.head.appendChild(style);
 
             try {
-                const response = await fetch('/frames/export_video', {
+                // Show loading state
+                exportBtn.disabled = true;
+                exportBtn.textContent = 'Exporting...';
+
+                // Prepare frames data
+                const framesData = state.frames.map(frame => ({
+                    path: frame.path,
+                    url: frame.src
+                }));
+
+                // Send request to backend
+                const response = await fetch('/frames/export-video', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
-                        fps: 24,
-                        duration_per_frame: 0.5
+                        frames: framesData,
+                        frame_duration: 2.0,  // 2 seconds per frame
+                        fps: 24
                     })
                 });
-                const data = await response.json();
 
-                if (data.status === 'success') {
-                    overlay.innerHTML = `
-                        <span class="material-symbols-outlined" style="font-size: 48px; color: #10b981;">check_circle</span>
-                        <div style="color: white; margin-top: 16px; font-size: 18px;">Export Complete!</div>
-                        <div style="color: #888; margin-top: 8px; font-size: 14px;">${data.frame_count} frames • ${data.duration.toFixed(1)}s duration</div>
-                        <a href="${data.download_url}" download="${data.filename}" 
-                           style="margin-top: 24px; padding: 12px 32px; background: white; color: black; text-decoration: none; border-radius: 9999px; font-weight: 600;">
-                            Download Video
-                        </a>
-                        <button onclick="this.parentElement.remove()" 
-                                style="margin-top: 16px; background: none; border: 1px solid #666; color: #888; padding: 8px 24px; border-radius: 9999px; cursor: pointer;">
-                            Close
-                        </button>
-                    `;
+                const result = await response.json();
 
-                    // Auto-start download
+                if (result.status === 'success') {
+                    // Update button text
+                    exportBtn.textContent = 'Download Video';
+
+                    // Download the video
                     const link = document.createElement('a');
-                    link.href = data.download_url;
-                    link.download = data.filename;
+                    link.href = result.video_url;
+                    link.download = `exported_video_${Date.now()}.mp4`;
+                    document.body.appendChild(link);
                     link.click();
+                    document.body.removeChild(link);
+
+                    // Reset button after a delay
+                    setTimeout(() => {
+                        exportBtn.textContent = originalText;
+                        exportBtn.disabled = false;
+                    }, 2000);
                 } else {
-                    throw new Error(data.message);
+                    alert(`Export failed: ${result.message}`);
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
                 }
-            } catch (err) {
-                overlay.remove();
-                alert('Export failed: ' + err.message);
-            } finally {
+            } catch (error) {
+                console.error('Export error:', error);
+                alert(`Export failed: ${error.message}`);
                 exportBtn.textContent = originalText;
                 exportBtn.disabled = false;
             }
         }
 
-        // --- Upload Frame Handler ---
-        function setupUploadHandler() {
-            const addBtn = document.getElementById('add-frame-btn');
-            const addInput = document.getElementById('add-frame-input');
-            const saveBtn = document.getElementById('save-order-btn');
+        // --- New Control Functions ---
 
-            if (addBtn && addInput) {
-                addBtn.addEventListener('click', () => addInput.click());
-                addInput.addEventListener('change', handleFrameUpload);
-            }
+        function handleDeleteFrame() {
+            if (state.frames.length === 0) return;
 
-            if (saveBtn) {
-                saveBtn.addEventListener('click', saveFrameOrder);
-            }
-        }
+            const currentFrame = state.frames[state.currentIndex];
+            const confirmed = confirm(`Delete Frame #${currentFrame.frame_number}?\n\nThis action cannot be undone.`);
 
-        async function handleFrameUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+            if (!confirmed) return;
 
-            e.target.value = '';  // Reset for next upload
+            // Remove frame from state
+            state.frames.splice(state.currentIndex, 1);
 
-            // Show loading
-            const loadingDiv = document.createElement('div');
-            loadingDiv.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;';
-            loadingDiv.innerHTML = '<span class="material-symbols-outlined" style="font-size: 48px; color: white; animation: spin 1s linear infinite;">progress_activity</span>';
-            document.body.appendChild(loadingDiv);
-
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                formData.append('position', state.currentIndex + 1);  // Insert after current
-
-                const response = await fetch('/frames/upload_image', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-
-                if (data.status === 'success') {
-                    window.location.reload();
-                } else {
-                    alert('Upload failed: ' + data.message);
-                }
-            } catch (err) {
-                alert('Error uploading: ' + err.message);
-            } finally {
-                loadingDiv.remove();
-            }
-        }
-
-        async function saveFrameOrder() {
-            const filenames = state.frames.map(f => {
-                if (f.path) {
-                    return f.path.split('/').pop();
-                }
-                return f.src.split('/').pop();
+            // Re-number remaining frames
+            state.frames.forEach((frame, index) => {
+                frame.frame_number = index + 1;
             });
 
-            try {
-                const response = await fetch('/frames/save_order', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filenames })
-                });
-                const data = await response.json();
+            // Reset navigation state so keyboard/scroll sync stays sane
+            state.targetIndex = Math.min(state.currentIndex, Math.max(0, state.frames.length - 1));
+            state.isNavigating = false;
 
-                if (data.status === 'success') {
-                    const toast = document.createElement('div');
-                    toast.textContent = 'Order saved!';
-                    toast.style.cssText = 'position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; z-index: 1000;';
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.remove(), 2000);
-                } else {
-                    alert('Failed to save: ' + data.message);
+            // Update current index if needed
+            if (state.currentIndex >= state.frames.length) {
+                state.currentIndex = Math.max(0, state.frames.length - 1);
+            }
+
+            // Re-render timeline
+            if (state.frames.length > 0) {
+                renderTimeline();
+                setActiveIndex(state.currentIndex, { force: true, scroll: true, instant: true });
+                requestAnimationFrame(updateCardTransforms);
+            } else {
+                inner.innerHTML = '<div style="color: #666; text-align: center; padding: 100px;">No frames available</div>';
+                mainPlayerImg.src = '';
+                frameBadgeEl.textContent = 'Frame #-- / 0';
+                timecodeEl.textContent = '00:00:00:00';
+            }
+
+            updateControlStates();
+        }
+
+        function handleInsertFrame() {
+            // Trigger file input dialog
+            const fileInput = document.getElementById('frame-file-input');
+            fileInput.click();
+        }
+
+        function handleFileSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file.');
+                return;
+            }
+
+            // Create a local URL for the image
+            const reader = new FileReader();
+
+            reader.onerror = function() {
+                alert('Failed to read the file. Please try again.');
+            };
+
+            reader.onload = function(e) {
+                const imageUrl = e.target.result;
+
+                // Calculate insertion point (after current frame, or 0 if no frames)
+                const insertIndex = state.frames.length > 0 ? state.currentIndex + 1 : 0;
+
+                // Calculate timestamp for new frame
+                let newTimestamp = '0:00';
+                let newSeconds = 0;
+
+                if (state.frames.length > 0) {
+                    const currentFrame = state.frames[state.currentIndex];
+                    const nextFrame = state.frames[insertIndex];
+
+                    if (nextFrame) {
+                        // Insert between current and next - average the timestamps
+                        newSeconds = (currentFrame.seconds + nextFrame.seconds) / 2;
+                    } else {
+                        // Insert at end - add 1 second to current
+                        newSeconds = currentFrame.seconds + 1;
+                    }
+                    newTimestamp = formatTimestamp(newSeconds);
                 }
-            } catch (err) {
-                alert('Error saving order: ' + err.message);
+
+                // Create new frame object
+                const newFrame = {
+                    id: `inserted_${Date.now()}`,
+                    src: imageUrl,
+                    timestamp: newTimestamp,
+                    frame_number: insertIndex + 1,
+                    seconds: newSeconds,
+                    path: file.name,
+                    isLocal: true // Flag to indicate this is a locally inserted frame
+                };
+
+                // Insert into frames array
+                state.frames.splice(insertIndex, 0, newFrame);
+
+                // Re-number frames after insertion point
+                for (let i = insertIndex + 1; i < state.frames.length; i++) {
+                    state.frames[i].frame_number = i + 1;
+                }
+
+                // Re-render timeline or initialize if first frame
+                if (state.frames.length === 1) {
+                    // First frame - need to fully initialize
+                    inner.innerHTML = '';
+                    renderTimeline();
+                    const viewportWidth = window.innerWidth;
+                    const sidePadding = (viewportWidth / 2) - (CARD_WIDTH / 2);
+                    inner.style.paddingLeft = `${sidePadding}px`;
+                    inner.style.paddingRight = `${sidePadding}px`;
+                    viewport.scrollLeft = 0;
+                } else {
+                    renderTimeline();
+                }
+
+                // Navigate to newly inserted frame
+                state.currentIndex = insertIndex;
+                setActiveIndex(insertIndex, { force: true, scroll: true });
+                requestAnimationFrame(updateCardTransforms);
+                updateControlStates();
+            };
+
+            reader.readAsDataURL(file);
+
+            // Reset file input so same file can be selected again
+            event.target.value = '';
+        }
+
+        async function handleDownloadFrame() {
+            if (state.frames.length === 0) return;
+
+            const currentFrame = state.frames[state.currentIndex];
+            const filename = `frame_${currentFrame.frame_number}_${currentFrame.timestamp.replace(/:/g, '-')}.jpg`;
+
+            try {
+                // For local/blob URLs or same-origin images, use direct download
+                if (currentFrame.src.startsWith('data:') || currentFrame.src.startsWith('blob:')) {
+                    const link = document.createElement('a');
+                    link.href = currentFrame.src;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    // For remote URLs, fetch and create blob to avoid CORS issues
+                    const response = await fetch(currentFrame.src);
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    // Clean up blob URL
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                }
+            } catch (error) {
+                console.error('Download failed:', error);
+                // Fallback to opening in new tab
+                window.open(currentFrame.src, '_blank');
+            }
+        }
+
+        // --- Edit Modal Functions ---
+
+        function handleEditFramesOpen() {
+            if (state.frames.length === 0) {
+                alert('No frames available to edit');
+                return;
+            }
+
+            const currentFrame = state.frames[state.currentIndex];
+            const modal = document.getElementById('edit-modal');
+            modal.classList.add('active');
+
+            // Update modal title to show current frame number
+            const modalTitle = modal.querySelector('.modal-header h2');
+            const frameInfo = document.createElement('span');
+            frameInfo.style.fontSize = '14px';
+            frameInfo.style.color = 'rgba(255, 255, 255, 0.6)';
+            frameInfo.style.fontWeight = '400';
+            frameInfo.textContent = ` - Frame #${currentFrame.frame_number}`;
+
+            // Remove old frame info if exists
+            const oldFrameInfo = modalTitle.querySelector('span[style*="font-size: 14px"]');
+            if (oldFrameInfo) {
+                oldFrameInfo.remove();
+            }
+            modalTitle.appendChild(frameInfo);
+
+            // Focus on the textarea for immediate input
+            setTimeout(() => {
+                document.getElementById('edit-prompt').focus();
+            }, 100);
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('edit-modal');
+            modal.classList.remove('active');
+
+            // Reset form
+            document.getElementById('edit-prompt').value = '';
+            document.getElementById('model-select').value = 'nanobanana-pro';
+        }
+
+        async function handleEditFramesSubmit() {
+            const model = document.getElementById('model-select').value;
+            const prompt = document.getElementById('edit-prompt').value.trim();
+
+            if (!prompt) {
+                alert('Please enter an edit prompt');
+                return;
+            }
+
+            // Get current frame only
+            const currentFrame = state.frames[state.currentIndex];
+            if (!currentFrame) {
+                alert('No frame selected');
+                return;
+            }
+
+            const submitBtn = document.getElementById('modal-submit-btn');
+            const submitBtnText = document.getElementById('submit-btn-text');
+            const submitBtnSpinner = document.getElementById('submit-btn-spinner');
+
+            try {
+                // Show loading state
+                submitBtn.disabled = true;
+                submitBtnText.textContent = 'Processing...';
+                submitBtnSpinner.style.display = 'inline-block';
+
+                // Prepare current frame data only
+                const framesData = [{
+                    path: currentFrame.path,
+                    url: currentFrame.src,
+                    frame_number: currentFrame.frame_number
+                }];
+
+                // Send edit request to backend
+                const response = await fetch('/frames/edit-with-ai', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        frames: framesData,
+                        model: model,
+                        prompt: prompt
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Update current frame with edited version
+                    if (result.edited_frames && result.edited_frames.length > 0) {
+                        const editedFrame = result.edited_frames[0];
+
+                        // Update the current frame in state
+                        state.frames[state.currentIndex].src = editedFrame.url;
+                        if (editedFrame.path) {
+                            state.frames[state.currentIndex].path = editedFrame.path;
+                        }
+
+                        // Re-render timeline with edited frame
+                        renderTimeline();
+                        setActiveIndex(state.currentIndex, { force: true, scroll: true });
+                        requestAnimationFrame(updateCardTransforms);
+
+                        // Close modal
+                        closeEditModal();
+
+                        // Show success message
+                        alert(`Successfully edited frame #${currentFrame.frame_number}!`);
+                    } else {
+                        alert('No edited frame was returned. Please try again.');
+                    }
+                } else {
+                    alert(`Edit failed: ${result.message || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Edit error:', error);
+                alert(`Edit failed: ${error.message}`);
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitBtnText.textContent = 'Apply Edits';
+                submitBtnSpinner.style.display = 'none';
             }
         }
 
